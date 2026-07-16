@@ -368,22 +368,23 @@ input.mrange::-moz-range-thumb{width:15px;height:15px;border-radius:50%;backgrou
   <div style="max-width:1240px;margin:0 auto;padding:110px 40px">
     <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Founder's memo · 03 — The sixteen</div>
     <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:760px">Who runs this on hyperdrive.</h2>
-    <p style="margin:20px 0 0;max-width:700px;font-size:15.5px;line-height:1.7;color:var(--t5)">Sixteen seats across four tracks — simulation science, domain, product, and capital &amp; trust. Names are being sourced and contacted now; each card goes live with a full profile and a warm-intro path as it's confirmed.</p>
+    <p style="margin:20px 0 0;max-width:700px;font-size:15.5px;line-height:1.7;color:var(--t5)">Sixteen seats across four tracks — simulation science, domain, product, and capital &amp; trust. All sixteen are now identified: three founder picks, thirteen sourced through Harmonic against the seat spec. Each card carries the specific reason that person fits this company.</p>
     <div class="mcg4" style="margin-top:56px">
       <sc-for list="{{ team }}" as="p" hint-placeholder-count="16">
-        <div style="border:1px dashed var(--ln6);border-radius:16px;padding:24px 22px;background:var(--bg);display:flex;flex-direction:column;gap:10px" style-hover="border-color:var(--acc)">
+        <div style="border:{{ p.border }};border-radius:16px;padding:24px 22px;background:var(--bg);display:flex;flex-direction:column;gap:9px" style-hover="border-color:var(--acc)">
           <div style="display:flex;align-items:center;justify-content:space-between">
-            <span style="width:44px;height:44px;border-radius:50%;border:1px dashed var(--ln7);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--t6)">{{ p.num }}</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.08em;color:var(--acc);border:1px solid var(--acc);border-radius:100px;padding:3px 9px">{{ p.track }}</span>
+            <span style="width:44px;height:44px;border-radius:50%;border:1px solid var(--ln5);background:var(--sf2);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:13px;color:{{ p.avColor }}">{{ p.initials }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.08em;color:{{ p.chipColor }};border:1px solid {{ p.chipColor }};border-radius:100px;padding:3px 9px">{{ p.track }}</span>
           </div>
-          <h3 style="margin:6px 0 0;font-size:15.5px;font-weight:600;line-height:1.35">{{ p.role }}</h3>
-          <div style="font-size:12.5px;line-height:1.5;color:var(--t5)">{{ p.who }}</div>
-          <p style="margin:0;font-size:12.5px;line-height:1.55;color:var(--t6)">{{ p.seat }}</p>
-          <div style="margin-top:auto;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;color:var(--t7)">NAME + PROFILE PENDING</div>
+          <h3 style="margin:6px 0 0;font-size:16px;font-weight:600;line-height:1.3">{{ p.name }}</h3>
+          <div style="font-size:12px;font-weight:600;color:var(--acc);line-height:1.45">{{ p.role }}</div>
+          <div style="font-size:12px;line-height:1.5;color:var(--t4)">{{ p.who }}</div>
+          <p style="margin:0;font-size:12px;line-height:1.55;color:var(--t6)">{{ p.why }}</p>
+          <div style="margin-top:auto;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.07em;color:{{ p.footColor }}">{{ p.foot }}</div>
         </div>
       </sc-for>
     </div>
-    <p style="margin:30px 0 0;max-width:760px;font-size:13.5px;line-height:1.65;color:var(--t7)">The recruiting logic: the science must be Smallville-lineage credible, the calibration must be economist-rigorous, the wedge must be sold by people the buyers already trust, and the capital seats must treat money-in as the product.</p>
+    <p style="margin:30px 0 0;max-width:820px;font-size:13.5px;line-height:1.65;color:var(--t7)">The recruiting logic holds: the science is Smallville-lineage credible (the field's founding author is on this board), the calibration seat goes to a working uncertainty-quantification researcher, the wedge is sold by the people homebuilders and operators already buy research from, and the capital seats treat money-in as the product. Candidates sourced via Harmonic against the seat spec; outreach sequencing starts at Nº1.</p>
   </div>
 </section>
 
@@ -622,23 +623,29 @@ class Component extends DCLogic {
         { r: "SERIES B · MO 30–48", amt: "$35M", use: `Underwriting API embedded in partner pro formas; continuous twins in 10+ metros; three or more standing public-sector contracts.`, gate: "Simulation is a line item in partner underwriting" }
       ],
       team: [
-        { num: "01", track: "SCIENCE", role: "Chief Executive Officer", who: "Vertical-AI founder-operator who has sold research into real estate.", seat: "Owns the position. Sells the first ten accounts personally." },
-        { num: "02", track: "SCIENCE", role: "Chief Scientist — Generative Agents", who: "Smallville-lineage researcher.", seat: "Owns believability: memory, reflection, population architecture." },
-        { num: "03", track: "SCIENCE", role: "Head of Calibration", who: "Urban-economics empiricist, Hsieh–Moretti lineage.", seat: "Owns the error bars: backtests against natural experiments." },
-        { num: "04", track: "SCIENCE", role: "LLM Systems Lead", who: "Thousand-agent inference at consumer cost.", seat: "Owns the run: orchestration, caching, the cost curve." },
-        { num: "05", track: "DOMAIN", role: "Homebuilding Division President", who: "P&L owner from a top-10 production builder.", seat: "Owns the wedge: floor-plan and spec-mix decisions." },
-        { num: "06", track: "DOMAIN", role: "Multifamily Research Head", who: "Lease-up and amenity-mix authority.", seat: "Owns the second wedge — and the consortium pitch." },
-        { num: "07", track: "DOMAIN", role: "Entitlement Strategist", who: "Land-use attorney or former planning director.", seat: "Owns consent rehearsal: hearings, coalitions, councils." },
-        { num: "08", track: "DOMAIN", role: "Capital-Markets Research Chief", who: "Ex-institutional allocator.", seat: "Owns the investor-sentiment product and LP trust." },
-        { num: "09", track: "PRODUCT", role: "Head of Product — Reports", who: "Research-tools product leader.", seat: "Owns the deliverable: from run to decision-grade report." },
-        { num: "10", track: "PRODUCT", role: "Forward-Deployed Research Lead", who: "Embedded-analyst model, Palantir school.", seat: "Owns onboarding: turns pilots into changed decisions." },
-        { num: "11", track: "PRODUCT", role: "Enterprise GTM Lead", who: "Proptech sales into builders and REITs.", seat: "Owns the pipeline: study blocks into annual contracts." },
-        { num: "12", track: "PRODUCT", role: "Design Lead — Simulation UX", who: "Makes a thousand agents legible.", seat: "Owns the interface: deliberation you can watch and interrogate." },
-        { num: "13", track: "CAPITAL", role: "Data Partnerships Lead", who: "Closes the calibration consortium.", seat: "Owns the moat: outcome data in; credits and warrants out." },
-        { num: "14", track: "CAPITAL", role: "Public-Sector Lead", who: "Replica-lineage civic go-to-market.", seat: "Owns the policy channel: cities, states, philanthropies." },
-        { num: "15", track: "CAPITAL", role: "CFO — Creative Capital", who: "Structures beyond the venture check.", seat: "Owns money-in: prepaids, consortium, grants, rev-share." },
-        { num: "16", track: "CAPITAL", role: "Fair-Housing & Model-Risk Counsel", who: "Compliance as a product feature.", seat: "Owns the red lines: what we simulate, and what we never will." }
-      ],
+        { name: "Terrence Alsup", initials: "TA", track: "PRIORITY Nº1", role: "Chief Scientist — Calibration & Uncertainty", who: "ML Researcher & Statistician, Morgan Stanley · PhD Mathematics, NYU Courant · Sandia National Labs", why: `Works at the exact intersection this company's credibility is decided on: uncertainty quantification, where numerical analysis meets machine learning. His research on multi-fidelity importance sampling and Bayesian inverse problems — contributions that have earned real recognition in the field — is, almost literally, the mathematics of fusing cheap simulation with scarce, expensive reality. Owns the error bars.`, foot: "FOUNDER'S PICK · FIRST OUTREACH", pri: true },
+        { name: "Kye Gomez", initials: "KG", track: "SCIENCE", role: "Head of Swarm Orchestration", who: "Founder, Swarms.ai", why: `Built the Swarms framework specifically for autonomous agent swarm orchestration — the machinery for coordinating thousands of agents reliably and cheaply. A 611-post deliberation is a swarm; he wrote the framework for running one.`, foot: "FOUNDER'S PICK" },
+        { name: "Ishaan Bhola", initials: "IB", track: "SCIENCE", role: "Autonomous Systems Lead", who: "Co-founder, SuperAGI", why: `Building autonomous AGI agents at scale, with deep expertise in multi-agent autonomy and self-organizing AI systems — the discipline that lets a synthetic population run fourteen simulated days without a human in the loop.`, foot: "FOUNDER'S PICK" },
+        { name: "Joon Sung Park", initials: "JP", track: "SCIENCE", role: "Chief Scientist — Generative Agents", who: "Co-founder & CEO, Simile · Stanford PhD", why: `Lead author of the Smallville generative-agents paper and the 1,000-person replication study — the two results this entire category stands on. The field's founding scientist.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "Paul Waddell", initials: "PW", track: "SCIENCE", role: "Head of Urban Simulation", who: "Founder & CEO, UrbanSim · UC Berkeley city planning", why: `Three decades of land-use and metro simulation deployed with real city governments — the economic engine of the metro twin, pre-validated with the exact public-sector buyer.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "John Grefenstette", initials: "JG", track: "SCIENCE", role: "Synthetic Populations Lead", who: "Co-founder, Epistemix · Univ. of Pittsburgh", why: `Built agent-based synthetic populations used for epidemic modeling by public-health agencies — census-grounded population synthesis with decision-grade stakes, done for decades.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "Devyn Bachman", initials: "DB", track: "DOMAIN", role: "Homebuilding Research Lead", who: "President & COO, John Burns Research & Consulting", why: `Runs the firm every production builder already buys demand research from. Knows the incumbent unit of work, its price, and every buyer of it — the wedge, personified.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "Kimberly Byrum", initials: "KB", track: "DOMAIN", role: "Multifamily Research Head", who: "Managing Principal — Multifamily, Zonda", why: `The authority on lease-up demand, unit mix, and amenity questions — the second wedge — and the credibility that gets multifamily operators into the calibration consortium.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "Clifton Harness", initials: "CH", track: "DOMAIN", role: "Feasibility Product Lead", who: "Co-founder & CEO, TestFit", why: `Proved developers and builders will buy same-day feasibility software. TestFit compressed site planning from weeks to seconds — the exact run-to-decision loop, one layer down.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "James Stirrat-Ellis", initials: "JS", track: "DOMAIN", role: "Land & Entitlement Lead", who: "Co-founder & CEO, Build.inc", why: `Building AI agents that run land-development workflows — entitlement rehearsal is his product's home turf, and his buyers are our buyers.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "Ben Hizak", initials: "BH", track: "PRODUCT", role: "Head of Data Product", who: "Co-founder, Cherre", why: `Built the data-integration layer institutional real estate runs on. Owns making Microcosm's outputs machine-legible — predicted absorption as a callable underwriting input, not a PDF.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "James He", initials: "JH", track: "PRODUCT", role: "Simulation Product Lead", who: "Founder & CEO, Artificial Societies", why: `Runs social-graph simulation where personas influence each other — 100,000+ simulations in. Owns the product surface: deliberation you can watch, steer, and interrogate.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "Michael Fordyce", initials: "MF", track: "PRODUCT", role: "Enterprise GTM Lead", who: "Chief Revenue Officer, Placer.ai", why: `Scaled location-intelligence subscriptions into the same CRE and retail buyers we sell to — the playbook for turning a novel data category into renewing enterprise contracts.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "Nick Bowden", initials: "NB", track: "CAPITAL", role: "Public-Sector Platform Lead", who: "CEO, Replica (Sidewalk Labs spinout)", why: `Sold synthetic populations to cities and DOTs before LLMs made them talk — MTA and state contracts included. The policy channel's procurement path is one he already walked.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "Rick Palacios Jr.", initials: "RP", track: "CAPITAL", role: "Data Partnerships Lead", who: "Director of Research, John Burns Research & Consulting", why: `His operator survey network is the supply side of the calibration consortium — the relationships that turn proprietary outcome data into the moat, member by member.`, foot: "SOURCED VIA HARMONIC" },
+        { name: "Kiran Jain", initials: "KJ", track: "CAPITAL", role: "Civic Trust & Fair-Housing Counsel", who: "Chief Legal Officer, Replica", why: `A career at the seam of city government and data platforms. Owns the red lines — what we simulate, what we never will — as a product feature, not a compliance afterthought.`, foot: "SOURCED VIA HARMONIC" }
+      ].map(p => ({
+        ...p,
+        border: p.pri ? "1px solid var(--acc)" : p.open ? "1px dashed var(--ln6)" : "1px solid var(--ln4)",
+        chipColor: p.pri ? "var(--acc)" : p.open ? "var(--t6)" : "var(--acc)",
+        avColor: p.open ? "var(--t6)" : "var(--t2)",
+        footColor: p.pri ? "var(--acc)" : "var(--t7)"
+      })),
       capways: [
         { num: "01", k: "REVENUE · DAY ONE", t: "Prepaid design-partner study blocks", d: `Strategic-LP operators prepay annual blocks of simulation studies at a discount to the $15–50K consultant study each run replaces. Cash-generative from the first block — the pilot IS the purchase.`, from: "LP operators", to: "Microcosm" },
         { num: "02", k: "STRUCTURE · THE MOAT THAT PAYS US", t: "The calibration consortium", d: `Founding members contribute outcome data — sales curves, lease-ups, hearing results — plus an annual membership, and receive study credits and warrants. The moat and the revenue are the same motion; every member makes the product better for every other.`, from: "Outcome data + fees", to: "Calibrated twin" },
