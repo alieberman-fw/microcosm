@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Research — Microcosm</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--acc:#37d98a;--acc-hero:#37d98a;--acc-dim:rgba(55,217,138,.13);--acc-c:#0a0b0c;--bg:#0a0b0c;--sf:#0d0e10;--sf2:#101215;--t0:#ffffff;--t1:#ececec;--t2:#c7cbcf;--t3:#b9bdc1;--t4:#adb2b7;--t5:#9aa0a6;--t6:#8b9096;--t7:#6d7378;--ln1:rgba(255,255,255,.07);--ln2:rgba(255,255,255,.08);--ln3:rgba(255,255,255,.09);--ln4:rgba(255,255,255,.12);--ln5:rgba(255,255,255,.14);--ln6:rgba(255,255,255,.15);--ln7:rgba(255,255,255,.22);--ln8:rgba(255,255,255,.25);--navbg:rgba(10,11,12,.72);color-scheme:dark}
+html[data-theme="light"]{--acc:#0d9d63;--acc-dim:rgba(13,157,99,.1);--acc-c:#ffffff;--bg:#f6f6f4;--sf:#ffffff;--sf2:#f0f0ee;--t0:#0a0b0c;--t1:#1c1e20;--t2:#34383c;--t3:#43484d;--t4:#4d5358;--t5:#5c6268;--t6:#6b7177;--t7:#8a9095;--ln1:rgba(0,0,0,.08);--ln2:rgba(0,0,0,.09);--ln3:rgba(0,0,0,.1);--ln4:rgba(0,0,0,.14);--ln5:rgba(0,0,0,.16);--ln6:rgba(0,0,0,.2);--ln7:rgba(0,0,0,.3);--ln8:rgba(0,0,0,.32);--navbg:rgba(246,246,244,.78);color-scheme:light}
+html{scroll-behavior:smooth}
+body{margin:0;transition:background .25s,color .25s;background:var(--bg);color:var(--t1);font-family:'Space Grotesk',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--t1);text-decoration:none}a:hover{color:var(--acc)}
+::selection{background:var(--acc);color:var(--acc-c)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+input.mrange{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;background:var(--ln5);outline:none;margin:12px 0 0;accent-color:var(--acc)}
+input.mrange::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:var(--acc);cursor:pointer;border:none}
+input.mrange::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--acc);cursor:pointer;border:none}
+.mcg2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.mcg3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mcg4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.msplit{display:grid;grid-template-columns:.92fr 1.08fr;gap:28px;align-items:start}
+@media(max-width:980px){.mcg4{grid-template-columns:repeat(2,1fr)}.mcg3{grid-template-columns:1fr}.mcg2{grid-template-columns:1fr}.msplit{grid-template-columns:1fr}}
+.mtable{width:100%;border-collapse:collapse;font-size:13.5px}
+.mtable th{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--t6);text-align:left;padding:10px 14px;border-bottom:1px solid var(--ln4);white-space:nowrap}
+.mtable td{padding:12px 14px;border-bottom:1px solid var(--ln2);color:var(--t3);line-height:1.5;vertical-align:top}
+.mtable td:first-child{color:var(--t0);font-weight:600;white-space:nowrap}
+</style>
+</helmet>
+
+<nav style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:0 40px;height:64px;background:var(--navbg);backdrop-filter:blur(14px);border-bottom:1px solid var(--ln1)">
+  <a href="index.html" style="display:flex;align-items:center;gap:11px">
+    <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-opacity=".35" stroke-width="1.4" stroke-dasharray="66 22" stroke-linecap="round" transform="rotate(-50 16 16)"></circle>
+      <path d="M9.5 21.5 V11.5 L16 18.5 L22.5 11.5 V21.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+      <circle cx="16" cy="18.5" r="2" fill="var(--acc)"></circle>
+    </svg>
+    <span style="font-weight:600;font-size:17px;letter-spacing:-.02em">microcosm</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--acc);border:1px solid var(--acc);border-radius:100px;padding:3px 10px;margin-left:6px">RESEARCH</span>
+  </a>
+  <div style="display:flex;align-items:center;gap:22px;font-size:13.5px;color:var(--t3)">
+    <a href="#lineage" style="color:var(--t3)">Lineage</a>
+    <a href="#accuracy" style="color:var(--t3)">Accuracy</a>
+    <a href="#category" style="color:var(--t3)">Category</a>
+    <a href="#position" style="color:var(--t3)">Position</a>
+    <a href="#model" style="color:var(--t3)">Model</a>
+    <a href="#team" style="color:var(--t3)">Team</a>
+    <a href="#capital" style="color:var(--t3)">Capital</a>
+    <button onClick="{{ toggleTheme }}" aria-label="Toggle light/dark theme" style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;border:1px solid var(--ln6);background:transparent;color:var(--t3);cursor:pointer;padding:0" style-hover="border-color:var(--acc);color:var(--acc)">
+      <sc-if value="{{ isDark }}" hint-placeholder-val="{{ true }}">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"></path></svg>
+      </sc-if>
+      <sc-if value="{{ isLight }}" hint-placeholder-val="{{ false }}">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+      </sc-if>
+    </button>
+    <a href="index.html" style="color:var(--acc-c);background:var(--acc);padding:8px 18px;border-radius:100px;font-weight:600;font-size:13px" style-hover="color:var(--acc-c);filter:brightness(1.12)">← Product</a>
+  </div>
+</nav>
+
+<header style="max-width:1240px;margin:0 auto;padding:170px 40px 90px">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase;animation:fadeUp .7s ease both">Research foundation · July 2026</div>
+  <h1 style="margin:20px 0 0;font-size:clamp(38px,5vw,68px);line-height:1.05;letter-spacing:-.035em;font-weight:600;max-width:880px;animation:fadeUp .7s .08s ease both">Fifty years of agent simulation just learned to talk.</h1>
+  <p style="margin:26px 0 0;max-width:680px;font-size:17px;line-height:1.7;color:var(--t5);animation:fadeUp .7s .16s ease both">Agent-based modeling has studied emergent social behavior since 1971 — with agents limited to hand-coded if-then rules. Large language models broke that ceiling: an agent can now read a floor plan, form an opinion, argue with a neighbor, and change its mind. This page covers the science, the honest accuracy picture, and the commercial category forming around it — then makes the founder's case: the position we hold, what it's worth, who should run it, and where the money comes from.</p>
+</header>
+
+<!-- LINEAGE TIMELINE -->
+<section id="lineage" style="max-width:1240px;margin:0 auto;padding:40px 40px 110px">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Research lineage</div>
+  <h2 style="margin:16px 0 46px;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em">From Schelling's grid to talking societies.</h2>
+  <div style="display:flex;flex-direction:column">
+    <sc-for list="{{ lineage }}" as="l" hint-placeholder-count="6">
+      <div style="display:grid;grid-template-columns:130px 26px 1fr;gap:24px;padding:0 0 44px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--acc);text-align:right;padding-top:2px">{{ l.year }}</div>
+        <div style="display:flex;flex-direction:column;align-items:center"><span style="width:11px;height:11px;border-radius:50%;border:2px solid var(--acc);background:var(--bg);flex:none;margin-top:4px"></span><span style="width:1px;flex:1;background:var(--ln4);margin-top:6px"></span></div>
+        <div style="max-width:720px">
+          <h3 style="margin:0;font-size:19px;font-weight:600;letter-spacing:-.01em">{{ l.t }}</h3>
+          <p style="margin:10px 0 0;font-size:14.5px;line-height:1.7;color:var(--t5)">{{ l.d }}</p>
+          <div style="margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t7)">{{ l.tag }}</div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<!-- ACCURACY -->
+<section id="accuracy" style="background:var(--sf);border-top:1px solid var(--ln1);border-bottom:1px solid var(--ln1)">
+  <div style="max-width:1240px;margin:0 auto;padding:110px 40px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">The honest accuracy picture</div>
+    <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:760px">Where synthetic populations are strong — and where they fail.</h2>
+    <p style="margin:20px 0 0;max-width:660px;font-size:15.5px;line-height:1.7;color:var(--t5)">Published silicon-sampling accuracy generally lands in the 70–95% range and rises with model capability. But the failure modes are real, documented, and disclosed to every Microcosm customer. Directional at the speed of thought, validated where it counts — never a replacement for the decision-maker.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:56px">
+      <div style="border:1px solid rgba(55,217,138,.35);border-radius:16px;background:var(--bg);padding:34px 32px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--acc);letter-spacing:.1em">WHERE IT WORKS</div>
+        <div style="display:flex;flex-direction:column;gap:18px;margin-top:24px">
+          <sc-for list="{{ works }}" as="w" hint-placeholder-count="5">
+            <div style="display:flex;gap:12px;font-size:14.5px;line-height:1.6;color:var(--t2)"><span style="color:var(--acc);flex:none">→</span><span><strong style="color:var(--t0);font-weight:600">{{ w.t }}</strong> — {{ w.d }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="border:1px solid var(--ln5);border-radius:16px;background:var(--bg);padding:34px 32px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--t5);letter-spacing:.1em">KNOWN FAILURE MODES</div>
+        <div style="display:flex;flex-direction:column;gap:18px;margin-top:24px">
+          <sc-for list="{{ fails }}" as="f" hint-placeholder-count="5">
+            <div style="display:flex;gap:12px;font-size:14.5px;line-height:1.6;color:var(--t2)"><span style="color:var(--t7);flex:none">×</span><span><strong style="color:var(--t0);font-weight:600">{{ f.t }}</strong> — {{ f.d }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:28px;border:1px solid var(--ln3);border-radius:16px;background:var(--bg);padding:34px 32px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--acc);letter-spacing:.1em">THE SAY-DO CORRECTION</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:24px">
+        <div><div style="font-size:32px;font-weight:600;letter-spacing:-.02em">82%</div><div style="margin-top:8px;font-size:13.5px;line-height:1.6;color:var(--t5)">of heirs <em>say</em> they'll keep their parents' financial advisor (stated intent, fielded survey)</div></div>
+        <div><div style="font-size:32px;font-weight:600;letter-spacing:-.02em;color:var(--acc)">43%</div><div style="margin-top:8px;font-size:13.5px;line-height:1.6;color:var(--t5)">retention predicted by agent simulation modeling actual behavior, not stated intent</div></div>
+        <div><div style="font-size:32px;font-weight:600;letter-spacing:-.02em">20–30%</div><div style="margin-top:8px;font-size:13.5px;line-height:1.6;color:var(--t5)">actually retain, per industry studies — the simulation landed on the right side of the gap</div></div>
+      </div>
+      <p style="margin:22px 0 0;font-size:14px;line-height:1.65;color:var(--t5);max-width:760px">Stated preference is systematically inflated — in real estate, catastrophically so. Microcosm models the say-do gap explicitly rather than reporting what people claim they'll pay for.</p>
+    </div>
+  </div>
+</section>
+
+<!-- WHY REAL ESTATE -->
+<section style="max-width:1240px;margin:0 auto;padding:110px 40px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:70px;align-items:start">
+    <div style="position:sticky;top:100px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Domain fit</div>
+      <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em">Real estate is the ideal domain for simulation.</h2>
+      <p style="margin:20px 0 0;font-size:15.5px;line-height:1.7;color:var(--t5)">Every structural property of the asset class amplifies the value of cheap pre-testing. It is fitting that the founding result of agent-based modeling — Schelling, 1971 — was itself about where people choose to live.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <sc-for list="{{ domain }}" as="d" hint-placeholder-count="5">
+        <div style="border:1px solid var(--ln3);border-radius:14px;padding:26px 28px;background:var(--sf)" style-hover="border-color:var(--ln7)">
+          <div style="display:flex;justify-content:space-between;gap:16px;align-items:baseline">
+            <h3 style="margin:0;font-size:17px;font-weight:600">{{ d.t }}</h3>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--acc);flex:none">{{ d.stat }}</span>
+          </div>
+          <p style="margin:10px 0 0;font-size:14px;line-height:1.65;color:var(--t5)">{{ d.d }}</p>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<!-- CATEGORY -->
+<section id="category" style="background:var(--sf);border-top:1px solid var(--ln1);border-bottom:1px solid var(--ln1)">
+  <div style="max-width:1240px;margin:0 auto;padding:110px 40px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Category validation</div>
+    <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:760px">Synthetic research just became a funded category.</h2>
+    <p style="margin:20px 0 0;max-width:660px;font-size:15.5px;line-height:1.7;color:var(--t5)">Horizontal platforms have validated the market and the price points. None has verticalized for the built world — where the decisions are the most illiquid, the feedback loops the slowest, and the stakes the highest. The insights industry they address surpassed $150B globally in 2024; roughly 69% of market researchers already report using synthetic data.</p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:56px">
+      <sc-for list="{{ category }}" as="c" hint-placeholder-count="6">
+        <div style="border:1px solid var(--ln3);border-radius:14px;padding:26px 24px;background:var(--bg);display:flex;flex-direction:column;gap:14px" style-hover="border-color:var(--ln7)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">
+            <h3 style="margin:0;font-size:17px;font-weight:600">{{ c.t }}</h3>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--acc);flex:none">{{ c.money }}</span>
+          </div>
+          <p style="margin:0;font-size:13.5px;line-height:1.6;color:var(--t5)">{{ c.d }}</p>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:28px;border:1px solid var(--acc);border-radius:16px;background:var(--acc-dim);padding:32px 34px;display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:start">
+      <svg width="34" height="34" viewBox="0 0 32 32" fill="none" style="margin-top:2px">
+        <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-opacity=".4" stroke-width="1.4" stroke-dasharray="66 22" stroke-linecap="round" transform="rotate(-50 16 16)"></circle>
+        <path d="M9.5 21.5 V11.5 L16 18.5 L22.5 11.5 V21.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+        <circle cx="16" cy="18.5" r="2" fill="var(--acc)"></circle>
+      </svg>
+      <div>
+        <h3 style="margin:0;font-size:19px;font-weight:600">Where Microcosm is different</h3>
+        <p style="margin:10px 0 0;font-size:14.5px;line-height:1.7;color:var(--t2);max-width:820px">The generative-agent layer is commoditizing. What compounds is vertical: a real estate ontology — product types, submarkets, entitlement, absorption — baked into personas and reports; calibration against actual sales and lease-up outcomes rather than generic survey data; and embedding in underwriting workflows instead of standing beside them. The moat is the outcome data, not the agents.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOUNDER'S MEMO · 01 THE POSITION ============ -->
+<section id="position" style="max-width:1240px;margin:0 auto;padding:110px 40px">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Founder's memo · 01 — The position</div>
+  <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:820px">The feasibility study becomes software. We own its calibration.</h2>
+  <p style="margin:24px 0 0;max-width:860px;font-size:16.5px;line-height:1.75;color:var(--t3)">Within five years, no eight-figure decision in the built world gets made without being simulated first. The $15–50K, six-week feasibility study — and the fielded survey behind it — collapses into a <em>run</em>: a thousand persona-grounded buyers, renters, neighbors, and lenders reacting to the decision in an afternoon, calibrated against what actually happened in that submarket. Microcosm is that layer. Panels first — which floor plan, what mix, what price. Then the metro twin — what absorption, rents, and consent do when the project, or the policy, actually lands. The agents are commoditizing; the calibration corpus is not. And the only place that corpus can be assembled by invitation is a strategic-LP base that owns and operates across every product type. That is the position.</p>
+  <div class="mcg2" style="margin-top:44px">
+    <div style="border:1px solid var(--ln4);border-radius:16px;background:var(--sf);padding:30px 32px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--t6);letter-spacing:.1em">AN OBSERVATION SOUNDS LIKE</div>
+      <p style="margin:16px 0 0;font-size:15px;line-height:1.7;color:var(--t5)"><span style="color:var(--t7)">×</span> &nbsp;"AI is going to transform real estate research — the market is huge, and someone should build the vertical."</p>
+    </div>
+    <div style="border:1px solid var(--acc);border-radius:16px;background:var(--acc-dim);padding:30px 32px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--acc);letter-spacing:.1em">A POSITION SOUNDS LIKE</div>
+      <p style="margin:16px 0 0;font-size:15px;line-height:1.7;color:var(--t2)"><span style="color:var(--acc)">→</span> &nbsp;"The study becomes a run; the panel becomes a population; the moat is the outcome data. Wedge in with homebuilder product-mix panels, calibrate on LP outcome data, embed in the underwriting API — and the first three capital conversations are named below."</p>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px;margin-top:14px">
+    <sc-for list="{{ breath }}" as="b" hint-placeholder-count="3">
+      <div style="border:1px solid var(--ln3);border-radius:14px;background:var(--sf);padding:22px 28px;display:grid;grid-template-columns:110px 1fr;gap:24px;align-items:baseline" style-hover="border-color:var(--ln7)">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--acc);letter-spacing:.12em">{{ b.k }}</div>
+        <p style="margin:0;font-size:14.5px;line-height:1.65;color:var(--t4)">{{ b.d }}</p>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<!-- FOUNDER'S MEMO · WORLD-THESES TIE -->
+<section id="theses" style="background:var(--sf);border-top:1px solid var(--ln1);border-bottom:1px solid var(--ln1)">
+  <div style="max-width:1240px;margin:0 auto;padding:110px 40px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Founder's memo · The world theses it stands on</div>
+    <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:800px">Six of the firm's world theses converge on this one company.</h2>
+    <p style="margin:20px 0 0;max-width:680px;font-size:15.5px;line-height:1.7;color:var(--t5)">Microcosm is not a standalone bet — it sits where the founding world theses (Section 02) intersect. Each card names the thesis and the specific way this company expresses it.</p>
+    <div class="mcg3" style="margin-top:56px">
+      <sc-for list="{{ ties }}" as="w" hint-placeholder-count="6">
+        <div style="border:1px solid var(--ln3);border-radius:14px;padding:26px 24px;background:var(--bg);display:flex;flex-direction:column;gap:12px" style-hover="border-color:var(--acc)">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--t7);letter-spacing:.1em">{{ w.tag }}</div>
+          <h3 style="margin:0;font-size:17px;font-weight:600">{{ w.t }}</h3>
+          <p style="margin:0;font-size:13.5px;line-height:1.65;color:var(--t5)">{{ w.d }}</p>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<!-- FOUNDER'S MEMO · 02 THE NUMBER -->
+<section id="model" style="max-width:1240px;margin:0 auto;padding:110px 40px">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Founder's memo · 02 — The number</div>
+  <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:760px">What it's worth — and what it takes.</h2>
+  <p style="margin:20px 0 0;max-width:700px;font-size:15.5px;line-height:1.7;color:var(--t5)">Built the way an underwriter would: size the market top-down, build revenue bottom-up from explicit unit economics, then apply comparable multiples. Every assumption is on screen and draggable — attack the inputs, not the vibes.</p>
+
+  <div class="mcg3" style="margin-top:48px">
+    <sc-for list="{{ mkt }}" as="k" hint-placeholder-count="3">
+      <div style="border:1px solid var(--ln3);border-radius:14px;padding:24px 26px;background:var(--sf)">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--acc);letter-spacing:.1em">{{ k.k }}</span>
+          <span style="font-size:24px;font-weight:600;letter-spacing:-.02em;white-space:nowrap">{{ k.v }}</span>
+        </div>
+        <p style="margin:12px 0 0;font-size:13px;line-height:1.6;color:var(--t5)">{{ k.d }}</p>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:12px;margin-top:52px;flex-wrap:wrap">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--t6);letter-spacing:.1em">SCENARIO</span>
+    <button onClick="{{ pBear }}" style="{{ bearBtn }}">Bear</button>
+    <button onClick="{{ pBase }}" style="{{ baseBtn }}">Base</button>
+    <button onClick="{{ pBull }}" style="{{ bullBtn }}">Bull</button>
+    <span style="font-size:13px;color:var(--t6)">— or drag any assumption below; everything recomputes live.</span>
+  </div>
+
+  <div class="msplit" style="margin-top:26px">
+    <div style="border:1px solid var(--ln3);border-radius:16px;background:var(--sf);padding:28px 28px;display:flex;flex-direction:column;gap:18px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--acc);letter-spacing:.1em">TEAM TIER — SELF-SERVE RUNS + STUDY BLOCKS</div>
+      <div><div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:var(--t4)">Team-tier accounts by year 5</span><span style="font-family:'JetBrains Mono',monospace;color:var(--t0)">{{ fTa }}</span></div><input class="mrange" type="range" min="500" max="8000" step="100" value="{{ vTa }}" onInput="{{ hTa }}"></div>
+      <div><div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:var(--t4)">Team ACV — priced under one study</span><span style="font-family:'JetBrains Mono',monospace;color:var(--t0)">{{ fTacv }}</span></div><input class="mrange" type="range" min="6" max="40" step="2" value="{{ vTacv }}" onInput="{{ hTacv }}"></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--acc);letter-spacing:.1em;margin-top:6px">ENTERPRISE TIER — CALIBRATED TWIN + API</div>
+      <div><div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:var(--t4)">Enterprise accounts</span><span style="font-family:'JetBrains Mono',monospace;color:var(--t0)">{{ fEa }}</span></div><input class="mrange" type="range" min="20" max="400" step="10" value="{{ vEa }}" onInput="{{ hEa }}"></div>
+      <div><div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:var(--t4)">Enterprise ACV — platform, not reports</span><span style="font-family:'JetBrains Mono',monospace;color:var(--t0)">{{ fEacv }}</span></div><input class="mrange" type="range" min="100" max="500" step="10" value="{{ vEacv }}" onInput="{{ hEacv }}"></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--acc);letter-spacing:.1em;margin-top:6px">PUBLIC + POLICY CHANNEL</div>
+      <div><div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:var(--t4)">Intervention engagements / yr</span><span style="font-family:'JetBrains Mono',monospace;color:var(--t0)">{{ fPub }}</span></div><input class="mrange" type="range" min="0" max="200" step="5" value="{{ vPub }}" onInput="{{ hPub }}"></div>
+      <div><div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:var(--t4)">Fee per engagement</span><span style="font-family:'JetBrains Mono',monospace;color:var(--t0)">{{ fFee }}</span></div><input class="mrange" type="range" min="40" max="300" step="10" value="{{ vFee }}" onInput="{{ hFee }}"></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--acc);letter-spacing:.1em;margin-top:6px">VALUATION</div>
+      <div><div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:var(--t4)">Gross margin</span><span style="font-family:'JetBrains Mono',monospace;color:var(--t0)">{{ fMgn }}</span></div><input class="mrange" type="range" min="65" max="90" step="1" value="{{ vMgn }}" onInput="{{ hMgn }}"></div>
+      <div><div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:var(--t4)">Revenue multiple</span><span style="font-family:'JetBrains Mono',monospace;color:var(--t0)">{{ fMult }}</span></div><input class="mrange" type="range" min="4" max="25" step="0.5" value="{{ vMult }}" onInput="{{ hMult }}"></div>
+      <p style="margin:6px 0 0;font-size:12px;line-height:1.6;color:var(--t7)">Ramp held at 4 / 12 / 30 / 60 / 100% of year-5 scale. The tier logic: team pricing sits below a single incumbent study, so the buy decision needs no committee; enterprise pricing sells the calibrated platform and API, not reports. Vertical AI trades ~10–15× forward ARR with defensibility; 2026 category leaders clear 20–30×.</p>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="border:1px solid var(--ln3);border-radius:16px;background:var(--sf);padding:22px 26px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--t6);letter-spacing:.1em">YEAR-5 REVENUE — BUILD-UP</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px;font-size:14px">
+          <div style="display:flex;justify-content:space-between;color:var(--t4)"><span>Team tier <span style="color:var(--t7);font-size:12.5px">accounts × ACV</span></span><span style="font-family:'JetBrains Mono',monospace;color:var(--t1)">{{ teamF }}</span></div>
+          <div style="display:flex;justify-content:space-between;color:var(--t4)"><span>+ Enterprise platform <span style="color:var(--t7);font-size:12.5px">accounts × ACV</span></span><span style="font-family:'JetBrains Mono',monospace;color:var(--t1)">{{ entF }}</span></div>
+          <div style="display:flex;justify-content:space-between;color:var(--t4)"><span>+ Public + policy channel <span style="color:var(--t7);font-size:12.5px">engagements × fee</span></span><span style="font-family:'JetBrains Mono',monospace;color:var(--t1)">{{ pubF }}</span></div>
+          <div style="display:flex;justify-content:space-between;border-top:1px solid var(--ln4);padding-top:10px;font-weight:600;color:var(--t0)"><span>= Year-5 revenue</span><span style="font-family:'JetBrains Mono',monospace;color:var(--acc)">{{ y5F }}</span></div>
+        </div>
+      </div>
+      <div style="border:1px solid var(--ln3);border-radius:16px;background:var(--sf);padding:22px 26px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--t6);letter-spacing:.1em">FIVE-YEAR RAMP</div>
+        <div style="display:flex;align-items:flex-end;gap:14px;height:130px;margin-top:16px">
+          <sc-for list="{{ bars }}" as="b" hint-placeholder-count="5">
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:8px">
+              <div style="{{ b.style }}"></div>
+              <div style="text-align:center"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--t7)">{{ b.y }}</div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t4)">{{ b.v }}</div></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div class="mcg2" style="gap:12px">
+        <div style="border:1px solid var(--acc);border-radius:16px;background:var(--acc-dim);padding:20px 24px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--acc);letter-spacing:.08em">IMPLIED ENTERPRISE VALUE</div>
+          <div style="margin-top:6px;font-size:34px;font-weight:600;letter-spacing:-.025em">{{ evF }}</div>
+        </div>
+        <div style="border:1px solid var(--ln4);border-radius:16px;background:var(--sf);padding:20px 24px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t6);letter-spacing:.08em">YEAR-5 GROSS PROFIT</div>
+          <div style="margin-top:6px;font-size:34px;font-weight:600;letter-spacing:-.025em">{{ gpF }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:40px;border:1px solid var(--ln3);border-radius:16px;background:var(--sf);padding:32px 34px">
+    <h3 style="margin:0;font-size:19px;font-weight:600">What the market actually charges — the pricing evidence</h3>
+    <p style="margin:12px 0 0;max-width:860px;font-size:14px;line-height:1.65;color:var(--t5)">Uncalibrated synthetic research is nearly free — and that is exactly why it can't carry an eight-figure decision. The pricing power sits with calibration and workflow, not with the report.</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:18px">
+      <sc-for list="{{ bench }}" as="b" hint-placeholder-count="6">
+        <div style="display:grid;grid-template-columns:1.3fr .7fr 1fr;gap:16px;border:1px solid var(--ln2);border-radius:10px;padding:11px 16px;align-items:baseline">
+          <span style="font-size:13.5px;font-weight:600">{{ b.n }}</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--acc)">{{ b.p }}</span>
+          <span style="font-size:12.5px;color:var(--t6)">{{ b.note }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <p style="margin:16px 0 0;max-width:880px;font-size:13.5px;line-height:1.65;color:var(--t4)"><strong style="color:var(--t1)">Where Microcosm prices:</strong> the $18K team tier undercuts a single consultant study and buys a year of unlimited standard runs — a no-committee purchase with thousands of possible buyers. The $250K enterprise tier prices the calibrated twin, the underwriting API, and the accuracy record — the things a $11 synthetic interview will never have. The $120K public engagement replaces a $100–250K consultant impact study on procurement rails Replica already proved. Nobody decision-grade is cheaper; nobody cheaper is decision-grade.</p>
+  </div>
+
+  <div style="margin-top:14px;border:1px solid var(--ln3);border-radius:16px;background:var(--sf);padding:32px 34px">
+    <h3 style="margin:0;font-size:19px;font-weight:600">Two independent reads on the number</h3>
+    <p style="margin:12px 0 0;max-width:860px;font-size:14px;line-height:1.65;color:var(--t5)">The model above builds value bottom-up. Separately, the diligence board sized this top-down: the narrow version — vertical synthetic panels alone — reads $150–500M; the platform version — the calibrated metro twin with the consortium moat — reads $1B+. The sliders show exactly which assumptions carry you from one to the other.</p>
+    <div style="margin-top:18px;overflow-x:auto">
+      <table class="mtable">
+        <tr><th>Comparable</th><th>Why it's the comp</th><th>What the market pays</th><th>Read-through</th></tr>
+        <sc-for list="{{ comps }}" as="c" hint-placeholder-count="5">
+          <tr><td>{{ c.n }}</td><td>{{ c.why }}</td><td>{{ c.pays }}</td><td>{{ c.read }}</td></tr>
+        </sc-for>
+      </table>
+    </div>
+  </div>
+
+  <h3 style="margin:56px 0 0;font-size:22px;font-weight:600;letter-spacing:-.02em">The capital it takes — and how little of it is a venture check</h3>
+  <div class="mcg3" style="margin-top:24px">
+    <sc-for list="{{ rounds }}" as="r" hint-placeholder-count="3">
+      <div style="border:1px solid var(--ln3);border-radius:16px;padding:26px 28px;background:var(--sf);display:flex;flex-direction:column;gap:12px" style-hover="border-color:var(--acc)">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--acc);letter-spacing:.1em">{{ r.r }}</span><span style="font-size:26px;font-weight:600;letter-spacing:-.02em">{{ r.amt }}</span></div>
+        <p style="margin:0;font-size:13.5px;line-height:1.6;color:var(--t4)">{{ r.use }}</p>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t7);line-height:1.55">GATE → {{ r.gate }}</div>
+      </div>
+    </sc-for>
+  </div>
+  <div style="margin-top:14px;border:1px dashed var(--ln6);border-radius:16px;padding:24px 28px;background:transparent">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--acc);letter-spacing:.1em">MONEY IN BEFORE EQUITY</div>
+    <p style="margin:10px 0 0;font-size:14px;line-height:1.7;color:var(--t4)">~$57M gross across three rounds — offset by $12–20M that arrives as revenue and grants, not dilution: prepaid design-partner study blocks ($1.5–3M/yr), calibration-consortium memberships (10 × $250K/yr), and policy-channel money (Arnold Ventures-class funders granted $4M+ last year for exactly this evidence class; Replica's city contracts prove the procurement path). <strong style="color:var(--t1)">Net venture need: ~$40M for the base-case $1B outcome — software capital-efficiency, not marketplace burn.</strong></p>
+  </div>
+</section>
+
+<!-- TRAJECTORY -->
+<section id="trajectory" style="max-width:1240px;margin:0 auto;padding:110px 40px 90px">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Company trajectory</div>
+  <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:760px">Wedge narrow. Calibrate obsessively. Then platform.</h2>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:56px">
+    <sc-for list="{{ stages }}" as="st" hint-placeholder-count="3">
+      <div style="border:1px solid var(--ln3);border-radius:16px;padding:32px 30px;background:var(--sf);display:flex;flex-direction:column;gap:0" style-hover="border-color:var(--acc)">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--acc);letter-spacing:.1em">{{ st.phase }}</div>
+        <div style="margin-top:16px;font-size:30px;font-weight:600;letter-spacing:-.025em">{{ st.band }}</div>
+        <div style="font-size:12.5px;color:var(--t7);margin-top:4px;font-family:'JetBrains Mono',monospace">{{ st.bandLabel }}</div>
+        <div style="margin-top:22px;display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ st.points }}" as="p" hint-placeholder-count="3">
+            <div style="display:flex;gap:10px;font-size:13.5px;line-height:1.55;color:var(--t4)"><span style="color:var(--acc);flex:none">→</span>{{ p }}</div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+  <p style="margin:34px 0 0;max-width:760px;font-size:14px;line-height:1.7;color:var(--t7)">Bands reflect current applied vertical-AI comparables and assume elevated AI-application multiples hold; each milestone — backtested accuracy beating incumbent baselines, paying customers, a published calibration record, an underwriting API embed — is the trigger for the next stage. Fair-housing review gates every use case near tenant or buyer selection; results are always disclosed as synthetic and directional.</p>
+</section>
+
+<!-- FOUNDER'S MEMO · 03 THE TEAM -->
+<section id="team" style="background:var(--sf);border-top:1px solid var(--ln1);border-bottom:1px solid var(--ln1)">
+  <div style="max-width:1240px;margin:0 auto;padding:110px 40px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Founder's memo · 03 — The sixteen</div>
+    <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:760px">Who runs this on hyperdrive.</h2>
+    <p style="margin:20px 0 0;max-width:700px;font-size:15.5px;line-height:1.7;color:var(--t5)">Sixteen seats across four tracks — simulation science, domain, product, and capital &amp; trust. Names are being sourced and contacted now; each card goes live with a full profile and a warm-intro path as it's confirmed.</p>
+    <div class="mcg4" style="margin-top:56px">
+      <sc-for list="{{ team }}" as="p" hint-placeholder-count="16">
+        <div style="border:1px dashed var(--ln6);border-radius:16px;padding:24px 22px;background:var(--bg);display:flex;flex-direction:column;gap:10px" style-hover="border-color:var(--acc)">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span style="width:44px;height:44px;border-radius:50%;border:1px dashed var(--ln7);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--t6)">{{ p.num }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.08em;color:var(--acc);border:1px solid var(--acc);border-radius:100px;padding:3px 9px">{{ p.track }}</span>
+          </div>
+          <h3 style="margin:6px 0 0;font-size:15.5px;font-weight:600;line-height:1.35">{{ p.role }}</h3>
+          <div style="font-size:12.5px;line-height:1.5;color:var(--t5)">{{ p.who }}</div>
+          <p style="margin:0;font-size:12.5px;line-height:1.55;color:var(--t6)">{{ p.seat }}</p>
+          <div style="margin-top:auto;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;color:var(--t7)">NAME + PROFILE PENDING</div>
+        </div>
+      </sc-for>
+    </div>
+    <p style="margin:30px 0 0;max-width:760px;font-size:13.5px;line-height:1.65;color:var(--t7)">The recruiting logic: the science must be Smallville-lineage credible, the calibration must be economist-rigorous, the wedge must be sold by people the buyers already trust, and the capital seats must treat money-in as the product.</p>
+  </div>
+</section>
+
+<!-- FOUNDER'S MEMO · 04 THE CAPITAL PLAN -->
+<section id="capital" style="max-width:1240px;margin:0 auto;padding:110px 40px">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Founder's memo · 04 — The capital plan</div>
+  <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:800px">Three ways money comes in — none of them "raise a fund."</h2>
+  <div style="display:flex;flex-direction:column;gap:14px;margin-top:52px">
+    <sc-for list="{{ capways }}" as="c" hint-placeholder-count="3">
+      <div style="border:1px solid var(--ln3);border-radius:16px;background:var(--sf);padding:28px 32px;display:grid;grid-template-columns:56px 1fr 1.3fr auto;gap:28px;align-items:center" style-hover="border-color:var(--acc)">
+        <div style="font-weight:300;font-size:42px;letter-spacing:-.02em;color:var(--acc);opacity:.7">{{ c.num }}</div>
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--t6)">{{ c.k }}</div>
+          <h3 style="margin:6px 0 0;font-size:18px;font-weight:600;letter-spacing:-.01em">{{ c.t }}</h3>
+        </div>
+        <p style="margin:0;font-size:14px;line-height:1.65;color:var(--t4)">{{ c.d }}</p>
+        <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t3);border:1px solid var(--ln6);border-radius:100px;padding:5px 12px;white-space:nowrap">{{ c.from }}</span>
+          <span style="color:var(--acc)">→</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--acc);border:1px solid var(--acc);border-radius:100px;padding:5px 12px;white-space:nowrap">{{ c.to }}</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+  <h3 style="margin:60px 0 0;font-size:22px;font-weight:600;letter-spacing:-.02em">The first three capital conversations — and why each says yes</h3>
+  <div class="mcg3" style="margin-top:24px">
+    <sc-for list="{{ convos }}" as="c" hint-placeholder-count="3">
+      <div style="border:1px solid var(--ln4);border-radius:16px;padding:26px 28px;background:var(--sf);display:flex;flex-direction:column;gap:12px" style-hover="border-color:var(--acc);transform:translateY(-3px)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:18px;font-weight:600">{{ c.n }}</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.08em;color:var(--acc);border:1px solid var(--acc);border-radius:100px;padding:3px 9px">{{ c.chip }}</span>
+        </div>
+        <div style="font-size:13px;font-weight:600;color:var(--acc);line-height:1.5">The ask: {{ c.ask }}</div>
+        <p style="margin:0;font-size:13.5px;line-height:1.65;color:var(--t4)"><strong style="color:var(--t1)">Why yes:</strong> {{ c.why }}</p>
+      </div>
+    </sc-for>
+  </div>
+
+  <div class="mcg2" style="margin-top:14px">
+    <div style="border:1px dashed var(--ln6);border-radius:16px;padding:22px 26px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;color:var(--acc)">THE POLICY ROUND</div>
+      <p style="margin:8px 0 0;font-size:13.5px;line-height:1.65;color:var(--t4)">Pro-housing funders grant $4M+ a year for exactly this evidence class. A granted backtest program — "simulate the five biggest zoning fights of 2027 before the hearings" — is non-dilutive capital that also builds the public calibration record.</p>
+    </div>
+    <div style="border:1px dashed var(--ln6);border-radius:16px;padding:22px 26px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;color:var(--acc)">THE DATA-FOR-EQUITY FLYWHEEL</div>
+      <p style="margin:8px 0 0;font-size:13.5px;line-height:1.65;color:var(--t4)">Brookfield traded portfolio access to Figure for equity — the precedent for pricing data as capital. Same trade here: outcome data for warrants. The LPs become owners of the layer their own data makes possible.</p>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:center;gap:18px;margin-top:38px">
+    <span style="width:48px;height:1px;background:var(--ln6)"></span>
+    <span style="font-size:16px;color:var(--acc);text-align:center;font-style:italic">Everything above brings money in before anyone is asked for a venture check.</span>
+    <span style="width:48px;height:1px;background:var(--ln6)"></span>
+  </div>
+</section>
+
+<!-- FOUNDER'S MEMO · 05 WINNERS & LOSERS -->
+<section id="map" style="background:var(--sf);border-top:1px solid var(--ln1);border-bottom:1px solid var(--ln1)">
+  <div style="max-width:1240px;margin:0 auto;padding:110px 40px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Founder's memo · 05 — Winners &amp; losers</div>
+    <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:760px">This map is the capital plan in disguise.</h2>
+    <p style="margin:20px 0 0;max-width:660px;font-size:15.5px;line-height:1.7;color:var(--t5)">The people who want this to exist are the anchor partners and the first checks. The people terrified of it are pointing at exactly where the value is.</p>
+    <div class="mcg2" style="margin-top:52px">
+      <div style="border:1px solid rgba(55,217,138,.35);border-radius:16px;background:var(--bg);padding:32px 32px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--acc);letter-spacing:.1em">WANTS IT TO EXIST</div>
+        <div style="display:flex;flex-direction:column;gap:14px;margin-top:22px">
+          <sc-for list="{{ wants }}" as="w" hint-placeholder-count="5">
+            <div style="border:1px solid var(--ln2);border-radius:12px;padding:14px 18px" style-hover="border-color:var(--acc)">
+              <strong style="font-size:14.5px;color:var(--t0);font-weight:600">{{ w.t }}</strong>
+              <div style="font-size:13px;color:var(--t5);margin-top:4px;line-height:1.55">{{ w.d }} → <em style="color:var(--acc);font-style:normal">{{ w.em }}</em></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="border:1px solid var(--ln5);border-radius:16px;background:var(--bg);padding:32px 32px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--t5);letter-spacing:.1em">TERRIFIED OF IT</div>
+        <div style="display:flex;flex-direction:column;gap:14px;margin-top:22px">
+          <sc-for list="{{ fears }}" as="f" hint-placeholder-count="4">
+            <div style="border:1px solid var(--ln2);border-radius:12px;padding:14px 18px" style-hover="border-color:var(--ln7)">
+              <strong style="font-size:14.5px;color:var(--t0);font-weight:600">{{ f.t }}</strong>
+              <div style="font-size:13px;color:var(--t5);margin-top:4px;line-height:1.55">{{ f.d }} → <em style="color:var(--t2);font-style:normal">{{ f.em }}</em></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOUNDER'S MEMO · 06 STEELMAN -->
+<section id="steelman" style="max-width:1240px;margin:0 auto;padding:110px 40px">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Founder's memo · 06 — Steelman</div>
+  <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:760px">Where this thesis is most fragile.</h2>
+  <p style="margin:20px 0 0;max-width:680px;font-size:15.5px;line-height:1.7;color:var(--t5)">A thesis with no strongest objection isn't finished — it's just the pitch. These are ours, each with the kill signal that would change our mind. Certainty isn't the bar; rigor is.</p>
+  <div class="mcg2" style="margin-top:52px">
+    <sc-for list="{{ steel }}" as="s" hint-placeholder-count="4">
+      <div style="border:1px solid var(--ln4);border-left:3px solid var(--acc);border-radius:14px;padding:26px 28px;background:var(--sf);display:flex;flex-direction:column;gap:12px">
+        <h3 style="margin:0;font-size:17px;font-weight:600;line-height:1.4">{{ s.n }} · {{ s.t }}</h3>
+        <p style="margin:0;font-size:14px;line-height:1.65;color:var(--t4)">{{ s.d }}</p>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.6;color:var(--t2);background:var(--acc-dim);border-radius:10px;padding:10px 14px">KILL SIGNAL → {{ s.kill }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="margin-top:30px;border:1px solid var(--ln4);border-radius:18px;background:var(--sf2);padding:32px 34px">
+    <h3 style="margin:0;font-size:19px;font-weight:600">The three self-checks — run before this page ships</h3>
+    <div class="mcg3" style="margin-top:20px">
+      <sc-for list="{{ checks }}" as="c" hint-placeholder-count="3">
+        <div style="border:1px solid var(--ln3);border-radius:14px;padding:18px 20px;background:var(--bg)">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;color:var(--acc)">{{ c.t }}</div>
+          <p style="margin:8px 0 0;font-size:13px;line-height:1.6;color:var(--t4)">{{ c.d }}</p>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<!-- FOUNDER'S MEMO · 07 SHOW DON'T TELL -->
+<section style="max-width:1240px;margin:0 auto;padding:0 40px 110px">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--acc);text-transform:uppercase">Founder's memo · 07 — Show, don't tell</div>
+  <h2 style="margin:16px 0 0;font-size:clamp(28px,3.2vw,44px);font-weight:600;letter-spacing:-.03em;max-width:760px">The 48-hour proof — you're looking at it.</h2>
+  <div class="mcg3" style="margin-top:44px">
+    <a href="index.html" style="border:1px solid var(--ln3);border-radius:16px;padding:26px 28px;background:var(--sf);display:block" style-hover="border-color:var(--acc);transform:translateY(-3px)">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;color:var(--acc)">BUILT ✓</div>
+      <h3 style="margin:10px 0 0;font-size:17px;font-weight:600;color:var(--t0)">This site — founder language, live waitlist</h3>
+      <p style="margin:8px 0 0;font-size:13.5px;line-height:1.6;color:var(--t5)">The vision stated like a company that already exists, with a working early-access funnel. →</p>
+    </a>
+    <a href="demo.html" style="border:1px solid var(--ln3);border-radius:16px;padding:26px 28px;background:var(--sf);display:block" style-hover="border-color:var(--acc);transform:translateY(-3px)">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;color:var(--acc)">BUILT ✓</div>
+      <h3 style="margin:10px 0 0;font-size:17px;font-weight:600;color:var(--t0)">The live deliberation demo</h3>
+      <p style="margin:8px 0 0;font-size:13.5px;line-height:1.6;color:var(--t5)">A thousand-agent panel arguing about a real product decision — watchable, interrogable, running now. →</p>
+    </a>
+    <div style="border:1px dashed var(--ln6);border-radius:16px;padding:26px 28px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;color:var(--t6)">NEXT · VALIDATION SPRINT</div>
+      <h3 style="margin:10px 0 0;font-size:17px;font-weight:600">8–10 calls, logged verbatim</h3>
+      <p style="margin:8px 0 0;font-size:13.5px;line-height:1.6;color:var(--t5)">3 strategic-LP operators (homebuilding, multifamily, brokerage research), 2 simulation-category founders, 2 capital desks, and 1 skeptic on purpose: a fielded-research lifer. Every call ends with "what would make this fail?"</p>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section style="max-width:1240px;margin:0 auto;padding:40px 40px 120px;text-align:center">
+  <div style="border:1px solid var(--ln3);border-radius:20px;background:var(--sf);padding:70px 40px">
+    <h2 style="margin:0;font-size:clamp(28px,3.4vw,44px);font-weight:600;letter-spacing:-.03em">See the population at work.</h2>
+    <p style="margin:18px auto 0;max-width:480px;font-size:15.5px;line-height:1.65;color:var(--t5)">Back to the product — or straight onto the design-partner waitlist.</p>
+    <div style="display:flex;gap:14px;justify-content:center;margin-top:34px;flex-wrap:wrap">
+      <a href="index.html#demo" style="background:var(--acc);color:var(--acc-c);font-weight:600;font-size:15px;padding:14px 28px;border-radius:100px" style-hover="color:var(--acc-c);filter:brightness(1.12)">Watch a live deliberation</a>
+      <a href="index.html#access" style="border:1px solid var(--ln8);color:var(--t1);font-weight:500;font-size:15px;padding:14px 28px;border-radius:100px" style-hover="border-color:var(--acc);color:var(--acc)">Request early access</a>
+    </div>
+  </div>
+</section>
+
+<footer style="border-top:1px solid var(--ln1);padding:44px 40px;display:flex;justify-content:space-between;align-items:center;max-width:1240px;margin:0 auto;flex-wrap:wrap;gap:20px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-opacity=".3" stroke-width="1.5" stroke-dasharray="66 22" stroke-linecap="round" transform="rotate(-50 16 16)"></circle>
+      <path d="M9.5 21.5 V11.5 L16 18.5 L22.5 11.5 V21.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+      <circle cx="16" cy="18.5" r="2.2" fill="var(--acc)"></circle>
+    </svg>
+    <span style="font-weight:600;font-size:14px">microcosm</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t7);margin-left:10px">© 2026 Microcosm Research, Inc.</span>
+  </div>
+  <div style="display:flex;gap:26px;font-size:13px;color:var(--t6)">
+    <a href="index.html" style="color:var(--t6)">Product</a>
+    <a href="#lineage" style="color:var(--t6)">Lineage</a>
+    <a href="#accuracy" style="color:var(--t6)">Accuracy</a>
+  </div>
+</footer>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#37d98a&quot;,&quot;options&quot;:[&quot;#37d98a&quot;,&quot;#22d3ee&quot;,&quot;#f97316&quot;,&quot;#a78bfa&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+class Component extends DCLogic {
+  state = { theme: "dark", preset: "base", m: { ta: 2500, tacv: 18, ea: 100, eacv: 250, pub: 50, fee: 120, mgn: 82, mult: 12 } };
+  setM(k, v) { this.setState({ m: { ...this.state.m, [k]: v }, preset: "" }); }
+  applyPreset(name, m) { this.setState({ m: m, preset: name }); }
+  componentDidMount() {
+    const t = localStorage.getItem("mc-theme") || "dark";
+    document.documentElement.dataset.theme = t;
+    this.setState({ theme: t }); if (this.props.accent) ["--acc","--acc-hero"].forEach(k => document.documentElement.style.setProperty(k, this.props.accent)); }
+  componentDidUpdate(p) { if (p.accent !== this.props.accent && this.props.accent) ["--acc","--acc-hero"].forEach(k => document.documentElement.style.setProperty(k, this.props.accent)); }
+  renderVals() {
+    const m = this.state.m;
+    const fmtM = (n) => n >= 9.95e8 ? "$" + (n / 1e9).toFixed(2).replace(/0$/, "") + "B" : n >= 99.5e6 ? "$" + Math.round(n / 1e6) + "M" : n >= 1e6 ? "$" + (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M" : "$" + Math.round(n / 1e3) + "K";
+    const team = m.ta * m.tacv * 1000, ent = m.ea * m.eacv * 1000, pub = m.pub * m.fee * 1000;
+    const y5 = team + ent + pub, ev = y5 * m.mult, gp = y5 * (m.mgn / 100);
+    const bars = [4, 12, 30, 60, 100].map((p, i) => ({ y: "Y" + (i + 1), v: fmtM(y5 * p / 100), style: "height:" + Math.max(3, p) + "%;background:" + (i === 4 ? "var(--acc)" : "var(--acc-dim)") + ";border:1px solid var(--acc);border-radius:6px 6px 2px 2px;width:100%;box-sizing:border-box" }));
+    const btn = (on) => "border:1px solid " + (on ? "var(--acc)" : "var(--ln6)") + ";background:" + (on ? "var(--acc-dim)" : "transparent") + ";color:" + (on ? "var(--acc)" : "var(--t3)") + ";font-family:'JetBrains Mono',monospace;font-size:12px;padding:7px 16px;border-radius:100px;cursor:pointer";
+    return {
+      isDark: (this.state.theme || "dark") === "dark", isLight: this.state.theme === "light",
+      vTa: m.ta, vTacv: m.tacv, vEa: m.ea, vEacv: m.eacv, vPub: m.pub, vFee: m.fee, vMgn: m.mgn, vMult: m.mult,
+      fTa: m.ta.toLocaleString(), fTacv: "$" + m.tacv + "K", fEa: String(m.ea), fEacv: "$" + m.eacv + "K", fPub: String(m.pub), fFee: "$" + m.fee + "K", fMgn: m.mgn + "%", fMult: Number(m.mult).toFixed(1) + "×",
+      teamF: fmtM(team), entF: fmtM(ent), pubF: fmtM(pub), y5F: fmtM(y5), evF: fmtM(ev), gpF: fmtM(gp), bars,
+      hTa: (e) => this.setM("ta", +e.target.value), hTacv: (e) => this.setM("tacv", +e.target.value),
+      hEa: (e) => this.setM("ea", +e.target.value), hEacv: (e) => this.setM("eacv", +e.target.value),
+      hPub: (e) => this.setM("pub", +e.target.value), hFee: (e) => this.setM("fee", +e.target.value),
+      hMgn: (e) => this.setM("mgn", +e.target.value), hMult: (e) => this.setM("mult", +e.target.value),
+      pBear: () => this.applyPreset("bear", { ta: 1000, tacv: 12, ea: 40, eacv: 150, pub: 15, fee: 80, mgn: 75, mult: 7 }),
+      pBase: () => this.applyPreset("base", { ta: 2500, tacv: 18, ea: 100, eacv: 250, pub: 50, fee: 120, mgn: 82, mult: 12 }),
+      pBull: () => this.applyPreset("bull", { ta: 5000, tacv: 24, ea: 200, eacv: 320, pub: 100, fee: 160, mgn: 85, mult: 15 }),
+      bench: [
+        { n: "Self-serve synthetic interviews (Synthetic Users-class)", p: "$2–27 / interview", note: "~$11 per study — horizontal, uncalibrated, no domain ontology" },
+        { n: "Traditional fielded survey / focus group", p: "$15–50K / study", note: "~$200 per organic panel interview; weeks to field" },
+        { n: "RE feasibility & market study (RCLCO / Zonda-class)", p: "$15–50K / study", note: "the six-week unit of work the team tier replaces" },
+        { n: "Enterprise research platforms (Remesh-class)", p: "$30–100K / yr", note: "subscription precedent for insights software" },
+        { n: "Aaru-class enterprise simulation", p: "six figures / yr", note: "sales-led; Accenture, EY, IPG partner deals" },
+        { n: "Replica-class city data subscriptions", p: "$100–500K / yr", note: "public-agency procurement precedent (MTA, Illinois)" }
+      ],
+      bearBtn: btn(this.state.preset === "bear"), baseBtn: btn(this.state.preset === "base"), bullBtn: btn(this.state.preset === "bull"),
+      breath: [
+        { k: "THE WEDGE", d: `Buyer panels for product decisions — floor plans, unit mix, amenity packages, price points — sold as prepaid study blocks against a $15–50K, six-week incumbent unit of work. Numerous, reversible decisions where being directionally right in an afternoon wins.` },
+        { k: "THE TWIN", d: `The calibrated metro population — absorption, rents, migration, entitlement consent — sold as continuous subscriptions to capital allocators and per-intervention studies to cities. The wind tunnel for the two groups who bet billions on cities blind.` },
+        { k: "THE MOAT", d: `The outcome corpus: actual sales curves, lease-up velocities, and hearing results assembled through the calibration consortium — data nobody can scrape, contributed by the operators who benefit most, with the money arriving in the same motion.` }
+      ],
+      ties: [
+        { tag: "WORLD THESIS · SECTION 02", t: "Simulation Before Steel", d: `Everything gets built twice — first in a world model. Microcosm is the demand-and-consent wind tunnel: the second build happens in front of a thousand synthetic buyers and neighbors before the first one breaks ground. $130B of projects were blocked or delayed in Q1 2026 alone.` },
+        { tag: "WORLD THESIS · SECTION 02", t: "The Simulation Economy", d: `Simulation becomes a stage-gate of the physical world — consent hearings, pre-sales, operations. Microcosm sells the stage-gate for the two questions that gate everything else: will they pay, and will they allow it.` },
+        { tag: "WORLD THESIS · SECTION 02", t: "Services Become Software", d: `The six-week feasibility study re-rates to software margins. We don't sell AI to the research industry — we replace its unit of work: the study becomes a run, the panel becomes a population, the consultant's margin becomes our gross margin.` },
+        { tag: "WORLD THESIS · SECTION 02", t: "Reality Is the Last Dataset", d: `The moat is not the agents — it is the outcome corpus they calibrate against: real sales curves, lease-ups, hearing results. Fifth Wall's LP portfolios are that corpus, assemblable by invitation and warrant — scrapeable by no one.` },
+        { tag: "WORLD THESIS · SECTION 02", t: "Agents Are the New Users", d: `Research stops being a PDF a human reads and becomes an API an underwriting agent calls mid-model. Microcosm ships machine-legible outputs from day one — predicted absorption as a callable input, not a slide.` },
+        { tag: "WORLD THESIS · SECTION 02", t: "Intelligence Becomes Cheap", d: `Per-unit intelligence deflating 10–40× a year is what makes a thousand-agent metro run cost dollars, not grants. The price curve is why this company is possible in 2026 and was not in 2023.` }
+      ],
+      mkt: [
+        { k: "TAM", v: "$14B+/yr", d: `Global real estate consulting — market research and due diligence are its two largest segments — inside a $150B+ global insights industry and a $198B US real estate services market.` },
+        { k: "SAM", v: "$3–5B/yr", d: `US demand, product, pricing, entitlement, and policy questions across the top 50 metros — the questions a calibrated synthetic population can answer at decision grade today.` },
+        { k: "SOM · YR 5", v: "$60–120M", d: `The base case below: ~2,600 paying organizations — 2,500 team-tier at ~$18K/yr plus 100 enterprise at ~$250K — and 50 public-sector engagements. Roughly 2–3% of SAM.` }
+      ],
+      comps: [
+        { n: "Aaru", why: "The horizontal category leader", pays: "~$1B headline Series A on <$10M ARR (Dec 2025)", read: "The category premium is real; the vertical is unclaimed" },
+        { n: "EliseAI", why: "Vertical AI in real estate, at scale", pays: "$2.2B on $100M+ ARR (~20×, Aug 2025)", read: "What the market pays a real-estate AI company that wins its wedge" },
+        { n: "Simile", why: "Deepest research pedigree, resolutely horizontal", pays: "$100M Series A (Index; Gallup partnership)", read: "The science is fundable; the domain corpus is the open flank" },
+        { n: "Replica", why: "Synthetic populations for cities, pre-LLM", pays: "$52M raised; MTA, Illinois, Chicago contracts", read: "Public agencies already procure synthetic-population studies" },
+        { n: "CoStar", why: "The terminal comp: RE data + workflow moat", pays: "~$30B public company", read: "What owning a decision layer in this industry is ultimately worth" }
+      ],
+      rounds: [
+        { r: "SEED · NOW", amt: "$4M", use: `One metro twin backtested against five natural experiments with published error bars; panel MVP; five design partners from the LP base.`, gate: "Backtests beat incumbent baselines in public" },
+        { r: "SERIES A · MO 12–30", amt: "$18M", use: `Calibration consortium closed; 20+ paying accounts across homebuilding and multifamily; entitlement-rehearsal and policy wedges live.`, gate: "Accuracy record public; net revenue retention >120%" },
+        { r: "SERIES B · MO 30–48", amt: "$35M", use: `Underwriting API embedded in partner pro formas; continuous twins in 10+ metros; three or more standing public-sector contracts.`, gate: "Simulation is a line item in partner underwriting" }
+      ],
+      team: [
+        { num: "01", track: "SCIENCE", role: "Chief Executive Officer", who: "Vertical-AI founder-operator who has sold research into real estate.", seat: "Owns the position. Sells the first ten accounts personally." },
+        { num: "02", track: "SCIENCE", role: "Chief Scientist — Generative Agents", who: "Smallville-lineage researcher.", seat: "Owns believability: memory, reflection, population architecture." },
+        { num: "03", track: "SCIENCE", role: "Head of Calibration", who: "Urban-economics empiricist, Hsieh–Moretti lineage.", seat: "Owns the error bars: backtests against natural experiments." },
+        { num: "04", track: "SCIENCE", role: "LLM Systems Lead", who: "Thousand-agent inference at consumer cost.", seat: "Owns the run: orchestration, caching, the cost curve." },
+        { num: "05", track: "DOMAIN", role: "Homebuilding Division President", who: "P&L owner from a top-10 production builder.", seat: "Owns the wedge: floor-plan and spec-mix decisions." },
+        { num: "06", track: "DOMAIN", role: "Multifamily Research Head", who: "Lease-up and amenity-mix authority.", seat: "Owns the second wedge — and the consortium pitch." },
+        { num: "07", track: "DOMAIN", role: "Entitlement Strategist", who: "Land-use attorney or former planning director.", seat: "Owns consent rehearsal: hearings, coalitions, councils." },
+        { num: "08", track: "DOMAIN", role: "Capital-Markets Research Chief", who: "Ex-institutional allocator.", seat: "Owns the investor-sentiment product and LP trust." },
+        { num: "09", track: "PRODUCT", role: "Head of Product — Reports", who: "Research-tools product leader.", seat: "Owns the deliverable: from run to decision-grade report." },
+        { num: "10", track: "PRODUCT", role: "Forward-Deployed Research Lead", who: "Embedded-analyst model, Palantir school.", seat: "Owns onboarding: turns pilots into changed decisions." },
+        { num: "11", track: "PRODUCT", role: "Enterprise GTM Lead", who: "Proptech sales into builders and REITs.", seat: "Owns the pipeline: study blocks into annual contracts." },
+        { num: "12", track: "PRODUCT", role: "Design Lead — Simulation UX", who: "Makes a thousand agents legible.", seat: "Owns the interface: deliberation you can watch and interrogate." },
+        { num: "13", track: "CAPITAL", role: "Data Partnerships Lead", who: "Closes the calibration consortium.", seat: "Owns the moat: outcome data in; credits and warrants out." },
+        { num: "14", track: "CAPITAL", role: "Public-Sector Lead", who: "Replica-lineage civic go-to-market.", seat: "Owns the policy channel: cities, states, philanthropies." },
+        { num: "15", track: "CAPITAL", role: "CFO — Creative Capital", who: "Structures beyond the venture check.", seat: "Owns money-in: prepaids, consortium, grants, rev-share." },
+        { num: "16", track: "CAPITAL", role: "Fair-Housing & Model-Risk Counsel", who: "Compliance as a product feature.", seat: "Owns the red lines: what we simulate, and what we never will." }
+      ],
+      capways: [
+        { num: "01", k: "REVENUE · DAY ONE", t: "Prepaid design-partner study blocks", d: `Strategic-LP operators prepay annual blocks of simulation studies at a discount to the $15–50K consultant study each run replaces. Cash-generative from the first block — the pilot IS the purchase.`, from: "LP operators", to: "Microcosm" },
+        { num: "02", k: "STRUCTURE · THE MOAT THAT PAYS US", t: "The calibration consortium", d: `Founding members contribute outcome data — sales curves, lease-ups, hearing results — plus an annual membership, and receive study credits and warrants. The moat and the revenue are the same motion; every member makes the product better for every other.`, from: "Outcome data + fees", to: "Calibrated twin" },
+        { num: "03", k: "CHANNEL · PUBLIC MONEY", t: "The policy wind-tunnel channel", d: `Cities, states, and pro-housing philanthropies pay per intervention study — rent control, upzoning, transit — on the procurement path Replica already proved with the MTA and the State of Illinois. Grant-funded backtests convert to standing twin subscriptions.`, from: "Cities + funders", to: "Per-study fees" }
+      ],
+      convos: [
+        { n: "1 · Lennar", chip: "STRATEGIC LP", ask: "a prepaid pilot block — floor-plan and product-mix panels across three Sun Belt divisions", why: `Lennar is carrying incentive loads of ~13% of price (~$55K a home) — the direct, audited cost of guessing demand wrong. A $500K study block that moves spec-mix decisions pays for itself on a single community, and they already back AI ventures adjacent to their stack.` },
+        { n: "2 · Equity Residential", chip: "STRATEGIC LP", ask: "founding consortium membership — lease-up outcome data plus $250K/yr for credits and warrants", why: `A slow lease-up bleeds six figures a month in carry. Their historical lease-up curves make the twin accurate on their submarkets first — an edge nobody else gets, priced in warrants on the layer their own data builds.` },
+        { n: "3 · CBRE", chip: "STRATEGIC LP", ask: "white-label distribution — Microcosm-powered studies inside the advisory arm, rev-share plus equity", why: `The services-to-software re-rating is coming for advisory margins either way. Owning the engine beats being disrupted by it — and their distribution reaches every client we would ever sell.` }
+      ],
+      wants: [
+        { t: "Production homebuilders", d: "Every mis-guessed floor plan becomes a five-figure incentive load at closing", em: "first prepaid study blocks" },
+        { t: "Multifamily developers & operators", d: "A slow lease-up is $100K+/month of carry; product and amenity mix is finally testable", em: "consortium anchors" },
+        { t: "Strategic-LP research arms", d: "Better answers, faster, at software cost — plus equity in the layer", em: "distribution partners" },
+        { t: "Pro-housing funders & city halls", d: "Interrogable evidence for the zoning fight beats a consultant PDF", em: "the public channel" },
+        { t: "Lenders & allocators", d: "Absorption risk priced before commitment — simulation as an underwriting input", em: "the API buyers" }
+      ],
+      fears: [
+        { t: "Incumbent feasibility consultancies", d: "Their $15–50K, six-week unit of work becomes a same-day run", em: "co-opt: white-label the engine — CBRE first" },
+        { t: "Survey-panel & fielded-research vendors", d: "The say-do gap is their permanent flaw and our explicit correction", em: "where the accuracy argument lands" },
+        { t: "Gut-feel investment committees", d: "A backtested counterfactual beats the loudest voice in the room", em: "co-opt: hand them the wind tunnel" },
+        { t: "RE data incumbents (CoStar-class)", d: "Simulation is the layer above their data — they own the corpus but not the agents", em: "the acquirer of last resort, which tells you where the value is" }
+      ],
+      steel: [
+        { n: "1", t: "Calibration may not beat baselines", d: `The entire bet is that persona-grounded agents calibrated on outcome data out-predict incumbent methods out-of-sample. Published 70–95% silicon-sampling accuracy is on surveys — not absorption curves. If the twin can't beat a naive baseline on held-out natural experiments, we are a demo, not a company.`, kill: `Backtests fail to beat incumbent baselines on the majority of five held-out natural experiments after two quarters of calibration.` },
+        { n: "2", t: "The tails are where the money is — and where agents are weakest", d: `LLM populations compress variance, and luxury, niche, and first-of-kind products live in the tails. Averages we can win; if the P10/P90 of simulated demand is systematically wrong, underwriters won't trust the middle either.`, kill: `Simulated demand deciles miss realized top- and bottom-decile outcomes by more than the incumbent method on two of three wedge use cases.` },
+        { n: "3", t: "Horizontal players verticalize faster than we calibrate", d: `Aaru raised at a ~$1B headline; Simile employs the founding scientists of the field. If either signs a national builder or a CoStar-class data partner before our consortium closes, the calibration moat inverts and we are the ones locked out.`, kill: `A horizontal leader ships a named real-estate product with proprietary outcome data before our first consortium cohort closes.` },
+        { n: "4", t: "Trust may not clear procurement", d: `Nobody bets a $90M parcel on a synthetic panel in year one — and they shouldn't. The wedge must be decisions that are numerous and reversible. If pilots stay "interesting" without changing decisions, we decay into a content vendor with a research aesthetic.`, kill: `Under 30% of paid pilots convert to annual contracts across the first twenty — or customers cannot name a decision a run changed.` }
+      ],
+      checks: [
+        { t: "NARRATOR TEST", d: `Pass — things exist because we made them exist: this site, the live deliberation demo, and the working model on this page are built and running, not proposed.` },
+        { t: "SPENDER TEST", d: `Pass — every structure in the plan brings money in: prepaid blocks, consortium memberships, policy grants, white-label rev-share. The first three conversations are named, with the reason each says yes.` },
+        { t: "MEETING-MAKER TEST", d: `Pass — progress is reported as completed actions: runs built, backtests published, answers received. Come back with what you got.` }
+      ],
+      toggleTheme: () => { const t = this.state.theme === "dark" ? "light" : "dark"; localStorage.setItem("mc-theme", t); document.documentElement.dataset.theme = t; this.setState({ theme: t }); },
+      lineage: [
+        { year: "1971", t: "Schelling's segregation model", d: "Simple agent rules on a grid produce complex emergent macro-patterns. The founding result of agent-based modeling — and, notably, its canonical application was residential: where people choose to live. For the next five decades, agents stayed rule-based, limited to narrow hand-coded behavior.", tag: "AGENT-BASED MODELING · EMERGENCE" },
+        { year: "2023", t: "Generative Agents — the Smallville paper", d: "25 LLM agents in a sandbox town, with a memory-stream, retrieval, and reflection architecture, produce believable emergent social behavior: one seeded intention to host a party propagates into coordinated invitations across the town. This becomes the reference design for persistent agent memory.", tag: "PARK ET AL. · STANFORD · MEMORY + REFLECTION" },
+        { year: "2024", t: "Generative agent simulations of 1,000 people", d: "Agents built from two-hour interviews with 1,052 real individuals replicate their survey responses at 85% of participants' own two-week test-retest consistency — 14–15 points above demographic baselines, with reduced bias across racial and ideological groups. The anchor validation for the category. Caveat honored: on behavioral-economic games, interview grounding added little over baselines.", tag: "PARK ET AL. · STANFORD HAI · arXiv:2411.10109" },
+        { year: "2024–25", t: "Societies at scale", d: "Project Sid runs 1,000+ agents that spontaneously specialize into roles, form an economy, and vote on a constitution. AgentSociety simulates 10,000+ agents and ~5M interactions to study polarization and policy. OASIS scales the architecture to a million agents with 23 social action types.", tag: "ALTERA · AGENTSOCIETY · OASIS" },
+        { year: "2026", t: "Packaged simulation workflows", d: "Open-source stacks compress the pipeline into a product shape: seed material in, thousands of agents debating on forum-like platforms, a report agent writing the analysis out. The architecture is now off-the-shelf; the differentiation moves to data, calibration, and domain depth.", tag: "SEED → DEBATE → REPORT" },
+        { year: "NOW", t: "The vertical moment", d: "Frontier models are finally good at modeling human irrationality; inference costs have collapsed enough to make thousand-agent runs economical. The horizontal category is funded and validated. What doesn't exist: a simulation platform grounded in the decisions, data, and stakeholders of the built world. That is Microcosm.", tag: "MICROCOSM · VERTICAL · CALIBRATED" }
+      ],
+      works: [
+        { t: "Stated preferences & concept reactions", d: "floor plans, renderings, amenity packages, listing creative" },
+        { t: "Message & positioning tests", d: "which framing lands with which segment, and why" },
+        { t: "Directional ranking", d: "A over B with reasoning — the everyday decision input" },
+        { t: "Convergent questions", d: "where individual agent errors wash out in aggregate" },
+        { t: "Anticipating adversaries", d: "objections, hard questions, and counterarguments before they're voiced" }
+      ],
+      fails: [
+        { t: "Sycophancy", d: "RLHF-tuned models over-agree, inflating positivity — corrected, not ignored" },
+        { t: "Homogeneity", d: "agents show far smaller response variance than humans; tails get compressed" },
+        { t: "WEIRD bias", d: "training data over-represents Western, educated, online populations" },
+        { t: "Optimism-biased preferences", d: "synthetic respondents claim to care more about health and eco than real buyers do" },
+        { t: "Contamination", d: "some published correlations reflect models predicting data they trained on" }
+      ],
+      domain: [
+        { t: "Irreversible, high-stakes decisions", stat: "$90M / parcel", d: "Land is bought once, product entitled once, a tower built once — committed before a single buyer is surveyed. There is no A/B test for a master-planned community." },
+        { t: "Slow, expensive feedback loops", stat: "$100K+ / mo", d: "A slow multifamily lease-up bleeds six figures of carry monthly; you learn you mis-designed 12+ months after the decision, when it's unfixable." },
+        { t: "Fragmented, adversarial stakeholders", stat: "10+ parties", d: "Buyers, brokers, lenders, appraisers, contractors, councils, neighbors, LPs — each with different incentives. Exactly what multi-agent simulation is built to model." },
+        { t: "Thin, costly consumer research", stat: "$15–50K / study", d: "Decision-grade feasibility work runs weeks and five figures per question. Simulation makes the marginal research question nearly free." },
+        { t: "Entitlement as a social process", stat: "18–24+ mo", d: "Community opposition is structured and semi-predictable — public comment, council dynamics, organized coalitions. Rehearsing it has direct dollar value: opposition adds ~5.6% to development cost on average." }
+      ],
+      category: [
+        { t: "Aaru", money: "$50M+ SERIES A", d: "Multi-agent population prediction at a ~$1B headline valuation. 5,000-agent runs in 30–90 seconds; enterprise clients recreated a 3,600-respondent global study in a day at 90%+ correlation." },
+        { t: "Simile", money: "$100M SERIES A", d: "Founded by the Smallville and 1,000-person-study authors; Index-led round with Gallup partnership. The deepest research pedigree in the category — and resolutely horizontal." },
+        { t: "Artificial Societies", money: "SEED · YC/POINT72", d: "Social-graph simulation where personas influence each other — 100,000+ simulations run. Validates forum dynamics as the differentiator over one-shot personas." },
+        { t: "Evidenza", money: "BOOTSTRAPPED · 100+ CLIENTS", d: "B2B synthetic respondents, profitable, with claimed ~88% accuracy and a 95% correlation result on a C-suite survey. Proof of enterprise willingness-to-pay." },
+        { t: "Viewpoints, Synthetic Users & co.", money: "VENTURE SEED", d: "Multimodal concept testing and synthetic interviews, with validated accuracy on medium/high effect sizes. The horizontal tooling layer is crowded and commoditizing." },
+        { t: "Incumbent RE research", money: "$6–150K / ENGAGEMENT", d: "Custom feasibility studies, fielded surveys, and advisory consulting: slow, expensive, human-fielded — and structurally resistant to automating their own core offering." }
+      ],
+      stages: [
+        { phase: "PHASE I · WEDGE", band: "Design partners", bandLabel: "SEED STAGE", points: ["One painful, measurable use case: floor-plan and product-mix buyer panels, 2–3 metros", "Backtesting harness wired to real historical sales and absorption data from day one", "Panel + forum modes, report generation, distributional and interview-grounded seeding"] },
+        { phase: "PHASE II · PROOF", band: "Calibrated accuracy", bandLabel: "SERIES A GATE", points: ["Backtested accuracy beats incumbent baselines on a defined public benchmark", "3–5 paying customers across homebuilding and multifamily", "Entitlement rehearsal and investor-sentiment wedges come online"] },
+        { phase: "PHASE III · PLATFORM", band: "Underwriting layer", bandLabel: "GROWTH", points: ["Simulation embedded as an underwriting input via API — predicted absorption feeding pro formas", "Continuous synthetic demand sensing per submarket and product type", "The standard synthetic-demand layer for the built world"] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
