@@ -17,6 +17,8 @@ The product exists to answer the hardest questions in the real estate vertical �
 
 - `index.html` / `demo.html` / `research.html` — static marketing site + scripted demo (design reference; do not break)
 - `support.js` — generated design runtime for the static pages only (NOT used by the app)
+- `docs/persona-taxonomy.md` — the master built-world persona library (~1,100 base personas + modifier axes); canonical input to the persona pre-generation pipeline (§3.3)
+- `docs/demo-speaker-script.md` — presenter script for the site + demo
 - The app will be built as a separate Next.js application (see §9); the static site remains the marketing front door.
 
 ### Product principles
@@ -50,9 +52,10 @@ The user states the research problem and what they want answered.
 
 ### Stage 3 — Population (the differentiator — see §3 for the full seeding spec)
 
+- **Composition selector (first choice on the screen):** `Experts only` · `Consumers/residents only` · `Mixed panel` — with independent count controls for each group. The casting pass recommends one of the three based on the brief (see the guidance table in §4.2), and the UI explains the tradeoff inline: experts answer *"will it work / is it feasible / how would professionals underwrite this,"* consumers and residents answer *"will people want it / pay for it / allow it."*
 - The system proposes a population automatically from the brief + corpus: expert seats, consumer/resident cohorts, stakeholder seats, and at least one adversarial seed.
 - The user can: accept as-is · edit any persona · add from their Agent Library · add from the Marketplace (Phase 3) · change counts · re-generate with guidance ("more first-time buyers; add a school-board voice").
-- Population size: experts 4–64, consumers/residents 0–1,000 (POC ceiling; architecture supports more later).
+- Population size: experts 4–500+ (large expert panels auto-organize into discipline sub-panels that roll up), consumers/residents 0–1,000 (POC ceiling; architecture supports 10K+ later via cohort batching).
 
 ### Stage 4 — Simulation (run)
 
@@ -105,7 +108,13 @@ Every agent — expert, consumer, resident, stakeholder — is one JSON document
 ### 3.2 Three seeding modes (all three can mix in one population)
 
 **A. Auto (task-derived) — the default.**
-An LLM "casting director" pass reads the brief + corpus and proposes the panel: which expert seats the question demands, which consumer/resident cohorts are affected, which stakeholders gate the outcome, and one or more adversarial seeds. Output = list of persona JSONs, shown as editable cards (the demo's Seed screen). Casting rules:
+The **Casting Director** is a frontier-tier LLM pass (always the strongest model tier regardless of the run's economy setting — casting quality bounds simulation quality) that reads the brief + corpus and makes THREE decisions, in order:
+
+1. **Composition** — experts only, consumers/residents only, or mixed, and how many of each (rules in §4.2's guidance table).
+2. **Seeding method per cohort** — it chooses the right mode for each group it casts: demographic seeding (mode B) whenever the cohort must represent a real place or market ("renters within 3 miles", "move-up buyers in Maricopa County"); narrative seeding (mode C) for experts, stakeholders, and adversarial seeds — and it *writes those narratives itself* (role, backstory, stances, traits), so a user who types one paragraph gets a fully-authored panel with zero manual work.
+3. **Library match** — before generating any persona from scratch, it vector-matches each needed seat against the pre-generated persona library (§3.3): exact-fit personas are reused as-is, near-fits are instantiated with modifier axes (geography, disposition, sophistication), and only true gaps are generated new — then written back to the library so the catalog self-heals.
+
+Output = list of persona JSONs, shown as editable cards (the demo's Seed screen). Non-negotiable casting rules:
 - Every question-to-resolve must have ≥1 expert seat that owns it.
 - Every decision with a community surface gets resident cohorts + an organized-opposition seed.
 - Every panel gets at least one skeptic ("we hire our own critics").
@@ -113,77 +122,139 @@ An LLM "casting director" pass reads the brief + corpus and proposes the panel: 
 **B. Demographic (data-grounded cohorts).**
 For consumer/resident populations that must look like a real place:
 - **Primary source: Census ACS PUMS** — free public microdata (available on the [AWS Open Data Registry](https://registry.opendata.aws/census-dataworld-pums/)), giving joint distributions of age, household composition, income, tenure, occupation, commute at PUMA level. The user picks a geography (ZIPs / county / metro); we map to PUMAs, sample N household records proportionally (respecting PUMS weights), and an LLM pass turns each sampled record into a persona narrative (name, backstory, concerns) that *preserves the record's attributes*.
+- **How we access it (decided):** both an API and free bulk downloads exist. The Census Bureau's **Microdata API** (`api.census.gov/data/{year}/acs/acs1|acs5/pums`) is free (API key is free; needed above ~500 calls/day) and fine for prototyping. For production we **bulk-load**: PUMS person + household CSVs are public-domain downloads (census.gov FTP and the AWS Open Data mirror, a few GB per state-year) loaded into our own Postgres (or Parquet + DuckDB) — no rate limits, millisecond weighted sampling, and an annual refresh job when each new ACS vintage drops. POC ships with Arizona pre-loaded (matches the demo); metros are added by loading their states.
 - **Upgrade path:** UrbanPop-class national synthetic populations (ORNL, published in Nature Scientific Data 2025) downscale PUMS to block-group level via iterative proportional fitting — same pipeline, finer geography. HUD, BLS, and FRED series can condition cohort context (rents, employment mix, rates).
 - The demo's "ACS PUMS, ZIPS 85212 + 85142" line is exactly this mode.
 
 **C. Narrative (authored personas).**
 Manual creation and editing: the user writes (or dictates) role, backstory, stances; or pastes a bio; or asks the LLM to draft one from a one-liner ("a land-use attorney who's fought three data-center CUPs"). Saved to the Agent Library for reuse.
 
-### 3.3 Real-estate persona taxonomy (starter library, ships with the product)
+### 3.3 The persona library — taxonomy, pre-generation, and matching
 
-- **Capital:** LP allocator · credit officer · appraiser · powered-land investor · construction lender · insurance underwriter
-- **Development:** land acquisition lead · division president (homebuilder) · multifamily developer · GC/estimator · architect
-- **Market experts:** submarket broker (by asset class) · feasibility consultant · grid/utility planner · water resources engineer · fiber/telecom architect · geotech engineer · environmental (Phase I) consultant
-- **Civic:** city planner · council member archetypes · planning commissioner · land-use counsel · school-district rep · transit agency rep
-- **Community:** homeowner cohorts (by ACS profile) · renter cohorts · HOA president · organized-opposition advocate (adversarial) · local business owner
-- **Demand-side consumers:** first-time buyer · move-up buyer · downsizer · relocating tech worker · Section 8 voucher holder · retiree on fixed income · investor-buyer
+**Canonical source: [`docs/persona-taxonomy.md`](docs/persona-taxonomy.md)** — the master built-world persona library (~1,100 base personas). It is structured as:
+
+- **Part I — Horizontal library (37 categories):** Capital (equity · debt/credit) · individual investors · risk/insurance/title · development · design & engineering · construction (management · trades/field) · residential brokerage · commercial brokerage · mortgage & home finance · home services & inspection · property/asset management · hospitality & leisure · market experts/diligence/data · proptech · power & energy (generation · grid/utilities/markets · behind-the-meter) · water/waste/environmental · transportation/logistics · telecom & digital infrastructure · civic & regulatory (local · state/federal) · legal & professional · community & advocacy · land & natural resources · homeowners (by wealth tier & life situation) · renters & residential demand · commercial occupiers · institutions/nonprofits/anchors · disaster/resilience/recovery · media & influence · outdoor living/landscape/pool · agriculture · live events & festivals · film/TV/studio production
+- **Part II — Asset-type build stacks:** the specialist rosters per product type (data center — the demo's stack, production homebuilding, custom/luxury, multifamily, high-rise/condo, mall/retail, industrial/logistics, cold storage, life science, hotel/resort, senior housing, studios/venues)
+- **Part III — Technology & product-validation library:** engineering, data/AI, design/research, product/leadership, company-building/capital, GTM personas, and **buyer-side validation personas run adversarially by default** (enterprise buying committees, skeptics, churned customers) — this is how Microcosm simulates *proptech and software* questions, not just physical assets
+- **Modifier axes (12):** asset class · geography/regulatory regime · disposition (cooperative→adversarial) · sophistication · cycle posture · scale · wealth tier · tenure/life stage · risk exposure · tech adoption · company stage · industry vertical. Base persona × axes = tens of thousands of effective personas.
+
+**Additional demand-side cohorts we layer on top** (gaps worth owning for market simulations): retail shoppers & restaurant-goers (trade-area demand) · hotel guests & STR travelers · office employees (RTO sentiment) · industrial/logistics end-customers (shippers) · hyperscaler capacity planners (data-center demand) · event attendees. These fill out the *commercial consumer* side the same way §29 covers residential.
+
+**The pre-generation pipeline (system setup, runs offline):**
+1. Parse the taxonomy into base-persona records.
+2. For each base persona, a frontier-model batch job generates the full persona JSON (§3.1): backstory, stances, traits, discipline, tool needs — reviewed once, then frozen as `library` provenance, version 1.
+3. Embed every persona (role + backstory + stances) into pgvector.
+4. Popular modifier-axis instantiations (e.g., "construction lender × Texas × skeptical × regional") are generated lazily on first use and cached back to the library.
+
+**The matching flow (simulation time):** the Casting Director drafts the seats it needs → each draft seat is vector-searched against the library → **hit:** reuse (optionally re-instantiated along modifier axes) · **near-hit:** fork and adjust · **miss:** generate fresh, tag `auto` provenance, and queue for library backfill review. Users always see which of their panel came from the library vs. was custom-generated for them.
 
 ### 3.4 Agent Library & reuse
 
 - Every persona (and every **Persona Set** — a saved panel composition like "Phoenix data-center diligence panel") is versioned and org-scoped.
 - Users can favorite, fork, and re-run personas across simulations. Reuse is the retention loop.
 
-### 3.5 Marketplace (Phase 3)
+### 3.5 Marketplace (Phase 3) — our own, first-party
 
-- Firms publish persona sets ("CBRE Entitlement Panel — Sun Belt", "JBRC Buyer Cohorts 2027") — free or paid; revenue share.
-- Precedent: swarms.world already operates a marketplace for prompts/agents — validate demand there before building our own storefront. Marketplace listings use the same persona JSON with `public: true` + pricing metadata. Review/verification gate before listing (quality + fair-housing screen).
+The Microcosm Marketplace is a first-party storefront we own and operate (not a third-party listing venue). Two publishable units:
+
+- **Individual personas/agents** — a single authored expert or cohort ("40-year Maricopa zoning attorney", "Sun Belt build-to-rent renter cohort 2027"), priced free or paid.
+- **Persona sets** — complete panels ("CBRE Entitlement Panel — Sun Belt", "JBRC Buyer Cohorts 2027", "Data Center Diligence Stack") that drop into a simulation as one unit.
+
+Mechanics: listings are the same persona JSON with `public: true` + pricing metadata; publisher revenue share; version pinning (a purchased set keeps working even if the publisher updates); ratings tied to post-run feedback ("did this panel change your decision?"). Every listing passes a review gate — quality rubric + fair-housing screen — before going live. Real-estate firms publishing their institutional judgment as agents is both a revenue stream for them and a calibration flywheel for us.
 
 ---
 
-## 4 · Simulation parameters (user-configurable surface)
+## 4 · Simulation parameters
+
+### 4.1 The configurable surface
 
 | Parameter | Range / options | Default |
 |---|---|---|
-| Interaction mode | Forum · Panel · Debate · Council · Hierarchy · Deep Research (see §5) | template-driven |
-| Expert count | 4–64 | from casting pass |
-| Consumer/resident count | 0–1,000 | from casting pass |
-| Max discussion rounds (`max_loops`) | 1–10 | 3 |
-| Max posts (budget cap) | 50–5,000 | 600 |
+| Population composition | Experts only · Consumers/residents only · Mixed | from casting pass |
+| Interaction mode | Agora · Roundtable · Tribunal · Chamber · Jury · Desk · Expedition (§5) | template-driven |
+| Expert count | 4–500+ (sub-panels auto-form above ~32) | from casting pass |
+| Consumer/resident count | 0–1,000 (POC) → 10,000+ (cohort batching, Phase 2) | from casting pass |
+| Max discussion rounds (`max_loops`) | 1–100 | 3 |
+| Max posts (budget cap) | 50–10,000+ | 600 |
 | Simulated duration | 1–30 "days" (pacing metaphor for the UI) | 14 |
-| Speaker selection (Forum mode) | round-robin · random · priority · mention-driven | priority |
+| Speaker selection (Agora mode) | round-robin · random · priority · mention-driven | priority |
 | Convergence rule | stop on stability of positions · fixed rounds · budget exhausted | stability |
 | Dissent preservation | always on (not configurable) | on |
-| Temperature bands | conservative ·  balanced · exploratory (maps to per-kind temps) | balanced |
+| Temperature bands | conservative · balanced · exploratory | balanced |
 | Tools enabled | per-tool toggles (§7) | docs-only |
 | Adversarial seeds | 0–5 | 1 |
-| Model tier | economy · standard · frontier (§6.4) | standard |
-| Verifier pass | on/off (claim-vs-corpus checking) | on |
+| Model tier | Economy · Standard · Frontier — Anthropic lineup (§6.4) | Standard |
+| Verifier pass | on/off | on |
 | Report template | per decision template, editable section list | template-driven |
 
-Cost estimate is computed and shown **before** launch (posts × mean tokens × model rates), like the demo's "compressed to ~2 minutes" line — no surprise bills.
+Cost estimate is computed and shown **before** launch (posts × mean tokens × model rates), like the demo's "compressed to ~2 minutes" line — no surprise bills. Large settings (500 experts × 100 rounds × 10K posts) are allowed but the estimator will show exactly what that costs before the user commits.
+
+### 4.2 Parameter glossary — what each control is, why it matters, when to use it
+
+This glossary ships in-product as the help copy next to each control. Keep the two in sync.
+
+**Population composition (Experts vs. Consumers/Residents — and how auto-decide works).**
+The two groups answer different questions and are built differently:
+
+| | **Experts** | **Consumers / Residents** |
+|---|---|---|
+| What they are | Professionals reasoning from *checkable constraints* — engineering, regulatory, market, capital | The people whose *behavior you're predicting* — buyers, renters, neighbors, guests, tenants |
+| Where they come from | Narrative seeding: authored/generated backstories from the persona library (§3.3) | Usually demographic seeding: sampled from Census ACS PUMS records for a real geography, then given narratives (§3.2B); narrative-only cohorts also allowed |
+| What they produce | Feasibility findings, risk registers, deal structures, dissent | Demand signals, willingness-to-pay, sentiment distributions, objections |
+| The demo analog | The 48 experts (grid planner, water engineer, investor…) | The 400 ACS-seeded residents of ZIPs 85212/85142 |
+
+So no — consumers/residents aren't *only* census-derived (you can author a purely narrative cohort like "downsizing boomers touring model homes"), but census-grounding is their default superpower: it makes the crowd look like the actual market.
+
+**Auto-decide rule (what the Casting Director applies, and the UI explains):**
+- Question is about *feasibility, engineering, underwriting, legal, timing* ("can this be built / financed / approved?") → **experts only**
+- Question is about *demand, preference, pricing, sentiment* ("will they rent it / pay $X / choose plan A?") → **consumers/residents**, plus a thin expert bench to interpret results
+- Question has a *community or political surface* (rezoning, data centers, density) → **mixed**, always with resident cohorts and an adversarial seed
+- Big capital decisions ("should we buy this parcel?") → **mixed** — the demo's shape: experts deliberate feasibility while residents stress-test consent
+
+**Max discussion rounds** — how many full passes the panel makes over the question. More rounds = positions refine, coalitions form, minds change (the demo's day-13 flip needed the later rounds). 1–3 for quick reads; 10–30 for contested questions; 50–100 only for long-horizon adversarial studies (cost scales linearly).
+
+**Max posts** — the hard budget cap on total messages; the run stops gracefully and synthesizes whatever it has. Protects spend; the estimator prices it before launch.
+
+**Simulated duration** — the narrative clock ("Day 7 of 14") used for pacing, burst rollups, and the report's timeline framing. Doesn't change compute; changes how the deliberation is staged and displayed.
+
+**Speaker selection** (Agora) — who talks next: `priority` (relevance-weighted, most natural), `round-robin` (every voice each cycle, best for panels of equals), `random` (kills anchoring bias), `mention-driven` (agents summon each other with @name — most emergent, least predictable).
+
+**Convergence rule** — when to stop: `stability` (positions stop moving between rounds — the honest default), `fixed rounds` (predictable cost/time), `budget` (run until the post cap). Convergence stats surface in the report either way ("45 of 48 aligned · 3 dissents").
+
+**Temperature bands** — how "loose" agents think: `conservative` for compliance-flavored reads, `balanced` default, `exploratory` for brainstorming and tail-risk hunting (more variance, more surprises, slightly less repeatable).
+
+**Adversarial seeds** — agents *instructed to oppose* (the demo's Elena R.). Why it matters: without seeded opposition, LLM panels drift agreeable and you ship a blind spot. 1 is the default; 2–5 for anything facing a hearing room.
+
+**Model tier** — which Anthropic models power which agent kinds (§6.4). Economy for drafts and big-crowd sentiment runs; Standard for real work; Frontier when the decision at stake dwarfs the run cost.
+
+**Verifier pass** — an independent fact-checking agent that runs *behind* the deliberation: every numeric or factual claim an agent makes is extracted and checked against the uploaded corpus and tool results; contradictions get flagged into the transcript and the report ("9 broker claims contradicted" in the demo is this feature). Why it matters: it's the difference between "agents said things" and "agents said things that survive an audit." Leave it on for anything decision-grade; turn it off only for cheap ideation runs.
+
+**Report template** — which sections the final report must contain (driven by the decision template + questions-to-resolve). Editable pre-run so the output lands in the shape your IC expects.
 
 ---
 
 ## 5 · Interaction modes → swarms architectures
 
-We build on **[swarms](https://github.com/kyegomez/swarms)** (Apache-2.0, `pip install swarms`; also available as a hosted API at `POST /v1/swarm/completions` with a `swarm_type` config). Each product mode maps to a documented architecture:
+We build on **[swarms](https://github.com/kyegomez/swarms)** (Apache-2.0, `pip install swarms`; also available as a hosted API at `POST /v1/swarm/completions` with a `swarm_type` config).
 
-| Product mode (user-facing) | swarms architecture | Use when | Reference |
+**Naming rule:** our interaction modes carry Microcosm names — civic spaces of a city, on theme with "the city in silico" — and never expose the underlying framework names in the product. This table IS the mapping contract; keep it current if either side changes:
+
+| Microcosm mode (user-facing) | swarms architecture | Use when | Reference |
 |---|---|---|---|
-| **Forum** (default — the demo) | `GroupChat` (+ InteractiveGroupChat @mentions) | Open deliberation; full shared history; threads and replies | [group-chat](https://docs.swarms.ai/docs/examples/examples/group-chat) |
-| **Structured rounds** | `RoundRobin` | Every voice heard each round; brainstorm/consensus | [round-robin](https://docs.swarms.ai/docs/examples/examples/round-robin) |
-| **Debate** | `DebateWithJudge` | Two-sided contested question; judge rules + refinement rounds | [debate-with-judge](https://docs.swarms.ai/docs/examples/examples/debate-with-judge) |
-| **Council** | `LLMCouncil` | Independent takes → anonymized peer review → chairman synthesis; kills groupthink | [llm-council](https://docs.swarms.ai/docs/examples/examples/llm-council) |
-| **Expert screen** | `MixtureOfAgents` | Parallel scored expert reads (fast, cheap first pass) | [mixture-of-agents](https://docs.swarms.ai/docs/examples/examples/mixture-of-agents) |
-| **Memo desk** | `HierarchicalSwarm` (director + workers) | Investment-memo output; the swarms real-estate example is our template (~$0.20, ~60s per memo) | [real-estate-investment-memo](https://docs.swarms.ai/docs/examples/examples/real-estate-investment-memo) |
-| **Deep research** | `HeavySwarm` (auto 5-phase: questions → research → analysis → alternatives → verification → synthesis) | Pre-simulation background packs; standalone research tasks | [heavy-swarm](https://docs.swarms.ai/docs/examples/examples/heavy-swarm) |
+| **Agora** (default — the demo) | `GroupChat` (+ InteractiveGroupChat @mentions) | Open-square deliberation; full shared history; threads and replies | [group-chat](https://docs.swarms.ai/docs/examples/examples/group-chat) |
+| **Roundtable** | `RoundRobin` | Every voice heard each round; brainstorm/consensus among equals | [round-robin](https://docs.swarms.ai/docs/examples/examples/round-robin) |
+| **Tribunal** | `DebateWithJudge` | Two-sided contested question; advocates argue, a judge rules, rounds refine | [debate-with-judge](https://docs.swarms.ai/docs/examples/examples/debate-with-judge) |
+| **Chamber** | `LLMCouncil` | Independent takes → anonymized peer review → chair synthesis; kills groupthink | [llm-council](https://docs.swarms.ai/docs/examples/examples/llm-council) |
+| **Jury** | `MixtureOfAgents` | Parallel independent verdicts, scored and aggregated (fast, cheap first pass) | [mixture-of-agents](https://docs.swarms.ai/docs/examples/examples/mixture-of-agents) |
+| **Desk** | `HierarchicalSwarm` (director + workers) | Research-desk memo output; the swarms real-estate example is our template (~$0.20, ~60s per memo) | [real-estate-investment-memo](https://docs.swarms.ai/docs/examples/examples/real-estate-investment-memo) |
+| **Expedition** | `HeavySwarm` (auto 5-phase: questions → research → analysis → alternatives → verification → synthesis) | Autonomous deep research; pre-simulation background packs | [heavy-swarm](https://docs.swarms.ai/docs/examples/examples/heavy-swarm) |
 
 **Composition pattern for a full run (the demo's shape):**
-1. `HeavySwarm` (optional) builds the background research pack from corpus + tools.
-2. `MixtureOfAgents` cheap first-pass: every expert scores the question independently → seeds the agenda and the dimension scores.
-3. `GroupChat` main deliberation (experts + sampled resident interjections), threaded by discipline; convergence detector watches position stability.
-4. `DebateWithJudge` spot-runs on the 1–3 most contested subquestions surfaced in (3).
-5. `HierarchicalSwarm` report desk: director (report synthesizer) + section workers write the final report from transcript + corpus (§8).
+1. **Expedition** (optional) builds the background research pack from corpus + tools.
+2. **Jury** cheap first-pass: every expert scores the question independently → seeds the agenda and the dimension scores.
+3. **Agora** main deliberation (experts + sampled resident interjections), threaded by discipline; convergence detector watches position stability.
+4. **Tribunal** spot-runs on the 1–3 most contested subquestions surfaced in (3).
+5. **Desk** report synthesis: director + section workers write the final report from transcript + corpus (§8).
 
 **Streaming:** swarms ≥8.2.0 provides real-time streaming callbacks for concurrent workflows, and `GroupChat` returns full attributed `conversation_history` (`agent_name`, `content` per message). The orchestrator (§9) relays each message as an event to the UI the moment it's produced; if a given architecture lacks granular callbacks, we wrap agent `run` calls to emit per-post events ourselves.
 
@@ -219,13 +290,19 @@ A Python service (FastAPI) owns everything swarms-related:
 - **POC:** hosted Swarms API (`swarm_type` JSON configs) — zero infra, matches the doc examples verbatim.
 - **v1:** self-host the open-source library inside our orchestrator for control over streaming granularity, model routing, retries, and cost; keep the API as a fallback runner. Decision gate: if per-post streaming through the hosted API is insufficient for the live graph, move earlier.
 
-### 6.4 Model tiers
+### 6.4 Model tiers — Anthropic lineup, priced by role
 
-Default to current Claude models (swarms is provider-agnostic; keep `model.name` per-persona):
+We standardize on the Anthropic API (swarms is provider-agnostic; `model.name` stays per-persona config, never hardcoded in logic). The tier maps price/intelligence to the job each agent kind does:
 
-- **Residents/consumers (high count):** `claude-haiku-4-5` — cheap, fast, fine for reactive posts
-- **Experts / debaters / judges:** `claude-sonnet-5`
-- **Casting director, verifier, report synthesizer:** `claude-opus-4-8` (or `claude-sonnet-5` in economy tier)
+| Agent kind | **Economy** | **Standard** (default) | **Frontier** |
+|---|---|---|---|
+| Consumers/residents (high count) | `claude-haiku-4-5` | `claude-haiku-4-5` | `claude-sonnet-5` |
+| Experts, debaters, judges | `claude-haiku-4-5` | `claude-sonnet-5` | `claude-opus-4-8` |
+| Casting Director | `claude-sonnet-5` | `claude-opus-4-8` | `claude-opus-4-8` |
+| Verifier pass | `claude-haiku-4-5` | `claude-sonnet-5` | `claude-opus-4-8` |
+| Report synthesizer (Desk director) | `claude-sonnet-5` | `claude-opus-4-8` | `claude-opus-4-8` |
+
+Logic: Haiku-class ≈ 1× cost (fast, ideal for high-volume reactive posts and cohort sentiment polls), Sonnet-class ≈ 3–5× (the reasoning workhorse), Opus-class ≈ 5–15× (reserved for the leverage points — casting, judging, synthesis — where one model call shapes the whole run). Exact per-token pricing changes; pull current rates from the Anthropic pricing page at build time and keep them in the cost-estimator config, never in code. The Casting Director never drops below Sonnet even in Economy — casting quality bounds everything downstream. Prompt caching (shared corpus context across hundreds of agents) is the single biggest cost lever; design the context layout for cache hits from day one.
 
 ---
 
@@ -253,7 +330,7 @@ Tool = one interface: `{ name, description, json_schema, runner, citer }` — sw
 
 ## 8 · Report engine
 
-Pipeline (runs as the §5 "report desk"):
+Pipeline (runs as the §5 **Desk** stage):
 
 1. **Outline** from brief (questions-to-resolve = required sections) + decision template skeleton.
 2. **Section workers** (parallel) each draft one section from: transcript (filtered to relevant threads) + corpus citations + tool results.
@@ -275,7 +352,7 @@ The report is stored as structured JSON (sections, stats, citations) and rendere
 
 ### POC scope (build this first — no auth, single tenant)
 
-1. One project, hardcoded user. Brief → upload docs → auto-cast population (editable cards) → Forum run with live graph + feed → report.
+1. One project, hardcoded user. Brief → upload docs → auto-cast population (editable cards) → Agora run with live graph + feed → report.
 2. Hosted Swarms API as runner; corpus RAG + web research tools only; ACS PUMS seeding for one metro (Phoenix — matches the demo).
 3. Success bar: reproduce the Site 47-A demo end-to-end **live** — same UX, real agents, real docs, unscripted output.
 
@@ -306,7 +383,18 @@ marketplace_listings(id, persona_set_id, price, status) -- phase 3
 
 ## 10 · Design system — the styling contract
 
-**The app must be pixel-consistent with the landing site.** Extract, don't reinvent. All tokens below are copied from the HTML pages and are the single source of truth.
+**The app must be pixel-consistent with the landing site and demo — a user moving from `demo.html` into the real app should not be able to tell they changed applications.** Same fonts, same tokens, same components, same motion. Extract, don't reinvent. All tokens below are copied from the HTML pages and are the single source of truth.
+
+**App screen ↔ existing-page reference (build each screen against its reference, side by side):**
+
+| App screen | Reference |
+|---|---|
+| Brief composer | `demo.html` Stage 01 (typing header, doc-parse rows, question chips) |
+| Population editor | `demo.html` Stage 02 (expert cards, shimmer loading, counts readout) + `research.html` team grid (filled-card pattern) |
+| Live simulation | `demo.html` Stage 03 (canvas network + forum feed + progress bar + speed/skip controls) |
+| Report viewer | `demo.html` Stage 04 (the full report grammar: verdict chip, stat tiles, scores, risk register, dissents) |
+| Dashboard / lists / library | `research.html` card grids and section rhythm; `index.html` nav and CTA patterns |
+| Interactive model-style widgets | `research.html` sliders (`.mrange`), scenario pills, computed outputs |
 
 ### Tokens (CSS custom properties)
 
