@@ -191,8 +191,11 @@ const useCases: UseCase[] = [
   },
 ];
 
+const VISIBLE = 8;
+
 export default function UseCases() {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenIdx(null); };
@@ -215,23 +218,36 @@ export default function UseCases() {
         Land is bought once. Product is entitled once. There is no A/B test for a master-planned community — so rehearse instead. Select any card to see the question, the panel it seeds, and what comes back.
       </p>
       <div className="grid4" style={{ marginTop: 56 }}>
-        {useCases.map((uc, i) => (
-          <button
-            key={uc.t}
-            onClick={() => setOpenIdx(i)}
-            className="card cardHover"
-            style={{ textAlign: "left", padding: "26px 24px", minHeight: 190, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 18, cursor: "pointer" }}
-          >
-            <div>
-              <h3 style={{ margin: 0, fontSize: 16.5, fontWeight: 600, letterSpacing: "-.01em", lineHeight: 1.3, color: "var(--t1)" }}>{uc.t}</h3>
-              <p style={{ margin: "10px 0 0", fontSize: 13, lineHeight: 1.6, color: "var(--t5)" }}>{uc.d}</p>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
-              <span style={{ ...mono, fontSize: 10.5, color: "var(--t7)", textTransform: "uppercase", letterSpacing: ".06em" }}>{uc.out}</span>
-              <span style={{ ...mono, fontSize: 10.5, color: "var(--acc)", flex: "none" }}>DETAILS →</span>
-            </div>
-          </button>
-        ))}
+        {useCases.map((uc, i) => {
+          if (!expanded && i >= VISIBLE) return null;
+          return (
+            <button
+              key={uc.t}
+              onClick={() => setOpenIdx(i)}
+              className="card cardHover"
+              style={{ textAlign: "left", padding: "26px 24px", minHeight: 190, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 18, cursor: "pointer", animation: i >= VISIBLE ? "fadeUp .4s ease both" : undefined }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16.5, fontWeight: 600, letterSpacing: "-.01em", lineHeight: 1.3, color: "var(--t1)" }}>{uc.t}</h3>
+                <p style={{ margin: "10px 0 0", fontSize: 13, lineHeight: 1.6, color: "var(--t5)" }}>{uc.d}</p>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+                <span style={{ ...mono, fontSize: 10.5, color: "var(--t7)", textTransform: "uppercase", letterSpacing: ".06em" }}>{uc.out}</span>
+                <span style={{ ...mono, fontSize: 10.5, color: "var(--acc)", flex: "none" }}>DETAILS →</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", marginTop: 28 }}>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="btnGhost"
+          style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "13px 26px", fontSize: 14 }}
+        >
+          {expanded ? "Show fewer" : `See ${useCases.length - VISIBLE} more use cases`}
+          <span style={{ ...mono, fontSize: 11, color: "var(--acc)" }}>{expanded ? "↑" : "↓"}</span>
+        </button>
       </div>
 
       {/* detail overlay */}
