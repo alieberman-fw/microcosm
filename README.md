@@ -75,32 +75,25 @@ Synthetic populations are strong on stated preferences, message tests, direction
 
 ## The site
 
-Three pages, one design system (Space Grotesk / JetBrains Mono, dark-first with a persistent light-theme toggle), zero build step:
+A Next.js app (App Router, TypeScript) with one design system (Space Grotesk / JetBrains Mono, dark-first with a persistent light-theme toggle):
 
-| Page | What's on it |
+| Route | What's on it |
 |---|---|
-| [`index.html`](index.html) | The product: hero, three-step how-it-works, use cases, validation, demo teaser, early-access waitlist |
-| [`demo.html`](demo.html) | The four-stage interactive demo (brief → seed → deliberation → report) with the full decision-grade report |
-| [`research.html`](research.html) | The research foundation (agent-simulation lineage 1971→now, the honest accuracy picture, category validation) plus the founder's memo: position, world-theses tie-back, interactive valuation model, pricing benchmarks, 16-seat recruiting grid, capital plan with the first three named conversations, winners/losers map, and steelman with kill signals |
+| `/` ([app/page.tsx](app/page.tsx)) | The product landing: hero with background video, plain-English three steps, interactive pipeline, simulation modes, live deliberation scenarios, why-it-works, RE use cases, waitlist |
+| `/demo.html` ([public/demo.html](public/demo.html)) | The four-stage interactive demo (brief → seed → deliberation → report) with the full decision-grade report — static, self-contained, and the design golden fixture |
+| `/login` ([app/login/page.tsx](app/login/page.tsx)) | Auth entry (private-preview stub until Supabase Auth lands) |
+
+The original static pages (including the research/founder's-memo page) are archived in [`legacy/`](legacy/).
 
 ## Running locally
 
-No build, no dependencies — it's a static site. From the repo root:
-
 ```bash
-python3 -m http.server 4599
-# then open http://localhost:4599
+npm install
+npm run dev
+# then open http://localhost:3000
 ```
 
-or, if you prefer Node:
-
-```bash
-npx serve -l 4599
-```
-
-Serve over HTTP rather than opening `file://` URLs — the pages share a runtime (`support.js`) and fonts that expect an origin.
-
-Working in **Claude Code**? A preview config ships in [`.claude/launch.json`](.claude/launch.json) — the `microcosm-static` server starts on port 4599 straight from the Browser pane.
+Working in **Claude Code**? A preview config ships in [`.claude/launch.json`](.claude/launch.json) — the `microcosm-app` server starts on port 3000 straight from the Browser pane.
 
 ## Editing notes
 
@@ -113,13 +106,17 @@ Working in **Claude Code**? A preview config ships in [`.claude/launch.json`](.c
 ## Repo layout
 
 ```
-├── index.html            # landing page (site root)
-├── demo.html             # interactive live demo
-├── research.html         # research foundation + founder's memo
-├── support.js            # generated design runtime (do not edit)
+├── app/                  # Next.js routes: landing (page.tsx), /login, globals.css
+├── components/           # Nav, Hero, Pipeline, Modes, LiveDemo, Access
+├── public/
+│   ├── demo.html         # interactive live demo (static, golden fixture)
+│   ├── support.js        # generated design runtime for the demo (do not edit)
+│   └── media/hero-bg.mp4 # landing hero background video
+├── docs/                 # persona taxonomy, speaker script
+├── legacy/               # archived original static pages
 ├── assets/               # logo SVGs (dark/light)
-├── uploads/              # hero video + images
-└── .claude/launch.json   # local preview server config (port 4599)
+├── CLAUDE.md             # the product/tech/design spec — read before coding
+└── .claude/launch.json   # local dev server config (port 3000)
 ```
 
 ## Status
