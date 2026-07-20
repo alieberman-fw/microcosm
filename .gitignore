@@ -1,2 +1,17 @@
 .DS_Store
 .claude/settings.local.json
+
+# env & secrets — never commit
+.env
+.env.*
+!.env.example
+
+# node / next
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# vercel
+.vercel

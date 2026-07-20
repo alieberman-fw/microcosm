@@ -1,0 +1,105 @@
+/* Microcosm design tokens — copied verbatim from the static site (CLAUDE.md §10). Do not invent new colors. */
+:root {
+  --acc: #37d98a; --acc-hero: #37d98a; --acc-dim: rgba(55, 217, 138, 0.13); --acc-c: #0a0b0c;
+  --warn: #d9a03f; --warn-dim: rgba(217, 160, 63, 0.13);
+  --bg: #0a0b0c; --sf: #0d0e10; --sf2: #101215;
+  --t0: #ffffff; --t1: #ececec; --t2: #c7cbcf; --t3: #b9bdc1; --t4: #adb2b7;
+  --t5: #9aa0a6; --t6: #8b9096; --t7: #6d7378;
+  --ln1: rgba(255, 255, 255, 0.07); --ln2: rgba(255, 255, 255, 0.08); --ln3: rgba(255, 255, 255, 0.09);
+  --ln4: rgba(255, 255, 255, 0.12); --ln5: rgba(255, 255, 255, 0.14); --ln6: rgba(255, 255, 255, 0.15);
+  --ln7: rgba(255, 255, 255, 0.22); --ln8: rgba(255, 255, 255, 0.25);
+  --navbg: rgba(10, 11, 12, 0.72);
+  color-scheme: dark;
+}
+html[data-theme="light"] {
+  --acc: #0d9d63; --acc-dim: rgba(13, 157, 99, 0.1); --acc-c: #ffffff;
+  --warn: #8f6410; --warn-dim: rgba(143, 100, 16, 0.1);
+  --bg: #f6f6f4; --sf: #ffffff; --sf2: #f0f0ee;
+  --t0: #0a0b0c; --t1: #1c1e20; --t2: #34383c; --t3: #43484d; --t4: #4d5358;
+  --t5: #5c6268; --t6: #6b7177; --t7: #8a9095;
+  --ln1: rgba(0, 0, 0, 0.08); --ln2: rgba(0, 0, 0, 0.09); --ln3: rgba(0, 0, 0, 0.1);
+  --ln4: rgba(0, 0, 0, 0.14); --ln5: rgba(0, 0, 0, 0.16); --ln6: rgba(0, 0, 0, 0.2);
+  --ln7: rgba(0, 0, 0, 0.3); --ln8: rgba(0, 0, 0, 0.32);
+  --navbg: rgba(246, 246, 244, 0.78);
+  color-scheme: light;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  transition: background 0.25s, color 0.25s;
+  background: var(--bg);
+  color: var(--t1);
+  font-family: var(--font-grotesk), Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-anchor: none;
+}
+.stickyCol { position: sticky; top: 100px; }
+a { color: var(--t1); text-decoration: none; }
+a:hover { color: var(--acc); }
+::selection { background: var(--acc); color: var(--acc-c); }
+input { font-family: var(--font-grotesk), sans-serif; }
+button { font-family: var(--font-grotesk), sans-serif; }
+
+.mono { font-family: var(--font-mono), monospace; }
+.kicker {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--acc);
+  text-transform: uppercase;
+}
+.section { max-width: 1240px; margin: 0 auto; padding: 110px 40px; }
+.h2 {
+  margin: 16px 0 0;
+  font-size: clamp(30px, 3.4vw, 46px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.btnAcc {
+  display: inline-block;
+  background: var(--acc);
+  color: var(--acc-c);
+  font-weight: 600;
+  border-radius: 100px;
+  border: none;
+  cursor: pointer;
+}
+.btnAcc:hover { color: var(--acc-c); filter: brightness(1.12); }
+.btnGhost {
+  display: inline-block;
+  border: 1px solid var(--ln7);
+  color: var(--t1);
+  font-weight: 500;
+  border-radius: 100px;
+  background: transparent;
+  cursor: pointer;
+}
+.btnGhost:hover { border-color: var(--acc); color: var(--acc); }
+.card {
+  border: 1px solid var(--ln3);
+  border-radius: 14px;
+  background: var(--sf);
+  transition: border-color 0.25s, transform 0.25s, background 0.25s;
+}
+.cardHover:hover { border-color: var(--acc); transform: translateY(-3px); }
+.cardHoverQuiet:hover { border-color: var(--ln7); }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+@media (max-width: 1020px) {
+  .grid4 { grid-template-columns: repeat(2, 1fr); }
+  .grid3 { grid-template-columns: 1fr; }
+  .grid2 { grid-template-columns: 1fr; }
+  .section { padding: 80px 24px; }
+  .navLinks { display: none !important; }
+  .splitCol { grid-template-columns: 1fr !important; }
+  .stickyCol { position: static; }
+}
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+@keyframes tick { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes grow { from { transform: scaleX(0); } }
+@keyframes pulseDot { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.35); } }
