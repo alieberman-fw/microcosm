@@ -1,0 +1,7 @@
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+swarms>=8.2
+anthropic>=0.40
+supabase>=2.10
+python-dotenv>=1.0
