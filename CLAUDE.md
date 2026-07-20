@@ -162,6 +162,36 @@ The Microcosm Marketplace is a first-party storefront we own and operate (not a 
 
 Mechanics: listings are the same persona JSON with `public: true` + pricing metadata; publisher revenue share; version pinning (a purchased set keeps working even if the publisher updates); ratings tied to post-run feedback ("did this panel change your decision?"). Every listing passes a review gate — quality rubric + fair-housing screen — before going live. Real-estate firms publishing their institutional judgment as agents is both a revenue stream for them and a calibration flywheel for us.
 
+### 3.6 The seeding data corpus — curated third-party datasets
+
+Seeding data ≠ runtime tools (§7). The corpus below is **batch-curated into our own Postgres** during system setup and refreshed on each vintage; it grounds persona *distributions and plausibility*. Runtime tools answer live questions mid-simulation; some sources (Census, HUD, FRED) appear in both roles. Privacy line: the corpus grounds distributions — **no real individual is ever simulated**; every persona is a synthetic composite.
+
+**Tier 1 — POC (free, public-domain, bulk-loaded):**
+
+| Dataset | What it seeds | Access |
+|---|---|---|
+| **ACS PUMS** (person + household) | The demographic backbone: joint age/income/tenure/household/occupation distributions (§3.2B) | Bulk CSV (census FTP / AWS Open Data); Microdata API for prototyping |
+| **ACS summary tables + TIGER/Line + geocorr crosswalks** | ZIP↔PUMA↔tract mapping; block-group marginals for IPF downscaling | Census API + bulk shapefiles |
+| **O*NET** (Dept. of Labor) | The *expert* persona backbone: knowledge, skills, tasks, tools, and work context for every SOC occupation — what a grid interconnection engineer actually knows and does | Free bulk database, annual |
+| **BLS OES/QCEW** | Occupation & wage mix by metro — how many brokers vs. engineers vs. planners plausibly exist in a market (expert census realism) | API + bulk |
+| **LEHD LODES** | Home↔work commute flows at block level — grounds "drives 28 min to Chandler" narratives | Bulk |
+| **HUD FMR + Income Limits + CHAS** | Rent context and affordability strata for renter cohorts | HUD USER API + bulk |
+| **FRED** | Rates, HPI, regional macro series injected as run context | API |
+
+**Tier 2 — Phase 2 (free; adds attitudes, texture, and civic temperature):**
+
+| Dataset | What it seeds | Access |
+|---|---|---|
+| **American Housing Survey (AHS)** | Unit condition, neighborhood satisfaction, moving intentions — homeowner/renter persona texture | Bulk microdata |
+| **GSS + Pew datasets** | Attitude/values distributions (institutional trust, risk posture) mapped onto persona `traits` | Free microdata |
+| **NAR Profile of Home Buyers & Sellers; Zillow/Redfin research series** | Behavioral priors: search duration, financing mix, contingency behavior for buyer cohorts | Published/free CSV |
+| **IRS SOI county-to-county migration + USPS CoA** | Migration narratives ("relocating from LA with equity") and flow magnitudes | Bulk |
+| **MIT Election Lab + local turnout data** | Civic temperature for entitlement sims — how contested is this jurisdiction | Bulk |
+| **CDC PLACES** | Tract-level health context (senior-housing and healthcare-asset sims) | API + bulk |
+| **State licensure rosters** (contractors, brokers, PEs, architects) | Expert-population plausibility per metro; curated state-by-state | Public rosters, scraped/curated |
+
+**Tier 3 — licensed, per-org keys (Phase 3):** Esri Tapestry / Claritas PRIZM-class psychographic segments (narrative color) · L2/TargetSmart-class voter files (civic archetypes — handle with explicit sensitivity review) · ATTOM/CoreLogic property data · CoStar/Placer-class market and foot-traffic data (double as runtime tools).
+
 ---
 
 ## 4 · Simulation parameters
@@ -308,7 +338,7 @@ Logic: Haiku-class ≈ 1× cost (fast, ideal for high-volume reactive posts and 
 
 ## 7 · Agent tools (connected data)
 
-Tools are per-simulation toggles; every tool call is logged and citable in the report ("source: tool"). Ship in this order:
+Tools are per-simulation toggles; every tool call is logged and citable in the report ("source: tool"). Distinct from the seeding corpus (§3.6): seeding data is batch-curated to *build* the population before the run; tools are what agents *call live* during the run. Census/HUD/FRED serve both. Ship in this order:
 
 **Phase 1 (POC):**
 1. **Corpus RAG** — search the uploaded documents (always on).
@@ -350,15 +380,18 @@ The report is stored as structured JSON (sections, stats, citations) and rendere
 - **Simulation service:** Python FastAPI + swarms, deployed on Railway/Fly/Modal (worker + queue; runs are long-lived jobs). Publishes events to Supabase Realtime (or Redis→SSE bridge if latency demands).
 - **Embeddings/RAG:** pgvector in Supabase.
 
-### POC scope (build this first — no auth, single tenant)
+### POC scope — narrow features, real infrastructure from day one
 
-1. One project, hardcoded user. Brief → upload docs → auto-cast population (editable cards) → Agora run with live graph + feed → report.
-2. Hosted Swarms API as runner; corpus RAG + web research tools only; ACS PUMS seeding for one metro (Phoenix — matches the demo).
-3. Success bar: reproduce the Site 47-A demo end-to-end **live** — same UX, real agents, real docs, unscripted output.
+We do NOT build a throwaway single-tenant demo. Vercel + Supabase are provisioned from the first commit so users, simulations, agents, and reports are durable from run #1 and nothing gets migrated later:
+
+1. **Infrastructure day one:** Supabase Auth (email + Google), Postgres with the full data model below + row-level security, Storage buckets for documents, Realtime channel for run events; Vercel project with preview deployments per PR. Every user gets a personal org (`orgs` row) at signup — team features come later, but all data is org-scoped from the start.
+2. **Feature scope stays narrow:** Brief → upload docs → auto-cast population (editable cards) → Agora run with live graph + feed → report. Hosted Swarms API as runner; corpus RAG + web research tools only; ACS PUMS seeding for one metro (Phoenix — matches the demo).
+3. **History is a POC feature, not a v1 feature:** the dashboard lists the user's simulations, agents, and reports from the first run — persistence IS the product memory and the calibration substrate (§1, principle 5).
+4. Success bar: reproduce the Site 47-A demo end-to-end **live** — same UX, real agents, real docs, unscripted output.
 
 ### v1 SaaS (after POC)
 
-Supabase Auth (orgs, roles), simulation history, Agent Library UI, persona sets, shareable report links, billing (run-based credits + subscription tiers matching the research page's pricing model), self-hosted swarms runner.
+Multi-user orgs (invites, roles), shareable report links, billing (run-based credits + subscription tiers matching the research page's pricing model), Agent Library UI + persona sets, self-hosted swarms runner, seeding corpus tier 2.
 
 ### Data model (Postgres)
 
@@ -458,9 +491,9 @@ Theme: `html[data-theme]`, persisted in `localStorage("mc-theme")`, sun/moon tog
 | Phase | Scope | Exit criteria |
 |---|---|---|
 | **0 · Spec** (this doc) | Product/tech/design contract | Merged to main |
-| **1 · POC** | §9 POC scope; Next.js app in `/app` (or separate dir), FastAPI service in `/engine` | Site 47-A reproduced live, unscripted, <15 min wall-clock, <$25/run |
-| **2 · Seeding depth** | ACS PUMS pipeline multi-metro, persona editor, Agent Library, persona sets, sentiment polling, verifier pass | A non-team user runs a novel question end-to-end unassisted |
-| **3 · SaaS** | Auth/orgs, history, sharing, billing, self-hosted swarms runner, tool phase 2 | First 5 design-partner orgs active |
+| **1 · POC** | §9 POC scope on production infra (Vercel + Supabase Auth/DB/Storage/Realtime from day one); Next.js app in `/app`, FastAPI service in `/engine` | Site 47-A reproduced live, unscripted, <15 min wall-clock, <$25/run — by a signed-in user whose run persists |
+| **2 · Seeding depth** | ACS PUMS pipeline multi-metro, seeding corpus tier 2 (§3.6), persona editor, Agent Library, persona sets, sentiment polling, verifier pass | A non-team user runs a novel question end-to-end unassisted |
+| **3 · SaaS** | Multi-user orgs & roles, sharing, billing, self-hosted swarms runner, tool phase 2 | First 5 design-partner orgs active |
 | **4 · Marketplace + calibration** | Persona marketplace, outcomes tables in anger, published backtests | First backtest report public; first paid marketplace listing |
 
 ---
