@@ -509,6 +509,7 @@ Theme: `html[data-theme]`, persisted in `localStorage("mc-theme")`, sun/moon tog
 - `public/demo.html` + `public/support.js` are the scripted demo — self-contained, no build step. Don't refactor them while building the app; the demo is the design reference. The archived originals live in `legacy/`.
 - App code is the Next.js project at the repo root (`app/`, `components/`); the simulation engine lives in `engine/` (Python/FastAPI/swarms) — keep the split hard; the only contract between them is the event schema (§6.2) and REST endpoints.
 - Secrets live in `.env.local` (gitignored, never committed): `ANTHROPIC_API_KEY`, `VERCEL_TOKEN`, `SUPABASE_ACCESS_TOKEN`, plus Supabase project keys once provisioned.
+- Never run `npm run build` while `next dev` is running — they share `.next/` and the build corrupts the dev server's module graph (broken hydration, phantom module errors). Stop dev, build, `rm -rf .next`, restart dev.
 - Never hardcode model names in business logic — model tier config only (§6.4).
 - Every persona-prompt or report-prompt change needs a before/after example in the PR description.
 - Test the live-stream path with a scripted fake run (replay the demo's 46 events) before touching real LLM runs — the demo's `events` array in `demo.html` is the golden fixture.

@@ -5,6 +5,7 @@ import ProductTour from "@/components/ProductTour";
 import Modes from "@/components/Modes";
 import LiveDemo from "@/components/LiveDemo";
 import UseCases from "@/components/UseCases";
+import WhyItWorks from "@/components/WhyItWorks";
 import Access from "@/components/Access";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -30,33 +31,6 @@ const steps = [
   {
     num: "STEP 3", t: "Watch, join, then read",
     d: "The panel deliberates in front of you — live and visible. Step in whenever you want: post a question, tag an agent, challenge a claim. Then read the report: the verdict, the reasoning, the risks, and who disagreed.",
-  },
-];
-
-const whyCards = [
-  {
-    num: "01", t: "Many specialized minds, one argument",
-    d: "A single AI gives you one plausible answer. A swarm gives you a contest: specialists reasoning from different facts and incentives, challenging each other until weak claims die and strong ones survive. The answer that emerges has already been argued with — before you rely on it.",
-  },
-  {
-    num: "02", t: "1,100+ experts, cast per question",
-    d: "Microcosm maintains a persona library spanning the entire built world — capital, construction, power, water, civic, legal, community. A casting pass reads your question and fills each seat with the specialist who owns it. You can edit every seat, write your own experts, or reuse panels you've saved.",
-  },
-  {
-    num: "03", t: "A crowd that matches your market",
-    d: "Consumer and resident cohorts are sampled from public Census microdata for your actual geography — real income distributions, ages, household types, commutes. The crowd judging your project statistically resembles the market that will.",
-  },
-  {
-    num: "04", t: "Skeptics on the payroll",
-    d: "Every panel seats at least one agent instructed to oppose you — the organized neighbor, the wary lender, the tough council vote. And when panelists still disagree at the end, the report preserves the dissent by name instead of averaging it away. The objection you rehearse can't ambush you.",
-  },
-  {
-    num: "05", t: "Claims don't pass unchecked",
-    d: "An independent verifier runs behind the deliberation, testing every numeric claim against your uploaded documents and connected data. Contradictions are flagged into the record — whether they come from an agent or from the seller's marketing package.",
-  },
-  {
-    num: "06", t: "A leading indicator, honestly labeled",
-    d: "The market tells you whether you were right 12–24 months after the capital is committed. A calibrated simulation tells you before — and every prediction is logged and scored when reality arrives, so the track record is auditable. Outputs are always labeled synthetic and directional: an instrument for the decision-maker, never a replacement.",
   },
 ];
 
@@ -168,25 +142,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* WHY IT WORKS */}
-      <section id="why" style={{ background: "var(--sf)", borderTop: "1px solid var(--ln1)", borderBottom: "1px solid var(--ln1)" }}>
-        <div className="section">
-          <Kicker>Why it works</Kicker>
-          <h2 className="h2" style={{ maxWidth: 800 }}>Why an agent swarm answers what one AI — and one gut call — can&apos;t.</h2>
-          <div className="grid3" style={{ marginTop: 52, gap: 14 }}>
-            {whyCards.map((c) => (
-              <div key={c.num} style={{ border: "1px solid var(--ln3)", borderRadius: 14, padding: "30px 28px", background: "var(--bg)" }}>
-                <div style={{ ...mono, fontSize: 12, color: "var(--acc)" }}>{c.num}</div>
-                <h3 style={{ margin: "14px 0 0", fontSize: 18.5, fontWeight: 600, letterSpacing: "-.01em" }}>{c.t}</h3>
-                <p style={{ margin: "12px 0 0", fontSize: 14, lineHeight: 1.68, color: "var(--t5)" }}>{c.d}</p>
-              </div>
-            ))}
-          </div>
-          <p style={{ ...mono, margin: "26px 0 0", fontSize: 11.5, lineHeight: 1.7, color: "var(--t7)" }}>
-            RESEARCH ANCHOR · INTERVIEW-GROUNDED AI AGENTS MATCHED REAL PEOPLE&apos;S SURVEY ANSWERS AT 85% OF THEIR OWN TWO-WEEK CONSISTENCY (STANFORD, N=1,052). EVERY MICROCOSM OUTPUT IS LABELED SYNTHETIC AND DIRECTIONAL.
-          </p>
-        </div>
-      </section>
+      <WhyItWorks />
 
       {/* WHY NOW */}
       <section style={{ maxWidth: 1240, margin: "0 auto", padding: "110px 40px" }}>
