@@ -66,12 +66,15 @@ The user states the research problem and what they want answered.
   - **Left: agent network canvas** — nodes are agents (leads labeled), pulses are messages, clusters are disciplines, residents form the outer ring. Clicking a node opens the persona card + that agent's posts.
   - **Right: forum feed** — threaded posts with author, role, tag (POST n / REPLY / CHANGED POSITION), burst rollups ("+34 POSTS · COMPS + OPTION STRUCTURES"). Filterable by thread, discipline, or agent. Pause/resume, speed control, "skip to end."
 - Everything streams over a realtime channel (§9); the transcript is persisted post-by-post as it happens.
+- **Take the Floor (user participation).** The user is a first-class participant, not just a spectator. At any pause, at convergence, or after the report ships, the user can post directly into the forum and @mention any agent; mentioned agents reply with full context of the transcript, corpus, and their persona (implemented on InteractiveGroupChat's mention-driven speaker selection — the same machinery agents use on each other). User posts are transcript events with `author: "user"`, rendered distinctly in the feed (accent-bordered, "YOU · TAKING THE FLOOR"), and citable by the report like any other post. Typical uses: challenge a claim before synthesis ("@Rosa — what if the queue clears early?"), inject information the panel lacks, or steer attention to an under-argued question.
 
 ### Stage 5 — Report (read)
 
 - A synthesis pipeline (§8) turns the transcript + corpus + brief into the interactive report — the exact structure the demo report proved: verdict chip, executive summary, stat tiles, dimension scores, recommended structure, findings cited to transcript posts, critical path, risk register, deliberation analytics, preserved dissents, transcript quotes, tripwires, methodology & limitations.
 - Every citation is a link: clicking "POSTS 2, 3" scrolls the transcript viewer to those posts. Every stat tile traces to its source (doc, tool call, or post).
 - Exports: shareable link (org-scoped), PDF, and markdown.
+- **Ask a follow-up (the room stays open).** Every report ships with the panel still warm: an "Ask the panel" box reopens the forum scoped to a follow-up thread — the user posts, @mentions agents, and gets answers grounded in the full run. Material follow-up threads can be appended to the report as a dated addendum. This is Take the Floor (Stage 4) applied post-synthesis; same event semantics.
+- **Scenario forks & report diffs.** Any completed simulation can be forked: change a parameter, a document, a persona, or a stated assumption, and re-run. Lineage is tracked (`simulations.parent_id`), and the report viewer renders a **diff view** between parent and fork — verdict change, dimension-score deltas, which agents flipped positions, which findings appeared/disappeared, cost of each run. This is how "what would change the answer" stops being a report section and becomes a button. (Resolves open question #6.)
 
 ---
 
@@ -273,7 +276,7 @@ We build on **[swarms](https://github.com/kyegomez/swarms)** (Apache-2.0, `pip i
 
 | Microcosm mode (user-facing) | swarms architecture | Use when | Reference |
 |---|---|---|---|
-| **Agora** (default — the demo) | `GroupChat` (+ InteractiveGroupChat @mentions) | Open-square deliberation; full shared history; threads and replies | [group-chat](https://docs.swarms.ai/docs/examples/examples/group-chat) |
+| **Agora** (default — the demo) | `GroupChat` (+ InteractiveGroupChat @mentions — also powers Take the Floor, §2 Stage 4) | Open-square deliberation; full shared history; threads and replies | [group-chat](https://docs.swarms.ai/docs/examples/examples/group-chat) |
 | **Roundtable** | `RoundRobin` | Every voice heard each round; brainstorm/consensus among equals | [round-robin](https://docs.swarms.ai/docs/examples/examples/round-robin) |
 | **Tribunal** | `DebateWithJudge` | Two-sided contested question; advocates argue, a judge rules, rounds refine | [debate-with-judge](https://docs.swarms.ai/docs/examples/examples/debate-with-judge) |
 | **Chamber** | `LLMCouncil` | Independent takes → anonymized peer review → chair synthesis; kills groupthink | [llm-council](https://docs.swarms.ai/docs/examples/examples/llm-council) |
@@ -308,8 +311,10 @@ A Python service (FastAPI) owns everything swarms-related:
 ### 6.2 Event schema (the contract between engine and UI)
 
 ```jsonc
-{ "type": "post",        "sim": "uuid", "seq": 214, "agent_id": "uuid",
-  "thread": "POWER", "reply_to": 198, "tag": "POST|REPLY|FLIP|BURST",
+{ "type": "post",        "sim": "uuid", "seq": 214, "author": "agent|user",
+  "agent_id": "uuid|null", "user_id": "uuid|null",
+  "thread": "POWER", "reply_to": 198, "tag": "POST|REPLY|FLIP|BURST|FLOOR",
+  "mentions": ["agent_uuid"],
   "content": "…", "cites": [{"kind":"doc","ref":"ALTA_SURVEY.PDF#p4"}], "ts": "…" }
 { "type": "stage",       "value": "seeding|running|converged|synthesizing|done" }
 { "type": "presence",    "agent_id": "uuid", "state": "thinking|speaking|idle" }
@@ -399,7 +404,7 @@ Multi-user orgs (invites, roles), shareable report links, billing (run-based cre
 ```
 orgs(id, name, plan) · users(id, org_id, role)
 projects(id, org_id, name)
-simulations(id, project_id, status, brief jsonb, config jsonb, cost_actual, created_by)
+simulations(id, project_id, parent_id?, status, brief jsonb, config jsonb, cost_actual, created_by)  -- parent_id = scenario-fork lineage
 documents(id, project_id, sim_id?, name, storage_path, parse_status)
 doc_chunks(id, document_id, content, embedding vector)
 personas(id, org_id?, kind, spec jsonb, version, public, source, author_org)
@@ -517,7 +522,7 @@ Theme: `html[data-theme]`, persisted in `localStorage("mc-theme")`, sun/moon tog
 3. ~~Hosted Swarms API streaming granularity~~ — RESOLVED: self-hosted open-source library from day one (§6.3).
 4. PUMS licensing/attribution requirements for derived personas in a commercial product (likely fine — public domain — confirm).
 5. Marketplace trust: who reviews published persona sets for quality and fair-housing compliance, and what's the rubric?
-6. Report versioning when a user re-runs a simulation with tweaked parameters — diff view between runs?
+6. ~~Report versioning when a user re-runs with tweaked parameters~~ — RESOLVED: scenario forks with `parent_id` lineage and a first-class report diff view (§2 Stage 5).
 
 ---
 

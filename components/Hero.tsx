@@ -109,7 +109,7 @@ export default function Hero() {
           Simulate the market<br />before you build for it.
         </h1>
         <p style={{ margin: "26px 0 0", maxWidth: 620, fontSize: 18, lineHeight: 1.6, color: "#c7cbcf", animation: "fadeUp .7s .16s ease both" }}>
-          Microcosm builds a small city of AI people — buyers, renters, neighbors, lenders, investors — that react to your plans, argue about them, and change their minds. Then it hands you the report, before a single dollar of capital is committed.
+          Microcosm convenes a panel of AI experts and a census-grounded crowd — buyers, renters, neighbors, lenders — around your hardest real-estate question. They read your documents, deliberate in the open, and hand you a decision-grade report before a single dollar of capital is committed.
         </p>
         <div style={{ display: "flex", gap: 14, marginTop: 38, flexWrap: "wrap", animation: "fadeUp .7s .24s ease both" }}>
           <a href="/#access" className="btnAcc" style={{ padding: "14px 28px", fontSize: 15 }}>Get started</a>

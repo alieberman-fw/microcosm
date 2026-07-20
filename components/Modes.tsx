@@ -5,10 +5,13 @@ import { CSSProperties, useState } from "react";
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
 const modes = [
-  { t: "Panel", tag: "SECONDS · WORKHORSE", d: "Fast reads and rankings: preference splits, willingness-to-pay, A-versus-B. The everyday instrument for floor plans, renderings, listing creative, and pricing ladders." },
-  { t: "Forum", tag: "MINUTES · SOCIAL", d: "Agents post, reply, and influence each other on a simulated social layer — capturing word-of-mouth and momentum effects that one-shot AI answers structurally miss." },
-  { t: "Adversarial debate", tag: "MINUTES · STRUCTURED", d: "Seeded opposition: neighbors vs. developer, bull vs. bear investor. Surfaces the strongest counterargument before a real opponent does." },
-  { t: "Longitudinal market", tag: "HOURS · DEEP", d: "Populations live through simulated months under changing conditions — rate moves, new supply, climate shocks — for absorption curves and demand-shift scenarios." },
+  { t: "Agora", tag: "DEFAULT · OPEN FORUM", d: "The open square — the demo's mode. Everyone sees everything; threads form by discipline, replies chain, and positions shift in public. The most natural fit for big, multi-sided questions." },
+  { t: "Roundtable", tag: "EVERY VOICE, EVERY ROUND", d: "Structured turns: each panelist speaks every cycle. Best for panels of equals — brainstorming product ideas, building consensus, making sure the quiet seat gets heard." },
+  { t: "Tribunal", tag: "TWO SIDES · ONE JUDGE", d: "A contested question argued properly: advocates take sides, a judge weighs the rounds and rules. Built for the sharpest yes/no calls — and for rehearsing the fight you're about to have." },
+  { t: "Chamber", tag: "INDEPENDENT · PEER-REVIEWED", d: "Panelists answer independently, review each other's work anonymously, and a chair synthesizes. The structure that kills groupthink — nobody anchors on the first loud voice." },
+  { t: "Jury", tag: "PARALLEL VERDICTS · FAST", d: "Every panelist scores the question independently; verdicts aggregate into a fast, cheap first read. The screening pass before you commit to a full deliberation." },
+  { t: "Desk", tag: "DIRECTOR + ANALYSTS · MEMO", d: "A research desk: a director assigns sections to specialist analysts and edits the result into one memo. The mode behind every Microcosm report synthesis." },
+  { t: "Expedition", tag: "AUTONOMOUS DEEP RESEARCH", d: "Before the room convenes: an autonomous research pass decomposes your question, gathers evidence, tests alternatives, and verifies claims — the background pack the panel argues from." },
 ];
 
 export default function Modes() {
@@ -17,12 +20,12 @@ export default function Modes() {
     <section style={{ maxWidth: 1240, margin: "0 auto", padding: "20px 40px 110px" }}>
       <div className="splitCol" style={{ display: "grid", gridTemplateColumns: "380px 1fr", gap: 60, alignItems: "start" }}>
         <div className="stickyCol">
-          <div className="kicker">Simulation modes</div>
+          <div className="kicker">Interaction modes</div>
           <h2 style={{ margin: "16px 0 0", fontSize: "clamp(28px,3vw,40px)", fontWeight: 600, letterSpacing: "-.03em" }}>
-            One population.<br />Four ways to run it.
+            Seven ways<br />to run the room.
           </h2>
           <p style={{ margin: "18px 0 0", fontSize: 15, lineHeight: 1.65, color: "var(--t5)" }}>
-            Pricing maps to compute intensity — a quick panel resolves in seconds; a longitudinal market lives for simulated months.
+            Microcosm recommends the right mode from your question — an open forum for a land decision, a tribunal for a contested call, a jury for a fast read. Every choice stays yours.
           </p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -32,7 +35,7 @@ export default function Modes() {
               onClick={() => setOpen(i)}
               style={{
                 border: `1px solid ${open === i ? "var(--acc)" : "var(--ln3)"}`, borderRadius: 14,
-                padding: "26px 28px", background: open === i ? "var(--acc-dim)" : "var(--sf)",
+                padding: "22px 28px", background: open === i ? "var(--acc-dim)" : "var(--sf)",
                 cursor: "pointer", transition: "border-color .25s, background .25s",
               }}
             >
