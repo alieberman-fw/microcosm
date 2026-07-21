@@ -262,6 +262,7 @@ export default function Conversations({
   initial,
   initialWith,
   initialOpen,
+  initialDraft,
   libraryCount = 0,
 }: {
   orgId: string;
@@ -269,6 +270,7 @@ export default function Conversations({
   initial: ConversationRow[];
   initialWith?: string;
   initialOpen?: string;
+  initialDraft?: string[];
   libraryCount?: number;
 }) {
   const supabase = createClient();
@@ -333,9 +335,10 @@ export default function Conversations({
     if (f) f.scrollTop = f.scrollHeight;
   }, [messages.length, busy]);
 
-  // deep link from the history page: /conversations?open=<id>
+  // deep links: ?open=<id> from history · ?draft=<keys> from the browser page
   useEffect(() => {
     if (initialOpen && initial.some((c) => c.id === initialOpen)) openConversation(initialOpen);
+    else if (initialDraft && initialDraft.length > 0) startDraft(initialDraft);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -710,9 +713,14 @@ export default function Conversations({
             <p style={{ margin: "12px 0 0", fontSize: 14.5, lineHeight: 1.65, color: "var(--t5)" }}>
               Pick a conversation, or start a new one — a single expert, or a group you can steer with @mentions. Every conversation keeps its own history; starting fresh with the same experts is always one click.
             </p>
-            <button onClick={() => { setPicker(true); setPicked([]); setSearch(""); }} className="btnAcc" style={{ marginTop: 22, padding: "12px 26px", fontSize: 14 }}>
-              Start a conversation
-            </button>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 22 }}>
+              <button onClick={() => { setPicker(true); setPicked([]); setSearch(""); }} className="btnAcc" style={{ padding: "12px 26px", fontSize: 14 }}>
+                Start a conversation
+              </button>
+              <Link href="/conversations/new" className="btnGhost" style={{ padding: "12px 24px", fontSize: 14, borderRadius: 100 }}>
+                Browse all personas
+              </Link>
+            </div>
           </div>
         ) : (
           <>
@@ -937,15 +945,24 @@ export default function Conversations({
               onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
               onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln5)")}
             />
-            <div style={{ ...mono, flex: "none", marginTop: 10, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t7)" }}>
-              {q
-                ? searchingLib
-                  ? `SEARCHING ${libraryCount ? libraryCount.toLocaleString() : "THE"} PERSONA LIBRARY…`
-                  : `${filteredPersonas.length} MATCH${filteredPersonas.length === 1 ? "" : "ES"}`
-                : `${personas.length} RECENT & CUSTOM · TYPE TO SEARCH ${libraryCount ? libraryCount.toLocaleString() : "ALL"} PERSONAS`}
-              {picked.length ? ` · ${picked.length}/${MAX_PARTICIPANTS} SELECTED` : ""}
+            <div style={{ ...mono, flex: "none", marginTop: 10, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t7)", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <span>
+                {q
+                  ? searchingLib
+                    ? `SEARCHING ${libraryCount ? libraryCount.toLocaleString() : "THE"} PERSONA LIBRARY…`
+                    : `${filteredPersonas.length} MATCH${filteredPersonas.length === 1 ? "" : "ES"}`
+                  : `${personas.length} RECENT & CUSTOM · TYPE TO SEARCH ${libraryCount ? libraryCount.toLocaleString() : "ALL"} PERSONAS`}
+                {picked.length ? ` · ${picked.length}/${MAX_PARTICIPANTS} SELECTED` : ""}
+              </span>
+              <span style={{ flex: 1 }} />
+              <Link href="/conversations/new" style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--acc)" }}>
+                BROWSE ALL WITH FILTERS →
+              </Link>
             </div>
-            <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", marginTop: 10, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, alignContent: "start" }}>
+            {/* gridAutoRows max-content: overflow-hidden grid items have a zero
+                auto-min-size, so without it the grid crushes rows instead of
+                scrolling */}
+            <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", marginTop: 10, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gridAutoRows: "max-content", gap: 8, alignContent: "start" }}>
               {filteredPersonas.map((p) => {
                 const on = picked.includes(p.key);
                 return (
