@@ -1,0 +1,93 @@
+import { NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
+import { createServerSupabase } from "@/lib/supabase/server";
+import { PersonaSpec } from "@/lib/personas";
+
+/**
+ * Smart search over the global persona library (CLAUDE.md §3.3/§3.4).
+ * A Haiku pass translates natural language ("under 40 home owner",
+ * "looking to build a data center") into a websearch-syntax full-text query
+ * plus structured demographic filters; the search_personas RPC (Postgres FTS
+ * + jsonb filters, RLS-scoped) does the matching. Falls back to plain FTS if
+ * the parse fails.
+ */
+const ROUTER_MODEL = process.env.ROUTER_MODEL ?? "claude-haiku-4-5";
+
+export interface LibrarySearchRow { id: string; kind: string; spec: PersonaSpec; rank: number }
+
+interface ParsedQuery {
+  search: string;
+  age_min: number | null;
+  age_max: number | null;
+  tenure: string | null;
+  kinds: string[] | null;
+}
+
+const PARSE_SYSTEM = `You translate a user's natural-language search over a library of synthetic built-world personas (real-estate experts, consumers, residents, civic stakeholders) into structured search parameters. Reply with ONLY a JSON object:
+{"search": "<Postgres websearch-syntax query: the key terms joined with OR, quoted phrases allowed. Expand with strong professional synonyms — e.g. "looking to build a data center" → "data center" OR interconnection OR hyperscaler OR colocation OR "mission critical" OR substation. Use "" (empty) if the query is purely demographic.>",
+ "age_min": <int or null>, "age_max": <int or null>,
+ "tenure": "owner" | "renter" | null,
+ "kinds": <array from ["expert","consumer","resident","stakeholder","adversarial"] or null>}
+Rules: "under 40" → age_max 39; "over 55" → age_min 56; "in their 30s" → 30–39. "homeowner"/"home owner" → tenure "owner" and kinds ["consumer"]; "renter" → tenure "renter". Profession/skill/topic queries → kinds null (never over-restrict). Keep search ≤ 12 terms. No prose.`;
+
+export async function POST(request: Request) {
+  const supabase = await createServerSupabase();
+  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+
+  let body: { q?: string; limit?: number };
+  try { body = await request.json(); } catch { body = {}; }
+  const q = (body.q ?? "").trim().slice(0, 300);
+  const limit = Math.min(Math.max(body.limit ?? 60, 1), 200);
+
+  let parsed: ParsedQuery | null = null;
+  let smart = false;
+
+  if (q.length >= 4 && process.env.ANTHROPIC_API_KEY) {
+    const t0 = Date.now();
+    try {
+      const anthropic = new Anthropic();
+      const resp = await anthropic.messages.create({
+        model: ROUTER_MODEL,
+        max_tokens: 200,
+        system: PARSE_SYSTEM,
+        messages: [{ role: "user", content: q }],
+      });
+      const text = resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+      const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+      parsed = JSON.parse(json) as ParsedQuery;
+      smart = true;
+      const { data: userRow } = await supabase.from("users").select("org_id").eq("id", user.id).single();
+      if (userRow) {
+        await supabase.from("agent_interactions").insert({
+          org_id: userRow.org_id, user_id: user.id, surface: "library.search",
+          model: ROUTER_MODEL, input_tokens: resp.usage.input_tokens,
+          output_tokens: resp.usage.output_tokens, latency_ms: Date.now() - t0, status: "ok",
+        });
+      }
+    } catch {
+      parsed = null; // fall back to plain FTS below
+    }
+  }
+
+  const rpc = (args: Record<string, unknown>) => supabase.rpc("search_personas", args);
+
+  let { data, error } = await rpc({
+    q: parsed ? parsed.search ?? "" : q,
+    age_min: parsed?.age_min ?? null,
+    age_max: parsed?.age_max ?? null,
+    tenure_f: parsed?.tenure ?? null,
+    kinds: parsed?.kinds ?? null,
+    lim: limit,
+  });
+
+  // smart parse can over-filter; retry once with the raw query, no filters
+  if (!error && (data ?? []).length === 0 && smart && q) {
+    const retry = await rpc({ q, age_min: null, age_max: null, tenure_f: null, kinds: null, lim: limit });
+    data = retry.data; error = retry.error;
+  }
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ personas: (data ?? []) as LibrarySearchRow[], smart });
+}
