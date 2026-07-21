@@ -1,0 +1,3026 @@
+[
+  {
+    "id": "105dda86-e0c3-4bf2-9031-b6fc4f4a9846",
+    "name": "Étienne B.",
+    "role": "Canadian Pension Direct Investor",
+    "problems": [
+      "state field is 'NY' but metro is 'Toronto, ON' — Toronto is in Ontario, Canada, not New York"
+    ],
+    "fixes": {
+      "state": "ON"
+    }
+  },
+  {
+    "id": "72914543-3eab-47e5-b35b-132972d07a27",
+    "name": "Priya N.",
+    "role": "Co-GP Capital Provider",
+    "problems": [
+      "years_experience (17) inconsistent with tagline claim of implicit seniority; age 44 with 17 yrs experience suggests career start at 27, plausible but on the late side for a Co-GP role typically requiring deeper track record"
+    ],
+    "fixes": {
+      "years_experience": 20
+    }
+  },
+  {
+    "id": "d91fccd2-3d2f-4525-a687-0f2ce8e7825b",
+    "name": "Desmond O.",
+    "role": "GP Fund Manager (Closed-End)",
+    "problems": [
+      "Credential 'CRE Finance' is not a recognized professional credential; likely meant 'CRE' (Counselors of Real Estate) or should be removed"
+    ],
+    "fixes": {
+      "credentials": "CRE"
+    }
+  },
+  {
+    "id": "9e4a6908-a855-4510-a1f7-147008254d84",
+    "name": "Marisol T.",
+    "role": "Distressed / NPL Buyer",
+    "problems": [
+      "First loan pool purchase at age 26 with 15 years of experience would place career start at age 11—implausible. Tagline claims early entry ('bought her first loan pool at 26') but 15 yrs_experience contradicts this (26 + 15 = 41, which is current age, suggesting she started at 26, not earlier)."
+    ],
+    "fixes": {
+      "years_experience": 15
+    }
+  },
+  {
+    "id": "e760fb41-1025-40f0-a945-3c38e3c4d465",
+    "name": "Renata O.",
+    "role": "Impact Investor (Affordable Housing)",
+    "problems": [
+      "Income band $150–190K is low for an expert-tier capital allocator with 18 years experience managing LIHTC and patient capital strategies in New York. This band is more typical of junior program officers or mid-career program staff, not a senior impact investor directing capital deployment."
+    ],
+    "fixes": {
+      "income_band": "$240–310K"
+    }
+  },
+  {
+    "id": "85f7838a-9d73-4366-97d9-3d0d29343ace",
+    "name": "Deja W.",
+    "role": "Wholesaler",
+    "problems": [
+      "years_experience (7) inconsistent with tagline claim of running 400 leads/month (suggests established operation, not 7 yrs in)"
+    ],
+    "fixes": {
+      "years_experience": 7
+    }
+  },
+  {
+    "id": "05123516-4438-40fa-8a02-d16d3db362da",
+    "name": "Yolanda B.",
+    "role": "Section 8 Landlord",
+    "problems": [
+      "income_band ($85–120K) implausibly low for full-time landlord operating 18 Section 8 units in Detroit-Warren metro; even conservatively at $500–700/mo net per unit = $108–126K gross before expenses, and tagline emphasizes 'zero vacancies in three years' (suggesting premium operations)",
+      "tenure should reflect that Section 8 landlord owns portfolio properties"
+    ],
+    "fixes": {
+      "income_band": "$120–160K"
+    }
+  },
+  {
+    "id": "c4dc5566-69cd-4640-9873-7a33f5bdfc5e",
+    "name": "Rosalind M.",
+    "role": "Opportunistic Land Banker",
+    "problems": [
+      "Missing occupation field; only role and category provided"
+    ],
+    "fixes": {
+      "occupation": "independent real estate investor"
+    }
+  },
+  {
+    "id": "c1da1083-373e-4a26-af2d-102ad987a40e",
+    "name": "Roscoe D.",
+    "role": "Mobile Home Park Investor",
+    "problems": [
+      "years_experience (14) inconsistent with tagline claim and role maturity; 14 years at age 55 means started at 41, plausible but tight for an 'expert' in mobile home parks"
+    ],
+    "fixes": {
+      "years_experience": 18
+    }
+  },
+  {
+    "id": "938cbd57-cace-47b0-a6e8-439938bc82aa",
+    "name": "Harold B.",
+    "role": "REIT Dividend Retiree Investor",
+    "problems": [
+      "years_experience (12) is inconsistent with retirement narrative: 42-year utility career would imply ~42 years experience, not 12"
+    ],
+    "fixes": {
+      "years_experience": 42
+    }
+  },
+  {
+    "id": "5cf884a0-001b-445e-bd0e-c8bdcb7a8421",
+    "name": "Isabela R.",
+    "role": "Fractional Ownership Investor",
+    "problems": [
+      "tenure (owner) contradicts fractional ownership model: fractional ownership investors do not own property outright; they hold a fractional stake in co-owned property"
+    ],
+    "fixes": {
+      "tenure": "renter"
+    }
+  },
+  {
+    "id": "a1272202-d63b-4a92-865e-08fda7d1d48a",
+    "name": "Divya C.",
+    "role": "Passive LP (Accredited Physician/Dentist Cohort)",
+    "problems": [
+      "years_experience (6) inconsistent with age (38) and occupation (anesthesiologist). Medical school + residency alone typically require ~11–13 years post–high school; at age 38, a physician should have ~13–15+ years of post-residency experience, not 6."
+    ],
+    "fixes": {
+      "years_experience": 13
+    }
+  },
+  {
+    "id": "ba3cbbd3-5226-4e1c-8745-9875a42bb2d6",
+    "name": "Ana Lucia P.",
+    "role": "Title Examiner",
+    "problems": [
+      "years_experience (11) inconsistent with career start at age ~23; acceptable but tight for 11 yrs at age 34. However, plausible if she entered the field at ~23."
+    ],
+    "fixes": {
+      "years_experience": 10
+    }
+  },
+  {
+    "id": "44d9abc8-79f9-4853-bbd6-8f870c6bade4",
+    "name": "Carmen A.",
+    "role": "Laundromat + Real Estate Investor",
+    "problems": [
+      "years_experience (13) inconsistent with age (52) and tagline. If career started at ~18, persona would have ~34 years available; 13 years implies entry at age 39. Tagline's implicit mastery and 'Tuesday cash counts' tone suggest longer tenure. Recommend 18–20 years to match narrative authority."
+    ],
+    "fixes": {
+      "years_experience": 19
+    }
+  },
+  {
+    "id": "f7ffdaea-70eb-4303-9041-c3da4ce28843",
+    "name": "Terrell J.",
+    "role": "Industrial Developer",
+    "problems": [
+      "years_experience (24) exceeds tagline claim (20 yrs); tagline is authoritative source"
+    ],
+    "fixes": {
+      "years_experience": 20
+    }
+  },
+  {
+    "id": "72ce8474-d16c-4474-beb2-ea89cd6b217b",
+    "name": "Tobias R.",
+    "role": "Fee Developer",
+    "problems": [
+      "occupation field missing; required for any persona"
+    ],
+    "fixes": {
+      "occupation": "principal, fee development firm"
+    }
+  },
+  {
+    "id": "e25a3f4a-0160-4efe-b797-b17aa540077f",
+    "name": "Ines V.",
+    "role": "Owner's Rep",
+    "problems": [
+      "occupation field missing; required for any persona"
+    ],
+    "fixes": {
+      "occupation": "owner's representative"
+    }
+  },
+  {
+    "id": "371494ad-2371-45be-9312-77f8001bb1af",
+    "name": "Deshawn M.",
+    "role": "Townhome Infill Developer",
+    "problems": [
+      "years_experience (15) inconsistent with tagline claim ('13 vacant lots') and typical career arc for age 41; 15 years implies start at age 26, which is plausible but tight; however, the tagline's confident tone and specific zoning relationship suggests more seasoned practice"
+    ],
+    "fixes": {
+      "years_experience": 17
+    }
+  },
+  {
+    "id": "125a0ee2-8c79-4c79-8fb3-eef766cad152",
+    "name": "Solveig B.",
+    "role": "Snow-Load/Alpine Engineer",
+    "problems": [
+      "income_band missing — essential for expert role and credential level (PE, SE in Denver–Boulder metro)"
+    ],
+    "fixes": {
+      "income_band": "$160–200K"
+    }
+  },
+  {
+    "id": "69d318fa-37e5-411a-a797-7ff9d7343adb",
+    "name": "Delphine A.",
+    "role": "Flood Insurance (NFIP/Private) Specialist",
+    "problems": [
+      "years_experience (14) inconsistent with age (38): career start at ~24 is realistic, but 14 years of flood-specific expertise at that age is tight; should align with a more junior or mid-career profile OR increase age"
+    ],
+    "fixes": {
+      "age": 42
+    }
+  },
+  {
+    "id": "04f2eaf9-afcf-4b68-bd0f-e3cdded1b946",
+    "name": "Dwight K.",
+    "role": "Self-Storage Developer",
+    "problems": [
+      "occupation field missing; role is 'Self-Storage Developer' but demographics lack occupation value",
+      "credentials (CPA, inactive) do not match self-storage development role—inconsistent with expertise signaled by tagline"
+    ],
+    "fixes": {
+      "occupation": "Self-Storage Developer",
+      "credentials": "CPA, real estate development experience"
+    }
+  },
+  {
+    "id": "c2a9b3b7-c960-49f1-81a3-225c30eccf96",
+    "name": "Denise K.",
+    "role": "Parking Consultant",
+    "problems": [
+      "years_experience (26) implies career start at age 27, which is plausible but tight; however, no credentials listed for a role typically requiring PE or AICP certification"
+    ],
+    "fixes": {
+      "credentials": "PE or AICP"
+    }
+  },
+  {
+    "id": "d9fa40e8-b980-4c40-a89c-ad3778802ecb",
+    "name": "Akira M.",
+    "role": "Computational Design Specialist",
+    "problems": [
+      "years_experience (8) is plausible but tight for age 33 (would start ~25); career start is just inside acceptable range"
+    ],
+    "fixes": {
+      "age": 31
+    }
+  },
+  {
+    "id": "5bb4ed5f-5f37-4ec4-b93e-14d2b28912b5",
+    "name": "Wesley T.",
+    "role": "Commissioning Agent",
+    "problems": [
+      "years_experience (30) inconsistent with age (58): implies career start at age 28, plausible but tight; however, 30 yrs is unusually senior for commissioning agent role without explicit tagline claim",
+      "income_band ($140–170K) appears high for commissioning agent in Kansas City market; typical CxA/CEM roles in mid-market metros range $100–140K"
+    ],
+    "fixes": {
+      "years_experience": 26,
+      "income_band": "$115–145K"
+    }
+  },
+  {
+    "id": "227c2f01-0fe3-47b1-b155-dc7ab38e11f6",
+    "name": "Minh T.",
+    "role": "Prefab/DfMA Integration Lead",
+    "problems": [
+      "years_experience (14) conflicts with tagline claim of '12 yrs'; tagline takes precedence"
+    ],
+    "fixes": {
+      "years_experience": 12
+    }
+  },
+  {
+    "id": "60c561c0-ba33-4d50-87eb-344c04a08966",
+    "name": "Ezekiel U.",
+    "role": "Surety Claims Specialist",
+    "problems": [
+      "years_experience (19) conflicts with tagline claim of '17 yrs'; tagline takes precedence"
+    ],
+    "fixes": {
+      "years_experience": 17
+    }
+  },
+  {
+    "id": "1f905fea-e1c5-4bab-853b-5598ae412b96",
+    "name": "Claudette E.",
+    "role": "Construction Claims Consultant",
+    "problems": [
+      "years_experience (24) conflicts with tagline claim of '22 yrs'; tagline takes precedence"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "8164e9ca-df73-4303-a0c9-c5a12d2745e6",
+    "name": "Otis F.",
+    "role": "GC Executive",
+    "problems": [
+      "years_experience (34) exceeds tagline claim (31 yrs); tagline wins per instructions",
+      "age 58 with 31 yrs experience implies career start at 27, which is plausible but late for trades; however, no hard contradiction"
+    ],
+    "fixes": {
+      "years_experience": 31
+    }
+  },
+  {
+    "id": "60aa2e85-a9ae-404e-ac17-a8ab5eeb9bc8",
+    "name": "Darnell F.",
+    "role": "Tool Theft / Site Security Vendor",
+    "problems": [
+      "years_experience (14) inconsistent with tagline 'ex-cop' — typical police career + transition leaves insufficient time; if 14 years in security consulting alone, career start would be age 34, but age 48 suggests longer total career"
+    ],
+    "fixes": {
+      "years_experience": 20
+    }
+  },
+  {
+    "id": "568b2f78-66ad-45af-8360-617b0844e9e9",
+    "name": "Carmen R.",
+    "role": "Painting Sub",
+    "problems": [
+      "income_band ($70–95K) appears low for a painting subcontractor/owner in Miami with 16 years experience and professional certifications; Miami's cost structure and typical painting sub margins support higher band"
+    ],
+    "fixes": {
+      "income_band": "$85–115K"
+    }
+  },
+  {
+    "id": "95c651b6-b440-4966-a5b5-257fd28bdaa7",
+    "name": "Wendell A.",
+    "role": "Preconstruction Director",
+    "problems": [
+      "years_experience (24) exceeds tagline claim ('18 yrs'); tagline is authoritative source"
+    ],
+    "fixes": {
+      "years_experience": 18
+    }
+  },
+  {
+    "id": "bc69719c-f44f-41ea-9e8b-640d53179d84",
+    "name": "Roxana G.",
+    "role": "Trade School Instructor",
+    "problems": [
+      "years_experience (27) exceeds tagline claim (19 yrs teaching); tagline should be authoritative"
+    ],
+    "fixes": {
+      "years_experience": 19
+    }
+  },
+  {
+    "id": "f29400d8-3e85-48b2-a0b9-8e5a341124a5",
+    "name": "Roberto G.",
+    "role": "Superintendent",
+    "problems": [
+      "years_experience (30) exceeds tagline claim ('27 yrs'); tagline is authoritative source"
+    ],
+    "fixes": {
+      "years_experience": 27
+    }
+  },
+  {
+    "id": "14098934-a6e7-4703-a1db-7558fe4acaba",
+    "name": "Kwame O.",
+    "role": "HVAC/Mechanical Sub",
+    "problems": [
+      "Income band $170–220K is implausibly high for a subcontractor HVAC mechanic at age 52 with 24 years experience; typical range for this role/market is $85–130K",
+      "Missing occupation field in demographics (tagline implies subcontractor/service role, but field is absent)"
+    ],
+    "fixes": {
+      "income_band": "$95-135K",
+      "occupation": "HVAC/mechanical subcontractor"
+    }
+  },
+  {
+    "id": "3b7725bc-6e89-4a8f-9d53-8f4376aca6aa",
+    "name": "Scottie Z.",
+    "role": "Crane Operator",
+    "problems": [
+      "years_experience (26) exceeds tagline claim (22 yrs on the stick); tagline should be authoritative"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "6d049d73-b6cd-4702-b951-e21b19d5b2fb",
+    "name": "Agatha C.",
+    "role": "CM-at-Risk Executive",
+    "problems": [
+      "years_experience (32) exceeds tagline claim (22 years); tagline should be authoritative"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "8f5c4666-8d65-426c-b819-c228d75f1a6c",
+    "name": "Ronnie B.",
+    "role": "Concrete Sub",
+    "problems": [
+      "Income band $130–160K is high for a concrete flatwork sub in Columbus, OH; typical range is $85–125K",
+      "Missing occupation field in demographics"
+    ],
+    "fixes": {
+      "income_band": "$100-135K",
+      "occupation": "concrete subcontractor"
+    }
+  },
+  {
+    "id": "96aef5ba-f385-4ad4-8853-7bccfd0a6f61",
+    "name": "Trent H.",
+    "role": "Framing Sub",
+    "problems": [
+      "Income band $160–200K is plausible for a framing contractor/owner running multiple crews, but at age 41 with only 24 years experience, career start would be age 17—borderline but acceptable",
+      "Missing occupation field in demographics (should state 'framing subcontractor' or 'framing contractor')"
+    ],
+    "fixes": {
+      "occupation": "framing subcontractor/owner"
+    }
+  },
+  {
+    "id": "09e0a853-3260-4f25-b872-d48c0a4c74e1",
+    "name": "Denise M.",
+    "role": "Managing Broker",
+    "problems": [
+      "years_experience (28) conflicts with tagline ('22 yrs behind the desk'). Tagline indicates 22 years, not 28."
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "608bd25c-8ff6-410c-ab81-1633045ea4e7",
+    "name": "Deborah H.",
+    "role": "Union Business Agent",
+    "problems": [
+      "tagline states '24 yrs Local 25' but years_experience is 32; if she has been in the union/local 24 years, career start would be age 32 (56 − 24), which is late; if 32 years total experience, she would have joined at age 24 and been in Local 25 for more than 24 years"
+    ],
+    "fixes": {
+      "years_experience": 24
+    }
+  },
+  {
+    "id": "d6e54729-5cc5-4cd2-b6ad-c0151d53f3ce",
+    "name": "Briggs L.",
+    "role": "Franchise Development Rep",
+    "problems": [
+      "Tagline states '40 territories in 6 years' but years_experience is 10; inconsistent narrative",
+      "Real Estate License (inactive) is questionable for active franchise sales role requiring credibility and ongoing compliance"
+    ],
+    "fixes": {
+      "years_experience": 6
+    }
+  },
+  {
+    "id": "8863db6b-078e-4604-81d3-82e3e7cd35c6",
+    "name": "Fernanda Q.",
+    "role": "FSBO-Assist Service",
+    "problems": [
+      "credentials list 'Former paralegal, real estate' but no actual real estate license specified; FSBO-assist typically requires broker or salesperson license in CA"
+    ],
+    "fixes": {
+      "credentials": "CA real estate salesperson license, paralegal background"
+    }
+  },
+  {
+    "id": "e5d1e747-ddf5-450c-b399-235f9072aecd",
+    "name": "Divya E.",
+    "role": "Investment Sales Broker (Industrial)",
+    "problems": [
+      "years_experience (14) does not match tagline claim of ~15+ yrs implied by 'sold the last-mile boom before the term existed' (boom began ~2019–2020); age 39 suggests career start at ~25, making 14 years reasonable, but tagline implies deeper history in the asset class"
+    ],
+    "fixes": {
+      "years_experience": 15
+    }
+  },
+  {
+    "id": "6823f7d5-6f5d-40e0-b066-a4e3d8fba6e2",
+    "name": "Elif K.",
+    "role": "Virtual Stager",
+    "problems": [
+      "years_experience (7) inconsistent with tagline claim '24 hrs' turnaround (not time-based); however, age 36 and 7 years experience is internally plausible",
+      "income_band $70–90K seems low for a studio owner in Phoenix with married + 1 child household; should be higher"
+    ],
+    "fixes": {
+      "income_band": "$100–140K",
+      "years_experience": 9
+    }
+  },
+  {
+    "id": "d6a825a8-37be-4376-953d-02a02c49e361",
+    "name": "Gerald M.",
+    "role": "Realtor Association Executive",
+    "problems": [
+      "years_experience (14) appears inconsistent with implied depth for a 6,000-member board executive; should be higher",
+      "age 58 with only 14 years experience suggests late-career shift; plausible but tagline implies long tenure. Verify intent."
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "baa7f42c-9191-4bcb-bbbd-88b9d9195c81",
+    "name": "Devon R.",
+    "role": "Open House Greeter",
+    "problems": [
+      "Occupation lists 'County records clerk / weekend open house staffer' but role is 'Open House Greeter' expert—unclear primary occupation",
+      "years_experience: 5 yrs is very low for an 'expert' kind persona in real estate; implies recent entry to the field",
+      "income_band '$40–55K (side income)' suggests this is secondary work, inconsistent with 'expert' designation and the 'weekend warrior' framing"
+    ],
+    "fixes": {
+      "years_experience": 8,
+      "income_band": "$65–85K"
+    }
+  },
+  {
+    "id": "a93fc4dd-7e51-44ef-bba7-4443ad9060e1",
+    "name": "Carmen B.",
+    "role": "Transaction Coordinator",
+    "problems": [
+      "Fresno, CA: income_band '$58–72K' is low for 11 yrs experience and 2,400 closings in high-cost CA metro; inconsistent with expertise and tenure",
+      "Age 41 with 11 yrs experience implies career start at ~30; plausible but modest for an 'expert' kind coordinator with that closure volume"
+    ],
+    "fixes": {
+      "income_band": "$75–95K"
+    }
+  },
+  {
+    "id": "7de3685c-fec0-43e2-8c0e-42a5cf6f72d7",
+    "name": "Franklin O.",
+    "role": "Probate Specialist",
+    "problems": [
+      "years_experience (24) with age 58 implies career start at age 34, which is plausible but late; however, no explicit years claim in tagline to override the field. More critically: CPRES credential alone (Certified Probate Real Estate Specialist) is insufficient for probate work involving 'letters testamentary' and 'court confirmation'—typically requires attorney licensing or J.D., or explicit partnership with counsel. As presented, credential mismatch with role scope."
+    ],
+    "fixes": {
+      "credentials": "CPRES, partnered attorney",
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "518de1a7-804d-474b-99ba-fcf317b37c3d",
+    "name": "Herb W.",
+    "role": "Limited-Service MLS Entry Provider",
+    "problems": [
+      "income_band ($85–100K) is low for a 30-year broker in limited-service MLS entry role. At $149/MLS entry with minimal overhead, even modest volume (50–70 entries/month) would yield $89K–126K annually, placing lower end plausibly near band. However, 30 years' experience and broker licensure typically support higher floor; income_band undervalues seniority and role scope."
+    ],
+    "fixes": {
+      "income_band": "$110–140K"
+    }
+  },
+  {
+    "id": "ebd26880-2e6f-43a1-8d71-734584336bfc",
+    "name": "Sofia A.",
+    "role": "Retail Loan Officer",
+    "problems": [
+      "Tagline claims '11 yrs at the same regional bank branch' but years_experience is 17. Career start at age ~24 is plausible, but the tagline's specific 11-year claim should match the field."
+    ],
+    "fixes": {
+      "years_experience": 11
+    }
+  },
+  {
+    "id": "5486cd09-9ea3-4416-ae41-a61e87d74a13",
+    "name": "Miriam K.",
+    "role": "Co-op Specialist (Board-Approval Markets)",
+    "problems": [
+      "Missing tenure field. As an expert broker specializing in high-end NYC co-ops, she should own residential real estate (or at minimum the field must be declared)."
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "be186da6-0019-4fd2-9a0b-578e9bef6e41",
+    "name": "Simone L.",
+    "role": "Luxury Specialist",
+    "problems": [
+      "Tagline claims 'ten listings a year, all over $3M'—at ~3–5% commission ($90K–150K per transaction), even conservative close rates support $900K–$750K gross revenue. Income_band $400–600K is well below imputed earnings and undersells the role's market position."
+    ],
+    "fixes": {
+      "income_band": "$750K–1.2M"
+    }
+  },
+  {
+    "id": "f235c911-8671-4937-97d5-ca1ed822a51a",
+    "name": "Deshawn T.",
+    "role": "New-Construction On-Site Sales Counselor",
+    "problems": [
+      "Missing tenure field. A persona with stable household (married, 2 children) in a role for 8 years should have tenure declared."
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "37ae585d-999f-490e-b09f-5c5aec795e1a",
+    "name": "Ines D.",
+    "role": "Referral-Only Agent",
+    "problems": [
+      "Tagline claims 'hasn't held a live license since 2016' (8+ years unlicensed) but credentials list 'Licensed Real Estate Broker (CA)' — contradictory. If unlicensed since 2016, credentials should reflect inactive/referral status only.",
+      "years_experience of 22 appears to count total career time, but should clarify that active licensing years ended in 2016 (~8 years ago). Current income from referral fees only should be plausible for age 61 living off referrals in SFBA (reasonable), but the credential field conflicts with the narrative."
+    ],
+    "fixes": {
+      "credentials": "Licensed Real Estate Broker (CA, inactive since 2016), referral status"
+    }
+  },
+  {
+    "id": "27b23a48-259f-4fac-8d2d-d5d81b68cf64",
+    "name": "Jordan M.",
+    "role": "Inside Sales Agent (ISA)",
+    "problems": [
+      "Missing credentials field. ISAs typically do not require real estate licenses (they book appointments, not transact), but field is absent. Confirm whether this persona should be unlicensed support staff or a licensed salesperson."
+    ],
+    "fixes": {
+      "credentials": "No license required (unlicensed inside sales support)"
+    }
+  },
+  {
+    "id": "67f612b6-4bb2-40ec-b99a-47eeae9cd019",
+    "name": "Felix N.",
+    "role": "Mold Assessor",
+    "problems": [
+      "years_experience (19) inconsistent with age (50) and tagline claim of 19 yrs; if career started at ~31, plausible but tight for expertise credibility; age suggests earlier start"
+    ],
+    "fixes": {
+      "age": 52
+    }
+  },
+  {
+    "id": "8d0b265f-69dc-4794-9256-42f92d0f72e9",
+    "name": "Deborah A.",
+    "role": "Lead/Asbestos Inspector",
+    "problems": [
+      "years_experience (21) exceeds age-plausible career span; career start at ~35 is late for someone now 56 with 21 yrs experience; inconsistent with established expertise tone"
+    ],
+    "fixes": {
+      "age": 59
+    }
+  },
+  {
+    "id": "acdcc802-3b42-43f4-b42c-5cab93dcb4dc",
+    "name": "Brandi S.",
+    "role": "Fence Contractor",
+    "problems": [
+      "Fence company owner with $70–90K income_band is low for ownership role; typically contractors/owners in this service category earn higher"
+    ],
+    "fixes": {
+      "income_band": "$85–110K"
+    }
+  },
+  {
+    "id": "92bf4b06-bf34-474d-b5d1-88e82b8aad26",
+    "name": "Jamal H.",
+    "role": "Garage Door Installer",
+    "problems": [
+      "Age 34 with 12 years experience implies career start at age 22, which is plausible; however $55–70K is on the low end for a skilled trades technician in Chicago metro with 12 years experience"
+    ],
+    "fixes": {
+      "income_band": "$65–80K"
+    }
+  },
+  {
+    "id": "c75ac139-1727-4c55-a4e0-bab1f4d0131a",
+    "name": "Sofia G.",
+    "role": "Renovation Loan (203k) Specialist",
+    "problems": [
+      "years_experience (15) exceeds tagline claim (11 yrs); tagline wins per instructions"
+    ],
+    "fixes": {
+      "years_experience": 11
+    }
+  },
+  {
+    "id": "3f240ad3-8cb6-49ae-b4ab-b1225f71474f",
+    "name": "Russell Y.",
+    "role": "Septic Pumper",
+    "problems": [
+      "years_experience (27) is implausibly high for age 51: career start would be age 24, which is plausible but at the extreme upper boundary; however, the larger issue is internal: 27 years in septic work starting at age ~24 creates a strained narrative for a self-described expert persona. Recommend aligning to tagline's 22 yrs for consistency."
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "748b4bb8-a855-40b7-bdc9-d8e9ce047d32",
+    "name": "Gregory M.",
+    "role": "Capital Markets Debt Placement Broker",
+    "problems": [
+      "years_experience (24) exceeds age-based plausibility: at age 49, starting work at 25 is realistic, but tagline claims '18 yrs CMBS desks' (career start would be ~31), leaving only 6 years for prior experience. Tagline should win.",
+      "income_band ($300–400K) may be high for a NY Broker License holder alone without explicit Series 7 or other securitization credentials; Series 63 supports secondary market activity but is modest for that band"
+    ],
+    "fixes": {
+      "years_experience": 18
+    }
+  },
+  {
+    "id": "7d3d2b24-5b0d-45ed-8b42-de30b0a8cf21",
+    "name": "Olivia E.",
+    "role": "Equity Placement Agent",
+    "problems": [
+      "Credentials mismatch: Series 82 (Registered Options Principal) is not standard for equity placement agents; typical credentials are Series 7, Series 65, or Series 82 is an options supervisor cert—does not align with sponsor underwriting / capital raise role. Should be Series 7 or Series 65."
+    ],
+    "fixes": {
+      "credentials": "Series 7, CA Real Estate License"
+    }
+  },
+  {
+    "id": "6a0254ef-f6a2-415a-b14a-f35d9d9eab8a",
+    "name": "Petar N.",
+    "role": "Window/Door Installer",
+    "problems": [
+      "years_experience (24) inconsistent with age (47): career would have started at age 23, which is plausible but tight. However, this is borderline acceptable for a skilled trade."
+    ],
+    "fixes": {
+      "age": 48
+    }
+  },
+  {
+    "id": "47bbc38b-d560-447b-a6eb-7126950d26db",
+    "name": "Vernon L.",
+    "role": "Estate Sale Company",
+    "problems": [
+      "years_experience (18) inconsistent with age (58): career would have started at age 40, which is late but not impossible for a career change. However, 'runs 3-day sales' and established business ownership suggests more seniority. Estate sale management typically requires more than 18 years to reach owner status with established portfolio."
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "0d8bc25e-3f31-425b-8459-fdf07af77712",
+    "name": "Curtis E.",
+    "role": "Pest Control Operator",
+    "problems": [
+      "tenure field missing — persona is described as expert operator with 22 yrs experience and credentials, should clarify ownership status for consistency with role",
+      "age (47) and years_experience (22) are consistent (career start at 25), and tagline '22 yrs' matches years_experience"
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "bfbbc7de-eba6-47b5-b102-36d136a6339a",
+    "name": "Mitchell Y.",
+    "role": "Assistant Manager (Lease-Up)",
+    "problems": [
+      "years_experience (4) inconsistent with tagline ('3 lease-ups in 4 years'); tagline implies ~3 yrs minimum, likely closer to 3–4 yrs total"
+    ],
+    "fixes": {
+      "years_experience": 3
+    }
+  },
+  {
+    "id": "41be4c8c-835e-40fb-855a-cc4d57a1a51f",
+    "name": "Colleen R.",
+    "role": "Receiver",
+    "problems": [
+      "years_experience (24) exceeds tagline claim ('22 yrs'); tagline wins"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "d8f81f54-2fe8-42cc-95f5-0e9ccae7413c",
+    "name": "Marisol P.",
+    "role": "Maintenance Tech",
+    "problems": [
+      "Tenure 'owner' is inconsistent with role (Maintenance Tech are typically employees/renters, not building owners)",
+      "Maintenance tech income band and credentials appropriate, but 'owner' tenure contradicts the occupational reality of the role"
+    ],
+    "fixes": {
+      "tenure": "renter"
+    }
+  },
+  {
+    "id": "f3de7d1b-ae43-4ee0-a25e-ef4ae46f6027",
+    "name": "Destiny K.",
+    "role": "Valet Operator",
+    "problems": [
+      "No credentials listed; valet operations at this seniority level (12 yrs, $80–105K) typically require at least a commercial driver's license (CDL) or state-specific valet license"
+    ],
+    "fixes": {
+      "credentials": "CDL (Commercial Driver's License), Georgia Valet Operator License"
+    }
+  },
+  {
+    "id": "298e4231-9bfe-4882-ad09-cd279553c877",
+    "name": "Soo-Jin K.",
+    "role": "Vacation Rental Revenue Analyst",
+    "problems": [
+      "years_experience (6) is low for age 29; career start would be ~23, which is plausible but tight; however, income_band ($80–100K) is reasonable for an analyst at that level"
+    ],
+    "fixes": {
+      "age": 28
+    }
+  },
+  {
+    "id": "344f1671-bdb3-4c2e-bde8-05eaad703889",
+    "name": "Anjali P.",
+    "role": "Feasibility Consultant",
+    "problems": [
+      "Metro is Washington–Arlington, DC but state is MD; should align to DC metro primary state (DC) or clarify MD residence"
+    ],
+    "fixes": {
+      "state": "DC"
+    }
+  },
+  {
+    "id": "e92f91ed-b6a6-4ec8-bb67-df7d84ffadd7",
+    "name": "Tyrell E.",
+    "role": "Make-Ready/Turn Crew Lead",
+    "problems": [
+      "income_band $58–70K is low for a crew lead managing 5 people with 15 years experience in Charlotte, NC (moderately high COL for trades); typically $70–85K+",
+      "tenure 'owner' with 15 years experience, age 41, married with 2 children is plausible but income_band undercuts that profile"
+    ],
+    "fixes": {
+      "income_band": "$72–88K"
+    }
+  },
+  {
+    "id": "3d58e55e-70f9-448e-9028-a7750fd5a071",
+    "name": "Denise W.",
+    "role": "Self-Storage Manager",
+    "problems": [
+      "income_band $48–58K is below market for a solo 650-unit facility manager with 9 years experience in Charlotte, NC; typically $60–75K",
+      "renter tenure with married + 1 child household and only $48–58K income is plausible but undershoots the role's seniority and solo facility responsibility"
+    ],
+    "fixes": {
+      "income_band": "$62–76K"
+    }
+  },
+  {
+    "id": "f4b3cea5-ef58-426d-b1bf-29a248bc9da8",
+    "name": "Catalina A.",
+    "role": "RV Resort Operator",
+    "problems": [
+      "tenure is 'renter' but role is 'RV Resort General Manager/Operator' — operators own or have significant equity; renters do not operate properties",
+      "career timeline inconsistent: started at 19, now 43 = 24 years, but years_experience lists 19"
+    ],
+    "fixes": {
+      "tenure": "owner",
+      "years_experience": 24
+    }
+  },
+  {
+    "id": "227f86ff-ff5c-469b-bccb-21a3f1ee3fb0",
+    "name": "Ishita Y.",
+    "role": "Vapor Intrusion Specialist",
+    "problems": [
+      "years_experience (15) inconsistent with age (43): career start at ~28 is plausible but tight; credential CIH (Certified Industrial Hygienist) typically requires 4+ years relevant experience post-degree, suggesting degree at ~22–24 and experience start ~26–28, making 15 years reasonable but at the low end for a specialist commanding $135–160K"
+    ],
+    "fixes": {
+      "years_experience": 18
+    }
+  },
+  {
+    "id": "e3af5539-57d4-41d9-8b77-7cf7da54ad76",
+    "name": "Pavel U.",
+    "role": "Phase II/Remediation Engineer",
+    "problems": [
+      "years_experience (24) exceeds age-plausible career span: at age 51, career start would be ~27, but 24 years back is age 27 (valid but tight); however tagline states '22 yrs' explicitly, creating conflict"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "d6c14a6f-33ee-4fd3-a949-933ccbc61ae2",
+    "name": "Levin E.",
+    "role": "Demographer",
+    "problems": [
+      "years_experience (24) conflicts with tagline claim '20 years of census cohorts'"
+    ],
+    "fixes": {
+      "years_experience": 20
+    }
+  },
+  {
+    "id": "5cb520a3-52f4-42fb-89cf-cc355cfe1944",
+    "name": "Tanya B.",
+    "role": "Property Management SaaS CSM",
+    "problems": [
+      "years_experience (11) inconsistent with age (33): implies career start at age 22, plausible but tight; however, CSM role typically requires 3–5 yrs prior experience before reaching account management responsibility—suggests either early promotion or inflated tenure"
+    ],
+    "fixes": {
+      "years_experience": 8
+    }
+  },
+  {
+    "id": "0136e559-a8a0-4150-8119-928731afc7c7",
+    "name": "Vincent L.",
+    "role": "Casino Development Executive",
+    "problems": [
+      "years_experience (27) inconsistent with age (55) and tagline claim ('built three properties'). At age 55 with career start ~18, max plausible is ~37 years. Tagline suggests 20+ years of major project delivery; 27 is reasonable but low for 'three properties from dirt to grand opening' at that age.",
+      "PMP (Project Management Professional) is a generic credential; no gaming/development-specific license (e.g., Nevada gaming operator license) is listed. For a Casino Development Executive, gaming compliance credentials would strengthen credibility."
+    ],
+    "fixes": {
+      "years_experience": 28
+    }
+  },
+  {
+    "id": "7feb8c2f-5612-41cc-b73d-4e529b4e3a4d",
+    "name": "Kristen A.",
+    "role": "Ski Resort Real Estate Director",
+    "problems": [
+      "years_experience (24) exceeds plausible career span. At age 51 with career start ~18, max is ~33 years. However, tagline says '22 seasons in the Rockies,' which is more specific and credible. 24 years experience for a ski real estate role is plausible but tagline should govern.",
+      "Age and years_experience are internally consistent (51 − 24 = 27, plausible career start). CCIM and income band are appropriate. Adjust years_experience to match the '22 seasons' tagline claim."
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "d4a5edc2-6de3-4aad-9714-4093f4a45f46",
+    "name": "Charlotte E.",
+    "role": "SMR/Nuclear Developer",
+    "problems": [
+      "Tagline claims '14 yrs NRC dockets' but years_experience is 18; tagline should win",
+      "Age 44 with 14 yrs experience implies career start at 30, which is plausible but late for nuclear engineering; however, tagline is authoritative"
+    ],
+    "fixes": {
+      "years_experience": 14
+    }
+  },
+  {
+    "id": "2bd76ad5-7d7f-46ee-8a99-0b6d57fb2a97",
+    "name": "Jae-won L.",
+    "role": "Merchant Transmission Developer",
+    "problems": [
+      "credentials missing for senior transmission developer role; M.S. or PE typical"
+    ],
+    "fixes": {
+      "credentials": "M.S. Electrical Engineering"
+    }
+  },
+  {
+    "id": "088d89ec-6e02-4433-93f2-abe5affdad4d",
+    "name": "Boone R.",
+    "role": "Interconnection Queue Consultant",
+    "problems": [
+      "occupation field is missing — required to validate role coherence"
+    ],
+    "fixes": {
+      "occupation": "Interconnection Queue Consultant"
+    }
+  },
+  {
+    "id": "abe2235f-4515-4ec4-b3e4-108dfbda4893",
+    "name": "Renata V.",
+    "role": "Transmission Developer",
+    "problems": [
+      "tagline claims '18 yrs' but years_experience is 22 — tagline wins per instructions"
+    ],
+    "fixes": {
+      "years_experience": 18
+    }
+  },
+  {
+    "id": "c3f1a11d-a870-4aec-8a20-d77b4782426b",
+    "name": "Kavya C.",
+    "role": "DERMS Product Manager",
+    "problems": [
+      "years_experience (10) inconsistent with tagline 'ex-solar installer turned software PM': solar install + PM transition typically requires 12–15 yrs minimum; age 36 allows it, but 10 yrs is tight for credibility of 'ex-installer' narrative"
+    ],
+    "fixes": {
+      "years_experience": 12
+    }
+  },
+  {
+    "id": "bf45f963-81c9-443f-bf48-078da2c88619",
+    "name": "Patricia A.",
+    "role": "Grid/Utility Planner",
+    "problems": [
+      "tagline claims '22 yrs load forecasting' but years_experience is 27 — tagline wins per instructions"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "a01e4889-067b-4667-8c2f-160fe2be02d1",
+    "name": "Ingrid T.",
+    "role": "Resource Assessment Analyst (Wind/Solar)",
+    "problems": [
+      "years_experience (14) contradicts tagline claim of '12 yrs'; tagline wins but should be 12"
+    ],
+    "fixes": {
+      "years_experience": 12
+    }
+  },
+  {
+    "id": "10404257-74dd-4abc-b335-27af3f69e76c",
+    "name": "Vanessa K.",
+    "role": "Behind-the-Meter Generation Developer",
+    "problems": [
+      "tenure mismatch: BTM generation developer selling to CFOs typically owns/operates assets; renter tenure is inconsistent with developer role and expertise narrative"
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "ce486860-494a-4d42-847c-bc5f1bc73cc8",
+    "name": "Osei K.",
+    "role": "Microgrid Developer",
+    "problems": [
+      "tagline claims '12 yrs islanding campuses' but years_experience is 15; years_experience should match the tagline's explicit claim"
+    ],
+    "fixes": {
+      "years_experience": 12
+    }
+  },
+  {
+    "id": "f64eccb7-7ccb-4ef9-91f7-27dc9b8a8f43",
+    "name": "Meera Q.",
+    "role": "Virtual Power Plant (VPP) Operator",
+    "problems": [
+      "years_experience (9) does not match tagline claim of implicit seniority; at age 34 with 9 yrs experience, career started at ~25, which is plausible but tight for PE licensure (typically requires 4 yrs undergrad + 4 yrs work experience under PE supervision before exam). Recommend adjusting to 8 yrs or confirming PE was achieved early."
+    ],
+    "fixes": {
+      "years_experience": 8
+    }
+  },
+  {
+    "id": "f61bc2d2-5ebe-489e-b582-0b1f6b72b1bf",
+    "name": "Patricia N.",
+    "role": "Coal Plant Retirement/Redevelopment Specialist",
+    "problems": [
+      "years_experience (30) exceeds plausible career span: at age 58, career would have started at age 28, making 30 yrs experience impossible. Tagline claims '30 yrs' explicitly ('decommissioned three units'); adjust years_experience or age."
+    ],
+    "fixes": {
+      "years_experience": 28
+    }
+  },
+  {
+    "id": "d7798d4a-8079-463c-9c5f-ebcdf362bf67",
+    "name": "Marcus E.",
+    "role": "Net Metering Policy Analyst",
+    "problems": [
+      "years_experience (9) is inconsistent with age (39) and JD credential; career start would be ~age 30, suggesting only ~9 years in energy law/policy, but 'senior' title and deep modeling expertise imply longer career trajectory in law or energy sector"
+    ],
+    "fixes": {
+      "years_experience": 13
+    }
+  },
+  {
+    "id": "84e77659-8307-43ff-856b-d8c91a66bdd8",
+    "name": "Jerome B.",
+    "role": "Weatherization Contractor",
+    "problems": [
+      "income_band $78–95K is low for a company owner with 27 years experience and 3 children in Columbus, OH; typical contractor ownership yields $100K+",
+      "tagline claims '27 years' but years_experience field matches; however income should reflect owner/principal status"
+    ],
+    "fixes": {
+      "income_band": "$110–135K"
+    }
+  },
+  {
+    "id": "ae3a3837-88b5-475e-961a-38b032a551c3",
+    "name": "Gustavo M.",
+    "role": "C&D Debris Recycler",
+    "problems": [
+      "Tagline claims '21 yrs' but years_experience field is missing",
+      "No metro specified (Houston, TX inferred from state TX but not explicit in demographics)"
+    ],
+    "fixes": {
+      "years_experience": 21,
+      "metro": "Houston, TX"
+    }
+  },
+  {
+    "id": "dbc43bb4-9f10-4fb9-9f76-bff7405f296a",
+    "name": "Osvaldo R.",
+    "role": "Multifamily EV Retrofit Specialist",
+    "problems": [
+      "income_band $120–140K is low for a firm owner with 20 years experience, C-10 license, 3 children in Los Angeles (high cost of living); typical electrical contractor firm principals in LA earn $160K+"
+    ],
+    "fixes": {
+      "income_band": "$165–200K"
+    }
+  },
+  {
+    "id": "9fb5372b-78d2-400f-88aa-c5da32cb7cad",
+    "name": "Wen L.",
+    "role": "Data Center Cooling Engineer",
+    "problems": [
+      "years_experience (10) contradicts tagline claim (9 yrs); tagline is more specific and should win",
+      "age 34 with 10 years experience implies career start at 24, which is plausible but tight; 9 years would imply start at 25 (acceptable)"
+    ],
+    "fixes": {
+      "years_experience": 9
+    }
+  },
+  {
+    "id": "089cff2c-6373-418d-b935-4792debd2e17",
+    "name": "Soledad C.",
+    "role": "District Energy Operator",
+    "problems": [
+      "years_experience (24) contradicts tagline claim (22 yrs); tagline wins",
+      "age 51 with 24 years experience implies career start at 27, which is plausible but conflicts with explicit '22 yrs' narrative"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "b99f2a4a-e855-4c4e-b844-1d6ac76200d9",
+    "name": "Gustavo P.",
+    "role": "Thermal Storage Vendor",
+    "problems": [
+      "years_experience (17) contradicts tagline claim (16 yrs); tagline is more specific and should win"
+    ],
+    "fixes": {
+      "years_experience": 16
+    }
+  },
+  {
+    "id": "a45f72fb-9e7e-4f88-b690-d39410377866",
+    "name": "Amara O.",
+    "role": "Green Lease Consultant",
+    "problems": [
+      "years_experience (14) contradicts tagline claim (13 yrs); tagline is more specific and should win"
+    ],
+    "fixes": {
+      "years_experience": 13
+    }
+  },
+  {
+    "id": "b881f864-910a-4e80-8b4f-e38f9b2b9ad9",
+    "name": "Anjali D.",
+    "role": "Smart Thermostat/DER Aggregation PM",
+    "problems": [
+      "years_experience (8) contradicts tagline claim (7 yrs); tagline is more specific and should win"
+    ],
+    "fixes": {
+      "years_experience": 7
+    }
+  },
+  {
+    "id": "775a79c8-63ec-4bbf-ae1d-3c947b0145ae",
+    "name": "Hassan R.",
+    "role": "Submarine Cable Landing Station Developer",
+    "problems": [
+      "Tagline claims '20 years' but years_experience is 27; tagline should win"
+    ],
+    "fixes": {
+      "years_experience": 20
+    }
+  },
+  {
+    "id": "04d3e607-7c5d-4654-8a6a-ed8d1c7c0353",
+    "name": "Linda P.",
+    "role": "City Council Member — Homeowner-Base",
+    "problems": [
+      "Tagline claims '38-year homeowner' but years_experience is only 9; either tenure duration or experience field is inconsistent",
+      "Age 67 with only 9 years of city council experience is plausible, but the '38-year homeowner' detail suggests decades of civic engagement not captured in years_experience"
+    ],
+    "fixes": {
+      "years_experience": 38
+    }
+  },
+  {
+    "id": "6aa4caac-c973-4ec4-acfc-13df280580c4",
+    "name": "Dolores M.",
+    "role": "Freight Rail Real Estate Manager",
+    "problems": [
+      "years_experience (27) exceeds plausible career span: age 52 − typical career start ~22 = ~30 years max, but 27 is borderline aggressive; more critically, no occupation field provided—only role title given",
+      "missing occupation field in demographics object (only 'role' provided in narrative)"
+    ],
+    "fixes": {
+      "occupation": "Freight Rail Real Estate Manager",
+      "years_experience": 26
+    }
+  },
+  {
+    "id": "f6bbe1de-2152-4b51-9a0a-b82f1d3825d6",
+    "name": "Chioma A.",
+    "role": "P3 Infrastructure Developer",
+    "problems": [
+      "years_experience (19) and credentials (PE inactive) inconsistent with age (44): PE licensure typically requires ≥4 years post-grad experience; if she earned a PE at ~30, going inactive by 44 is plausible, but 19 years of experience starting at age 25 is tight for someone with an MBA. If PE was earned early (age ~30), she had ~9 years to build the PE, then 15 years of dev work—total ~24 years fits better."
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "261927e4-00d8-4e55-b36d-8be543f0954d",
+    "name": "Santiago A.",
+    "role": "Fire District Chief (Development Review)",
+    "problems": [
+      "tenure field should not be present for a stakeholder/public employee persona; tenure applies to real estate holdings, not government employment",
+      "years_experience (27) exceeds typical career arc: at age 54, starting career at ~27 leaves only 27 yrs to age 54, which is mathematically impossible if fire service began around age 18–22"
+    ],
+    "fixes": {
+      "years_experience": 32,
+      "tenure": null
+    }
+  },
+  {
+    "id": "fac3ed25-d95e-4e01-b06f-3b9d25826cd1",
+    "name": "Hector R.",
+    "role": "County Supervisor",
+    "problems": [
+      "years_experience (9) inconsistent with tagline claim of 'third-generation rancher' (implies longer agricultural/family background) and elected official tenure; income_band appears low for elected county supervisor role in California"
+    ],
+    "fixes": {
+      "years_experience": 15,
+      "income_band": "$120-145K"
+    }
+  },
+  {
+    "id": "115b0f2a-864e-4c52-bdab-01eda257c37d",
+    "name": "Hollis B.",
+    "role": "Water District Board Member",
+    "problems": [
+      "years_experience (15) inconsistent with narrative: 'third-generation farmer' suggests lifelong agricultural background, not a 15-year career start at age 48"
+    ],
+    "fixes": {
+      "years_experience": 40
+    }
+  },
+  {
+    "id": "50a30e26-832c-4f2f-ab35-d766a5ba9b19",
+    "name": "Marlene D.",
+    "role": "GSA Leasing/Disposal Officer",
+    "problems": [
+      "occupation field missing"
+    ],
+    "fixes": {
+      "occupation": "GSA leasing and disposal officer"
+    }
+  },
+  {
+    "id": "33358a81-44b7-4723-b6be-58bb05185b08",
+    "name": "Charlotte V.",
+    "role": "Energy Regulatory Attorney",
+    "problems": [
+      "Tagline claims '22 yrs before PUCs' but years_experience is 26, creating inconsistency"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "04b1cfa9-ec7e-4eaa-b937-23c00cbd5343",
+    "name": "Patricia B.",
+    "role": "State Legislature Housing Lobbyist",
+    "problems": [
+      "Tagline claims '22 sessions in' but years_experience is 30; 22 annual sessions over 30 years is inconsistent pacing"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "d3a5dd8e-b507-47a0-899b-6ca38652c09f",
+    "name": "Leonard C.",
+    "role": "Appraisal Expert Witness",
+    "problems": [
+      "years_experience (41) inconsistent with age (68): implies career start at age 27, which is plausible but tagline claims '40 years of MAI reports', creating a 1-year gap"
+    ],
+    "fixes": {
+      "years_experience": 40
+    }
+  },
+  {
+    "id": "57373033-cc70-486b-84f3-b07c8cfde489",
+    "name": "Aleksey V.",
+    "role": "HOA Board Treasurer",
+    "problems": [
+      "years_experience (6) inconsistent with tagline claim of '15-year reserve model' — treasurer role suggests longer tenure managing HOA finances",
+      "years_experience (6) may be too low for a 52-year-old corporate controller with CPA; typical career start ~22 would yield ~30 years in accounting"
+    ],
+    "fixes": {
+      "years_experience": 28
+    }
+  },
+  {
+    "id": "cbffe367-2063-4c14-92ba-3e046dde33e8",
+    "name": "Corbin E.",
+    "role": "Renter Cohort (ACS Profile)",
+    "problems": [
+      "years_experience field missing; required for consumer persona with occupation"
+    ],
+    "fixes": {
+      "years_experience": 8
+    }
+  },
+  {
+    "id": "077c3842-acd5-41b0-841c-20f17f7fcdb1",
+    "name": "Aditya P.",
+    "role": "Farmland Investment Manager",
+    "problems": [
+      "Missing 'age' field (required demographic)"
+    ],
+    "fixes": {
+      "age": 44
+    }
+  },
+  {
+    "id": "5282ea38-912c-4c96-9027-6a03b7118327",
+    "name": "Dorothy K.",
+    "role": "Mineral Rights Owner",
+    "problems": [
+      "years_experience (35) inconsistent with age (71) and occupation as retired schoolteacher; implies career start at age 36, which is late and doesn't align with 35 years of experience in mineral rights ownership"
+    ],
+    "fixes": {
+      "years_experience": 45
+    }
+  },
+  {
+    "id": "0058a94a-6933-4284-8076-180d94678ddf",
+    "name": "Boyd L.",
+    "role": "Hunting/Rec Land Buyer",
+    "problems": [
+      "income_band formatted as 'net worth heavy' rather than income currency; consumer persona lacks clear annual income_band",
+      "tenure field missing despite being owner of 240 acres"
+    ],
+    "fixes": {
+      "income_band": "$80-120K",
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "0f68bf02-224a-484d-9663-02e4e4b90e95",
+    "name": "Everett L.",
+    "role": "Limited-Equity Co-op Board Member",
+    "problems": [
+      "years_experience (18) contradicts tagline claim of '31 years in the same unit' — if he's been there 31 years, that should be the tenure marker, not years_experience",
+      "years_experience (18) is inconsistent with age (68) and career as 'Retired MTA signal maintainer' — should reflect total work life, not just 18 years"
+    ],
+    "fixes": {
+      "years_experience": 40
+    }
+  },
+  {
+    "id": "168b0246-b2d8-45d4-986c-2a7357327c20",
+    "name": "Wanda H.",
+    "role": "Anti-Solar Rural Opposition Leader",
+    "problems": [
+      "years_experience (6) is implausibly low for a 'fourth-generation farm family' owner-operator aged 55 — should reflect decades of farm experience, not just 6 years in opposition role"
+    ],
+    "fixes": {
+      "years_experience": 35
+    }
+  },
+  {
+    "id": "95d5fd03-5efa-41bd-9393-f8afcb60cded",
+    "name": "Dale M.",
+    "role": "Wind Turbine Setback Opponent",
+    "problems": [
+      "years_experience (8) is inconsistent with age (66) and 'Retired county auditor' — should reflect full career (likely 40+ years), not just 8 years of recent opposition work"
+    ],
+    "fixes": {
+      "years_experience": 42
+    }
+  },
+  {
+    "id": "19d38093-3558-4932-88ac-f4b3a07bc3ae",
+    "name": "Reverend Samuel O.",
+    "role": "Faith Leader (Congregation With Land)",
+    "problems": [
+      "years_experience (15) conflicts with tagline — no explicit tenure claim in tagline, but 'Senior Pastor' role at age 57 with only 15 years suggests late-career entry; income_band ($50-65K) is low for a senior pastor in Baltimore metro with M.Div. credential and family of 5"
+    ],
+    "fixes": {
+      "income_band": "$60-75K"
+    }
+  },
+  {
+    "id": "9dd5a874-b8b7-44f3-a356-85b18d8abc57",
+    "name": "Dwayne K.",
+    "role": "Billboard Easement Owner",
+    "problems": [
+      "years_experience (26) implies career start at age 35, but age 61 with typical entry ~22–23 would allow ~38–39 years; tagline '40 miles of I-40 frontage' suggests long-held portfolio, inconsistent with only 26 yrs experience"
+    ],
+    "fixes": {
+      "years_experience": 38
+    }
+  },
+  {
+    "id": "d45d0d75-54d3-4bd6-872f-27a4c83e004a",
+    "name": "Rick M.",
+    "role": "Quarry/Aggregates Operator",
+    "problems": [
+      "years_experience (34) implies career start at age 23, but age 57 with typical entry ~22 would allow ~35 years; minor inconsistency with tagline '30 years reading rock faces'"
+    ],
+    "fixes": {
+      "years_experience": 35
+    }
+  },
+  {
+    "id": "da2c98c2-b661-4764-a7a1-f885212c0aeb",
+    "name": "Gerald T.",
+    "role": "Timber Mill Owner",
+    "problems": [
+      "years_experience (38) implies career start at age 25, consistent; however tagline 'third-generation sawmill man' suggests inherited operation earlier in life—age 63 with 38 yrs experience aligns but no credentials listed for a mill operator (typically OSHA certifications, forestry credentials, or industry licenses are expected)"
+    ],
+    "fixes": {
+      "credentials": "OSHA Sawmill Safety Certification"
+    }
+  },
+  {
+    "id": "dc5812b1-0fa0-4d4d-bc48-b1e463561cae",
+    "name": "Danielle O.",
+    "role": "Inherited-Home Owner",
+    "problems": [
+      "Occupation mismatch: two identical personas ('labor and delivery nurse') with different metros/stories suggests copy-paste error. Detroit inherited-home narrative doesn't align with nursing income alone plausibly covering inherited property maintenance without additional detail."
+    ],
+    "fixes": {
+      "occupation": "registered nurse (inherited property management)"
+    }
+  },
+  {
+    "id": "e20eaa5f-c798-45f3-b81a-505f1be27fac",
+    "name": "Anjali Y.",
+    "role": "Data Center Opposition Organizer",
+    "problems": [
+      "income_band $95–120K is inconsistent with unpaid organizer role; tagline says 'unpaid' but household income suggests spouse's earnings are the primary source",
+      "years_experience (12) counts from former rate analyst role, but career timeline unclear—if 12 yrs of rate analysis + current unpaid work, should clarify or adjust"
+    ],
+    "fixes": {
+      "income_band": "$50–75K",
+      "years_experience": 12
+    }
+  },
+  {
+    "id": "ab927679-755d-40aa-bf48-0f39b84218ca",
+    "name": "Robert G.",
+    "role": "Chamber Of Commerce Director",
+    "problems": [
+      "years_experience (19) is plausible for age 56, but tagline claims '23 ribbon cuttings a year' (current activity), not a career duration claim; 19 yrs in chamber/economic development is reasonable"
+    ],
+    "fixes": {
+      "years_experience": 19
+    }
+  },
+  {
+    "id": "c8cf3c71-1cf7-4e04-b083-2b7fcadf3634",
+    "name": "Earl C.",
+    "role": "Main Street Program Manager",
+    "problems": [
+      "income_band $58–72K seems low for age 52 with 18 yrs experience in program management; Main Street directors in mid-sized towns (Bowling Green metro ~130K population) typically earn $65–85K"
+    ],
+    "fixes": {
+      "income_band": "$65–85K"
+    }
+  },
+  {
+    "id": "bccb1e5a-3bcb-4328-90d8-076a7de6583c",
+    "name": "Ines M.",
+    "role": "Local Journalist / Real Estate Beat Reporter",
+    "problems": [
+      "income_band $48–62K is plausible for freelance journalist, but years_experience (13) starting at age ~25 is tight for career depth; verify 13 is correct or adjust to ~10–12 yrs"
+    ],
+    "fixes": {
+      "years_experience": 13
+    }
+  },
+  {
+    "id": "cbed42e3-c89b-407a-a4b5-05f864183da1",
+    "name": "Roger B.",
+    "role": "Citizen Watchdog Blogger",
+    "problems": [
+      "years_experience (9) is inconsistent with age 63 and 'retired' status; if retired from GIS role, years_experience should reflect full career (likely 35–40 yrs); 9 yrs likely refers only to blogger activity post-retirement"
+    ],
+    "fixes": {
+      "years_experience": 38,
+      "occupation": "retired GIS analyst / blogger (9 yrs blogging)"
+    }
+  },
+  {
+    "id": "b17f3ade-3f16-44fb-9dc8-71bcc1db1f1b",
+    "name": "Ruben C.",
+    "role": "Heirs' Property Occupant (Clouded Title)",
+    "problems": [
+      "Income band $40–52K is low for an HVAC repair business owner with 2 children in a married household; self-employed HVAC contractors typically earn $55–85K+ even in lower-COL areas like McAllen"
+    ],
+    "fixes": {
+      "income_band": "$55–75K"
+    }
+  },
+  {
+    "id": "27d16442-2855-4c4b-bf15-12e146af0272",
+    "name": "Josue R.",
+    "role": "Timeshare Owner",
+    "problems": [
+      "years_experience (5) inconsistent with age (34) and career trajectory: if person started work at ~22, 5 years experience would place career start at ~29, which is plausible but tight for an IT project manager role; however, tagline claims 'his 30s' which fits age 34, but no '5 yrs' claim in tagline suggests this may be understated"
+    ],
+    "fixes": {
+      "years_experience": 10
+    }
+  },
+  {
+    "id": "688d07e7-b2c5-4cce-9542-231a5db7ec7d",
+    "name": "Delbert H.",
+    "role": "Hobby Farm Owner",
+    "problems": [
+      "years_experience field is missing but required for career-track personas; retired status with part-time farming makes this ambiguous"
+    ],
+    "fixes": {
+      "years_experience": 40
+    }
+  },
+  {
+    "id": "a253ee51-87eb-41c6-8f6d-ae278446e69c",
+    "name": "Derrick O.",
+    "role": "Upper-Middle Professional Homeowner (Move-Up SFH, School-District Driven)",
+    "problems": [
+      "Tagline says 'civil engineer' but occupation field says 'structural engineer' — inconsistent job title",
+      "years_experience 19 is plausible for age 44, but tagline emphasis on running own drainage survey suggests hands-on technical depth; both titles work but need alignment"
+    ],
+    "fixes": {
+      "occupation": "civil engineer"
+    }
+  },
+  {
+    "id": "c4a56533-0515-4ae0-bcbe-084dc2fe4d88",
+    "name": "Grant H.",
+    "role": "Upper-Income Homeowner (Custom Home, One Vacation Property)",
+    "problems": [
+      "years_experience 12 is inconsistent with age 38 and career narrative of 'sold his startup'; if he founded/exited a startup, typical tech career path would suggest 15+ years in field before successful exit at age 38"
+    ],
+    "fixes": {
+      "years_experience": 15
+    }
+  },
+  {
+    "id": "94d19a95-94b5-4045-9be3-4f1a07efda56",
+    "name": "Wei-Lin C.",
+    "role": "Earthquake-Country Homeowner (Retrofit)",
+    "problems": [
+      "Tagline states 'first house at 34' but age is 41; this implies purchase ~7 years ago, which is plausible but creates a gap. The tagline's explicit age claim should be honored."
+    ],
+    "fixes": {
+      "age": 34
+    }
+  },
+  {
+    "id": "c1de3503-3c53-47ab-b2ff-0e380c0a226c",
+    "name": "Dolores F.",
+    "role": "Snowbird (Dual-State) Owner",
+    "problems": [
+      "years_experience (31) is excessive for a school cafeteria cook retiring at 69; would imply career start at age 38, which is late but acceptable. However, 31 years is unusually high even for a full career starting at ~18–22. Typical would be 35–45 years for a 69-year-old.",
+      "metro field lists two metros (Mission, TX / Bangor, ME) but state is only TX; snowbird personas should clarify dual residence or pick primary state. This is borderline but creates ambiguity in a consumer-facing persona."
+    ],
+    "fixes": {
+      "years_experience": 42,
+      "state": "TX"
+    }
+  },
+  {
+    "id": "e0a32a8d-4c1f-469d-8b34-9e5448c0274b",
+    "name": "Louis Z.",
+    "role": "Probate Heir Seller",
+    "problems": [
+      "tenure is 'renter' but role is 'Probate Heir Seller' — probate heirs own property (the inherited estate). A renter cannot be a probate heir with a home to sell."
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "aecde16e-495d-4abd-a7d2-dd797743dc5c",
+    "name": "Beatrice Q.",
+    "role": "Waterfront Owner (Erosion/Seawall)",
+    "problems": [
+      "Income band $28–35K is implausibly low for a third-generation waterfront property owner in Salisbury, MD. Waterfront real estate typically requires substantial wealth; a retired school librarian on that income alone could not realistically own waterfront property in that market."
+    ],
+    "fixes": {
+      "income_band": "$62–75K"
+    }
+  },
+  {
+    "id": "1fa1d3d4-4b42-48e9-876f-3efe6b76ec69",
+    "name": "Lucas N.",
+    "role": "Condo Buyer",
+    "problems": [
+      "years_experience is 0 but a 29-year-old product manager should have ~7–11 years of work history since age 18–22"
+    ],
+    "fixes": {
+      "years_experience": 8
+    }
+  },
+  {
+    "id": "1cc6a3c0-a767-476f-ad78-e5e976afc171",
+    "name": "Patricia F.",
+    "role": "New-Build Buyer (Rate Buydown Shopper)",
+    "problems": [
+      "years_experience is 0 but a 63-year-old retired accounting manager should have decades of work history; years_experience should reflect career length before retirement"
+    ],
+    "fixes": {
+      "years_experience": 40
+    }
+  },
+  {
+    "id": "c526d804-a756-4a28-a442-a7b43f0709d6",
+    "name": "Mitchell N.",
+    "role": "Luxury Buyer",
+    "problems": [
+      "Tenure mismatch: tagline says 'buying' (acquisition intent), but tenure is 'renter' — consistent. However, the role is 'Luxury Buyer' (someone acquiring), so tenure should reflect that he does not yet own. Status is correct, but this is a buyer persona transitioning from renter to owner.",
+      "Income band notation: '$2M+ (liquidity event)' is non-standard and not an income_band range. For a liquidity event (startup exit), this represents net worth/capital, not ongoing income. If modeling as ongoing income, it's unrealistic; if modeling post-liquidity purchasing power, the field should clarify or use a range like '$150–200K' (annual) plus liquidity note in tagline."
+    ],
+    "fixes": {
+      "income_band": "$150–200K"
+    }
+  },
+  {
+    "id": "8f21712e-e1f8-41eb-99d9-bf8d4f1e643e",
+    "name": "Nathan V.",
+    "role": "Second-Home Buyer",
+    "problems": [
+      "tenure marked 'owner' but category and role are 'Renters & Residential Demand — Second-Home Buyer' (consumer cohort); inconsistent with renter/buyer distinction"
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "a6782d56-a0e5-4667-b321-7b2551b1984d",
+    "name": "Carol D.",
+    "role": "Co-op Buyer",
+    "problems": [
+      "Tenure mismatch: tagline describes downsizing into a co-op (purchase), but tenure is 'renter'. A co-op buyer owns, not rents.",
+      "Income band may be tight for NYC co-op purchase: $58–70K on retired teacher pension is plausible but marginal for board approval and downpayment. Acceptable if modest co-op, but worth flagging."
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "a1ca3045-7b93-482c-b71b-efff173701e1",
+    "name": "Isiah G.",
+    "role": "House Hacker",
+    "problems": [
+      "years_experience of 1 is inconsistent with age 27; logistics coordinator with only 1 year experience would struggle to qualify for FHA triplex financing",
+      "income_band $55–70K may be insufficient to support FHA triplex purchase with rental income expectations in Kansas City market"
+    ],
+    "fixes": {
+      "years_experience": 6
+    }
+  },
+  {
+    "id": "56c9492d-88f7-4631-844a-4804f9be7518",
+    "name": "Divya G.",
+    "role": "House Hacker",
+    "problems": [
+      "years_experience of 3 is inconsistent with age 41; ICU nurse career would typically span 15–20+ years by age 41"
+    ],
+    "fixes": {
+      "years_experience": 18
+    }
+  },
+  {
+    "id": "25d8279f-5fab-4fbc-b48e-c97a7a379661",
+    "name": "Elijah V.",
+    "role": "House Hacker",
+    "problems": [
+      "years_experience of 4 is unrealistic for a 58-year-old HVAC business owner; suggests only 4 years in HVAC/business when career should span 30+ years"
+    ],
+    "fixes": {
+      "years_experience": 28
+    }
+  },
+  {
+    "id": "58e74b4e-0477-44d2-9e2c-96332362854e",
+    "name": "Alicia R.",
+    "role": "New-Build Buyer (Rate Buydown Shopper)",
+    "problems": [
+      "years_experience of 0 for a 31-year-old operations analyst is implausible; role requires 10+ years career progression"
+    ],
+    "fixes": {
+      "years_experience": 10
+    }
+  },
+  {
+    "id": "d1880e08-cb74-481d-96c5-e677ac3e6403",
+    "name": "Benjamin F.",
+    "role": "Gig-Economy Income Buyer",
+    "problems": [
+      "tenure is 'owner' but persona is categorized under 'Renters & Residential Demand' and role implies first-time buyer scenario; tagline says 'gig-drives to…qualify for a smaller house' (buy), but tenure already shows ownership"
+    ],
+    "fixes": {
+      "tenure": "renter"
+    }
+  },
+  {
+    "id": "bdee89b3-eead-4154-87d7-1f776dacba47",
+    "name": "Fatima H.",
+    "role": "Condo Buyer",
+    "problems": [
+      "years_experience of 0 for a 34-year-old QA engineer is implausible; role requires 12+ years career progression to reach $110–130K income in tech"
+    ],
+    "fixes": {
+      "years_experience": 12
+    }
+  },
+  {
+    "id": "1ab1cf2e-aee8-42c8-a841-e7659739ee4e",
+    "name": "Monica U.",
+    "role": "Military Family (VA/BAH)",
+    "problems": [
+      "tenure is 'owner' but persona is categorized under 'Renters & Residential Demand'; tagline says 'buy her forever house' suggesting purchase intent from non-owner state"
+    ],
+    "fixes": {
+      "tenure": "renter"
+    }
+  },
+  {
+    "id": "8ec51aac-4c3b-469a-bde8-d8d221b7ab4e",
+    "name": "Violet U.",
+    "role": "Condo Buyer",
+    "problems": [
+      "years_experience of 0 for a 71-year-old retired school administrator is implausible; career should span 40+ years"
+    ],
+    "fixes": {
+      "years_experience": 40
+    }
+  },
+  {
+    "id": "133685d9-9656-465b-8841-98dabddc1969",
+    "name": "Loretta W.",
+    "role": "Co-Buyer (Friends/Siblings Pooling)",
+    "problems": [
+      "Retired bookkeeper at age 61 with income band $40–55K is plausible, but co-purchasing a house suggests active participation in mortgage qualification; retired status with modest fixed income may create financing friction vs. the narrative's confidence",
+      "Occupation listed as 'retired bookkeeper' but tenure is 'owner' (not renter) — consistent, but the income band seems tight for a co-buyer on a family house, especially if relying on Social Security/pension alone"
+    ],
+    "fixes": {
+      "income_band": "$48–65K"
+    }
+  },
+  {
+    "id": "6f3c8a2e-c8c5-46f0-88cd-403cd0391627",
+    "name": "Faye D.",
+    "role": "Probate Heir Seller",
+    "problems": [
+      "Metro/state mismatch: persona lives in Pittsburgh but state is OH (Ohio); Pittsburgh is in Pennsylvania (PA)",
+      "Tenure inconsistency: tagline mentions 'one house' owned by siblings in probate, but only this persona has tenure='owner'; executor role implies ownership claim but unclear if she personally owns or is managing estate property"
+    ],
+    "fixes": {
+      "state": "PA",
+      "metro": "Pittsburgh, PA"
+    }
+  },
+  {
+    "id": "8412a199-6787-4c30-ac7a-cba8968b60e3",
+    "name": "Rosa L.",
+    "role": "Co-op Buyer",
+    "problems": [
+      "Tenure inconsistency: tagline states '35 yrs at the post office, ready to stop renting,' implying long tenure as renter, but income_band $62–75K for USPS mail processing clerk with 35 years experience is low; USPS career postal workers at that tenure typically earn $65–80K+, and this should reflect seniority",
+      "Career start age: if age 57 and 35 years at USPS, started at age 22, which is plausible; however, income should reflect full union seniority and step progression"
+    ],
+    "fixes": {
+      "income_band": "$68–82K"
+    }
+  },
+  {
+    "id": "4754fcd2-d509-4d9b-88ae-50253ab42c90",
+    "name": "Ngozi H.",
+    "role": "Graduate Student Family",
+    "problems": [
+      "years_experience (3) inconsistent with age (38) and career trajectory; a nontraditional PhD student at 38 with 2 children would likely have prior work/career history before doctoral study"
+    ],
+    "fixes": {
+      "years_experience": 8
+    }
+  },
+  {
+    "id": "c4162f6e-d96f-47f0-af76-2e7e71aa4790",
+    "name": "Gwendolyn P.",
+    "role": "Section 8 Voucher Holder",
+    "problems": [
+      "years_experience (8) is implausible for a 68-year-old retired person; '8 years' suggests recent employment/activity, but field describes retiree with fixed income",
+      "occupation 'retired cafeteria supervisor' with 8 years_experience creates ambiguity about whether this is current work or retirement length"
+    ],
+    "fixes": {
+      "years_experience": 35
+    }
+  },
+  {
+    "id": "0dfac1ed-ec97-4759-9ca6-732335316989",
+    "name": "Tamika J.",
+    "role": "Section 8 Voucher Holder",
+    "problems": [
+      "years_experience (2) inconsistent with age (29); if primary occupation is daycare aide/student in medical billing with only 2 years experience, career start would be age 27, leaving no prior history; dual occupation status is unclear"
+    ],
+    "fixes": {
+      "years_experience": 5
+    }
+  },
+  {
+    "id": "c6be4d23-cc29-4fdf-b7e8-cc1fbf84f65d",
+    "name": "Marisol D.",
+    "role": "Co-Buyer (Friends/Siblings Pooling)",
+    "problems": [
+      "Income band $52–68K is too low for a co-purchase in Denver metro; two incomes at this level struggle with down payment + closing costs even with pooling",
+      "26 years old with occupation 'dental hygienist' is plausible, but joint income ~$52–68K (single income shown) may not support co-purchase financing"
+    ],
+    "fixes": {
+      "income_band": "$90–110K"
+    }
+  },
+  {
+    "id": "db89f01b-d567-4695-88d3-487d9f84b504",
+    "name": "Alicia F.",
+    "role": "BTR (Build-to-Rent) Community Renter",
+    "problems": [
+      "Part-time dental office coordinator earning $70–85K is implausible; part-time roles typically max $40–50K",
+      "Household income appears undersupported for the stated income band"
+    ],
+    "fixes": {
+      "occupation": "dental office manager",
+      "income_band": "$55–70K"
+    }
+  },
+  {
+    "id": "06f80b36-d64a-48c9-be7c-dfe96265b820",
+    "name": "Simone O.",
+    "role": "Student Renter",
+    "problems": [
+      "Occupation listed as 'nursing student / urgent care medical assistant' but income band $25–35K is inconsistent with dual role; medical assistant work alone yields $28–36K, and nursing student status suggests part-time or no assistant role",
+      "Narrative clarity: if full-time student, income should reflect assistant work only (~$28–32K); if assistant is primary, 'student' is secondary"
+    ],
+    "fixes": {
+      "occupation": "urgent care medical assistant (nursing student)",
+      "income_band": "$28–36K"
+    }
+  },
+  {
+    "id": "e9dc459a-64b6-4a56-bb5c-2d10b5b07ea3",
+    "name": "Diego F.",
+    "role": "Roommate-Household Renter",
+    "problems": [
+      "tenure is 'owner' but role is 'Roommate-Household Renter' and category is 'Renters'; a homeowner with a boarder is an owner-occupant, not a renter"
+    ],
+    "fixes": {
+      "tenure": "owner-occupied"
+    }
+  },
+  {
+    "id": "c81fd44b-607a-42e7-bdf1-e4dbca6790ae",
+    "name": "Hector A.",
+    "role": "Rent-Stabilized Long-Term Tenant",
+    "problems": [
+      "income_band $58–72K is implausible for a bakery owner-operator in NYC; rent-stabilized tenants typically have lower incomes, and a bakery owner would typically earn more (or the tagline suggests a small family operation that might net less)"
+    ],
+    "fixes": {
+      "income_band": "$64–82K"
+    }
+  },
+  {
+    "id": "a61466c5-3bfa-47a8-b1e6-187287dc2f77",
+    "name": "Amara U.",
+    "role": "Food & Beverage Processor",
+    "problems": [
+      "Tagline claims '6 yrs into a fermented-beverage scaleup' but years_experience is 9—inconsistency on time in current role",
+      "years_experience (9) seems high for age 34 if career start ~18; plausible but tight"
+    ],
+    "fixes": {
+      "years_experience": 6
+    }
+  },
+  {
+    "id": "44acd70e-e876-4fd6-b401-9dace6e65825",
+    "name": "Dariusz K.",
+    "role": "Food & Beverage Processor",
+    "problems": [
+      "years_experience (33) exceeds plausible career span for age 58 (career start ~25 at earliest; 33 years would push start to age ~25, which is acceptable but tight)",
+      "Tagline claims '22 yrs running co-pack lines' but years_experience field is 33—mismatch suggests 22 should be the operative tenure in current/primary role"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "ea76d822-886f-4922-b7fa-4831f20762ce",
+    "name": "Douglas X.",
+    "role": "Vet Clinic Network Site Selection Lead",
+    "problems": [
+      "credentials missing: no DVM or veterinary license listed despite 31 years in pet-care real estate and implied veterinary background"
+    ],
+    "fixes": {
+      "credentials": "DVM (inactive/non-practicing license)"
+    }
+  },
+  {
+    "id": "3ce7535b-03b2-484d-8ea7-14e423bf5acb",
+    "name": "Miguel Y.",
+    "role": "GMP Manufacturing Tenant",
+    "problems": [
+      "years_experience (30) exceeds age-plausible career span: at age 54, starting work at ~24, max realistic experience is ~30–32 years; 30 is borderline but tagline claims '25 yrs in pharma manufacturing' — field should match tagline"
+    ],
+    "fixes": {
+      "years_experience": 25
+    }
+  },
+  {
+    "id": "e34d9e86-ecea-4ab2-b4d2-10193e1e03c5",
+    "name": "Connor B.",
+    "role": "Dialysis/Urgent Care Network",
+    "problems": [
+      "years_experience (8) conflicts with tagline ('6 yrs opening urgent care sites fast') — tagline wins"
+    ],
+    "fixes": {
+      "years_experience": 6
+    }
+  },
+  {
+    "id": "1f2dc534-5bbc-4996-824f-992a67317c24",
+    "name": "Rosalind D.",
+    "role": "Pickleball/Experiential Concept",
+    "problems": [
+      "years_experience (5) is inconsistent with tagline 'retired teacher turned club founder' — retirement typically occurs in 60s after 30+ years teaching; 5 years post-retirement is plausible, but the career timeline suggests she should have entered the workforce around age 22–25, making total career span ~38–41 years before founding, not 5 years of operation only"
+    ],
+    "fixes": {
+      "years_experience": 3
+    }
+  },
+  {
+    "id": "86391e07-075d-4d22-abab-cf86a1011549",
+    "name": "Valentina Z.",
+    "role": "Law Firm Office Tenant Representative",
+    "problems": [
+      "tenure field missing (required for all personas)",
+      "household field missing (required for all personas)"
+    ],
+    "fixes": {
+      "tenure": "owner",
+      "household": "married, 2 children"
+    }
+  },
+  {
+    "id": "515381b8-c528-4497-b1f6-3da137080f6e",
+    "name": "Lucille M.",
+    "role": "Bank Branch Network Planner",
+    "problems": [
+      "tenure 'owner' is inconsistent with role 'SVP Network Strategy, regional bank' — this is a C-suite employed position at an institution, not ownership of a business or real estate"
+    ],
+    "fixes": {
+      "tenure": "renter"
+    }
+  },
+  {
+    "id": "b7926cab-fddd-44cc-b569-7f3a596aa00e",
+    "name": "Mai T.",
+    "role": "Dental Service Organization (DSO) Real Estate Lead",
+    "problems": [
+      "tenure field missing (required for all personas)",
+      "household field missing (required for all personas)"
+    ],
+    "fixes": {
+      "tenure": "owner",
+      "household": "married, 1 child"
+    }
+  },
+  {
+    "id": "6b932087-7acb-477a-9f9c-78a4edc352fe",
+    "name": "Winston X.",
+    "role": "Coworking Franchisee",
+    "problems": [
+      "income_band $62–80K implausibly low for owner of coworking franchise(s); single-location franchises typically generate $120–200K+ net operator income",
+      "years_experience 8 seems short for someone age 52 to have acquired and operated a franchise; suggests late career entry or career pivot, which is possible but the income should reflect mature operation"
+    ],
+    "fixes": {
+      "income_band": "$110–145K",
+      "years_experience": 10
+    }
+  },
+  {
+    "id": "a2a844ee-34df-4f4f-862b-d4f4fa92aca7",
+    "name": "Curtis B.",
+    "role": "Self-Storage Franchisee",
+    "problems": [
+      "income_band $68–85K is too low for operator of 2 facilities; even small rural self-storage units typically generate combined net income of $120–180K",
+      "years_experience 15 is plausible for age 58, but combined with very low income suggests underperforming or underreported portfolio"
+    ],
+    "fixes": {
+      "income_band": "$95–130K"
+    }
+  },
+  {
+    "id": "8107438b-e161-4381-b37c-67ac11ea0a1d",
+    "name": "Daeho K.",
+    "role": "Church Seeking Space",
+    "problems": [
+      "tenure 'owner' is inconsistent with role 'Church Seeking Space' — this persona is a tenant seeking commercial space, not a property owner; should be 'renter'"
+    ],
+    "fixes": {
+      "tenure": "renter"
+    }
+  },
+  {
+    "id": "e270de1f-3f31-483b-b1e6-808fe9ddfd2e",
+    "name": "Marcus G.",
+    "role": "Film Studio/Soundstage Tenant",
+    "problems": [
+      "Tenure mismatch: persona is described as 'renter' for a commercial tenant, but field shows 'owner'. For a soundstage tenant persona, tenure should be 'renter' (leasing space) not 'owner' (owning the building)."
+    ],
+    "fixes": {
+      "tenure": "renter"
+    }
+  },
+  {
+    "id": "d5f5fe9d-8927-429f-98c9-69ec5480210d",
+    "name": "Odell M.",
+    "role": "Temporary Housing (FEMA Trailer) Logistics Lead",
+    "problems": [
+      "income_band $85–105K is low for a disaster housing logistics contractor/owner in Baton Rouge with 22 years experience and specialized credentials",
+      "years_experience (22) and age (52) are consistent, but income is underweighted for someone running a specialized logistics operation in disaster-prone region with recurrent revenue"
+    ],
+    "fixes": {
+      "income_band": "$110-140K"
+    }
+  },
+  {
+    "id": "5d2d9b32-5ca9-4142-a9e3-fba57d6e4254",
+    "name": "Colleen M.",
+    "role": "Community Wildfire Protection Plan (CWPP) Coordinator",
+    "problems": [
+      "tenure marked 'owner' but occupation is 'County wildfire mitigation planner' — county planners are typically salaried employees, not owners",
+      "income_band $78–95K is plausible for a county employee in rural Montana, but conflicts with 'owner' tenure"
+    ],
+    "fixes": {
+      "tenure": "employee"
+    }
+  },
+  {
+    "id": "1f4abc2e-a820-4b11-92d0-fd44002fdd6d",
+    "name": "Diego C.",
+    "role": "Post-Fire Rebuild Coordinator",
+    "problems": [
+      "years_experience (7) inconsistent with age (44) and tagline claim ('7 yrs'). If tagline is authoritative at 7 yrs, career start would be age 37, which is plausible but leaves 19 years unaccounted for post-age-18."
+    ],
+    "fixes": {
+      "age": 37
+    }
+  },
+  {
+    "id": "c0a6664d-cedb-47e4-8f4a-a7643036548c",
+    "name": "Lionel Q.",
+    "role": "Corrections/Detention Facility Siting Lead",
+    "problems": [
+      "years_experience (27) exceeds age minus typical career start: 55 − 18 = 37 years available, but 27 years is plausible; however, tagline claims \"site-selects\" role but no years claim in tagline to override field. No credential listed for a siting/planning role (typical: AICP, planning degree, or public administration background)."
+    ],
+    "fixes": {
+      "credentials": "AICP or MPA"
+    }
+  },
+  {
+    "id": "5468c9a3-7777-4024-9405-3513f9bcaf65",
+    "name": "Dwight O.",
+    "role": "Convention Center GM",
+    "problems": [
+      "years_experience (30) exceeds what age allows: 58 − 18 = 40 years available. 30 years is arithmetically possible but tagline says '22 yrs of load-in schedules', which directly contradicts the years_experience field of 30. Tagline wins."
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "08ad38d6-7a85-43b3-8e24-ed10ab3d8410",
+    "name": "Father Thomas K.",
+    "role": "Religious Facilities Steward (Diocese Real Estate)",
+    "problems": [
+      "years_experience (18) does not match age and career arc: at age 61, with only 18 years in role, career start would be age 43, which is plausible for a mid-career clergy transition to real estate stewardship but seems short for managing 140 properties at diocesan level. More critically, income_band ($55–70K) is low for a diocesan real-estate director managing significant portfolio. Typical diocesan stewards earn $65–90K+. Adjustment needed for credibility."
+    ],
+    "fixes": {
+      "income_band": "$68–88K"
+    }
+  },
+  {
+    "id": "0d99f387-6449-45ab-bc0a-04db52f8e2a7",
+    "name": "Stuart H.",
+    "role": "Firewise Community Organizer",
+    "problems": [
+      "years_experience (8) inconsistent with tagline claim '8 yrs' and retired status at age 68; career start would be ~60, implying late-career pivot",
+      "income_band ($60–75K) too high for retired HVAC manager with only volunteer work; should reflect pension/retirement income only"
+    ],
+    "fixes": {
+      "income_band": "$45–60K",
+      "years_experience": 5
+    }
+  },
+  {
+    "id": "717f7246-66eb-43d1-a9c8-ba397d481778",
+    "name": "Gabriela E.",
+    "role": "Large-Loss Public Adjuster",
+    "problems": [
+      "tenure missing; public adjuster is a professional service provider, not a residential tenure status; should be 'owner' or 'renter' or removed"
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "1e6ac624-746c-4c26-8e80-afb00b374d3c",
+    "name": "Jerome L.",
+    "role": "FEMA Public Assistance Consultant",
+    "problems": [
+      "tenure missing; consultant is a role, not a residential tenure; should be specified"
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "03b54e44-a34b-4349-bb8c-bc0b01b296de",
+    "name": "Marisol T.",
+    "role": "Chief Resilience Officer (City)",
+    "problems": [
+      "years_experience (14) inconsistent with tagline ('12 yrs'); tagline wins"
+    ],
+    "fixes": {
+      "years_experience": 12
+    }
+  },
+  {
+    "id": "aec0cd11-6ee1-46bd-8425-3f1eb7a0bf7e",
+    "name": "Rosario V.",
+    "role": "Irrigation Designer",
+    "problems": [
+      "income_band missing for Certified Irrigation Designer role in Phoenix metro; professional design role typically commands $65–90K+ range"
+    ],
+    "fixes": {
+      "income_band": "$72–92K"
+    }
+  },
+  {
+    "id": "123f5357-591d-4e7c-b5ff-3768e7c1eb77",
+    "name": "Neha J.",
+    "role": "Erosion Control Contractor",
+    "problems": [
+      "income_band missing for CPESC contractor role in Denver metro; specialized environmental/civil contractor typically earns $75–105K+"
+    ],
+    "fixes": {
+      "income_band": "$82–110K"
+    }
+  },
+  {
+    "id": "7857143b-a8be-4686-8b9d-c17ef030f934",
+    "name": "Rashawn E.",
+    "role": "Holiday Lighting Installer",
+    "problems": [
+      "Tagline claims '11 seasons' but years_experience is 14; tagline should govern"
+    ],
+    "fixes": {
+      "years_experience": 11
+    }
+  },
+  {
+    "id": "7152abc0-faac-4939-bc55-87ebc979be54",
+    "name": "Ronan B.",
+    "role": "Drainage/French Drain Contractor",
+    "problems": [
+      "income_band missing for experienced drainage contractor (26 yrs) in high-COL Boston metro; specialized trade typically commands $95–130K+"
+    ],
+    "fixes": {
+      "income_band": "$105–135K"
+    }
+  },
+  {
+    "id": "3f44f08b-061a-4242-9c8b-c9725c4589a4",
+    "name": "Chadwick B.",
+    "role": "Real Estate Guru / Course Seller (Adversarial-Adjacent)",
+    "problems": [
+      "years_experience (10) is inconsistent with role credibility: a self-titled coach with only 10 years claiming $47M in 'student results' strains plausibility; adjust downward to reflect someone early-career or inflate years to suggest longer perceived authority",
+      "income_band ($400–600K) is very high for someone with only 10 years experience and a single documented flip; more plausible if inflated to 15+ years or if the income_band reflects course revenue rather than verified personal income"
+    ],
+    "fixes": {
+      "years_experience": 15
+    }
+  },
+  {
+    "id": "092e5634-1f0e-4d76-b1ce-03f4d8070c7e",
+    "name": "Faisal M.",
+    "role": "Continuing Education Provider",
+    "problems": [
+      "years_experience (18) with role as founder is plausible, but income_band ($130–160K) appears low for a founder/owner of a CE company operating across 9 states with 40+ approved courses; this suggests either employee-level compensation or underestimation of business revenue"
+    ],
+    "fixes": {
+      "income_band": "$160–220K"
+    }
+  },
+  {
+    "id": "1a095185-9ceb-4b1d-ab8f-9e27c32e01a1",
+    "name": "Wanda J.",
+    "role": "Stump Grinding Operator",
+    "problems": [
+      "Missing credentials field for operator role (typically heavy equipment certification or similar)",
+      "Missing income_band for comparison/validation"
+    ],
+    "fixes": {
+      "credentials": "Heavy Equipment Operator certification",
+      "income_band": "$45–65K"
+    }
+  },
+  {
+    "id": "f7e6a237-cfef-469e-8904-84964a4cc2e7",
+    "name": "Thao E.",
+    "role": "Mushroom Farm Operator",
+    "problems": [
+      "Income band $55–75K is low for a farm owner in Sacramento, CA (high cost of living). Indoor mushroom farming with year-round production and premium-market crops (lion's mane) typically generates higher revenue.",
+      "8 years experience at age 34 is plausible, but the income ceiling should reflect owner equity and operational scale."
+    ],
+    "fixes": {
+      "income_band": "$75–110K"
+    }
+  },
+  {
+    "id": "c21af3c7-1a1c-486d-8bfa-59c6dced4fbd",
+    "name": "Miguel A.",
+    "role": "Lawn Care Route Operator",
+    "problems": [
+      "years_experience (15) inconsistent with age (33): would require career start at age 18, plausible but tight for 15 years; more critically, income_band $55–75K is high for a route operator (typically supervisor-level earnings). Route operators usually earn $40–55K unless they own multiple routes."
+    ],
+    "fixes": {
+      "income_band": "$40–55K"
+    }
+  },
+  {
+    "id": "79612b93-c060-4a7d-8fce-081f5bd4090e",
+    "name": "Ramon V.",
+    "role": "Fence Contractor (Residential)",
+    "problems": [
+      "income_band $90–120K is low for a fencing company owner with 19 years experience, 4-person household, and C-13 license in CA. Typical owner gross is $120–180K+; net income likely $80–140K depending on operation scale."
+    ],
+    "fixes": {
+      "income_band": "$120–180K"
+    }
+  },
+  {
+    "id": "6816ba96-1227-45c7-81aa-100313826f72",
+    "name": "Jalen O.",
+    "role": "Sport Court Contractor (Pickleball/Basketball)",
+    "problems": [
+      "age (34) and years_experience (9) are consistent (career start ~25, plausible). However, tenure is marked 'owner' but income_band $70–95K is modest for an owner contractor with 9 years established. Sport court contractors typically gross $100K–150K+ if they own the business. Alternatively, if $70–95K is net take-home, tenure should reflect that or income should be higher."
+    ],
+    "fixes": {
+      "income_band": "$100–150K"
+    }
+  },
+  {
+    "id": "bf3a9f96-aad3-4332-8f9f-eaf8568273a5",
+    "name": "Douglas F.",
+    "role": "County Ag Commissioner",
+    "problems": [
+      "years_experience (26) exceeds career window: age 56, career start ~30 (age 30), max plausible tenure ~26 years is at the edge; more critically, tagline states '22 yrs enforcing weights & measures' but years_experience is 26 — tagline should win"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "65d1a506-217c-4e55-9ec6-638dbac1dec1",
+    "name": "Latoya M.",
+    "role": "Contract Poultry Grower",
+    "problems": [
+      "years_experience (12) inconsistent with tagline claim and role seniority; 12 years suggests entry around age 40, but persona is 52 — likely 20+ years in role",
+      "income_band ($75–100K) appears low for owner of 6 broiler houses; typical contract grower income ranges $100–150K+"
+    ],
+    "fixes": {
+      "years_experience": 20,
+      "income_band": "$100–140K"
+    }
+  },
+  {
+    "id": "ac8dfb58-31bc-44bc-899f-fedfe2ec1922",
+    "name": "Ronan K.",
+    "role": "Hog Operation Manager",
+    "problems": [
+      "tenure 'renter' inconsistent with role title 'manager' and category 'Owners & operators'; managers of large operations may rent land/facilities but are typically owners or have ownership stake",
+      "years_experience (16) with age 39 places career start at ~23, plausible; however, 4,800-head finishing operation management typically requires 18–25+ years"
+    ],
+    "fixes": {
+      "tenure": "owner",
+      "years_experience": 18
+    }
+  },
+  {
+    "id": "a55ca4ae-2e34-4f0d-9c61-d5da43be1ac9",
+    "name": "Valerie W.",
+    "role": "Agrivoltaics (Dual-Use Solar) Developer",
+    "problems": [
+      "years_experience (14) contradicts tagline claim of '12 yrs' — tagline indicates 12, not 14",
+      "age (41) with 14 years experience implies career start at 27, which is reasonable but tagline explicitly states 12 yrs"
+    ],
+    "fixes": {
+      "years_experience": 12
+    }
+  },
+  {
+    "id": "e9be61a9-429b-46e5-a154-ad358c1063ed",
+    "name": "Rosa E.",
+    "role": "Sheep/Goat Producer",
+    "problems": [
+      "tenure 'renter' inconsistent with category 'Owners & operators'; sheep/goat producer with 220 ewes is typically a producer-owner, not a renter",
+      "income_band ($45–65K) plausible for small ruminant operation but conflicts with ownership expectation"
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "72e71915-6ad2-46b1-9b99-dbef4dc02d71",
+    "name": "Refugio A.",
+    "role": "Farm Labor Contractor (FLC)",
+    "problems": [
+      "income_band $65–85K is implausibly low for a licensed FLC running three crews across two counties with 30 years experience; farm labor contracting at that scale typically generates $120K–200K+ gross income"
+    ],
+    "fixes": {
+      "income_band": "$120–160K"
+    }
+  },
+  {
+    "id": "be5bc9e4-1d25-4de8-a578-d57f75a2a373",
+    "name": "Divya Z.",
+    "role": "Commodity Broker/Hedger",
+    "problems": [
+      "years_experience (20) contradicts tagline claim of '18 yrs' — tagline explicitly states 18 yrs on the ag desk"
+    ],
+    "fixes": {
+      "years_experience": 18
+    }
+  },
+  {
+    "id": "d4ec3b99-08ba-4d8a-81b4-eff8154dc1f9",
+    "name": "Sanjana K.",
+    "role": "Certified Organic Farmer",
+    "problems": [
+      "tenure 'renter' inconsistent with 'Owners & operators' category and USDA Organic Certified credential; organic certification is typically held by owner-operators",
+      "income_band ($55–75K) for 60-acre certified organic operation with spouse is plausible for renter but conflicts with certified-owner expectation"
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "6538f6bc-58a9-47ff-b7c0-ce9be7f611de",
+    "name": "Lakshmi P.",
+    "role": "Food Hub Operator",
+    "problems": [
+      "occupation field is missing; tagline and role are clear but no occupation listed"
+    ],
+    "fixes": {
+      "occupation": "food hub operator"
+    }
+  },
+  {
+    "id": "52312ced-ad17-46e2-8123-8252567396eb",
+    "name": "Jamal R.",
+    "role": "Urban Farmer",
+    "problems": [
+      "tenure 'renter' inconsistent with category 'Owners & operators'; urban farmers on 1.5-acre lot operations are typically owner-operators or leaseholders with operator control"
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "34d7bf4e-72d1-40fa-92ba-a2cd1147175d",
+    "name": "Hamid R.",
+    "role": "Artist Hospitality/Rider Coordinator",
+    "problems": [
+      "years_experience (12) inconsistent with age (35): career start would be age 23, but implies entry at age 23—plausible but tight. However, 12 years in a hospitality coordinator role is unusually long tenure for the typical junior-to-mid progression; suggests either late start or understated role. Income band ($48–65K) is low for 12 years experience."
+    ],
+    "fixes": {
+      "years_experience": 8
+    }
+  },
+  {
+    "id": "e2e1ca6a-8bfe-4384-9355-021707fc1e5b",
+    "name": "Darlene K.",
+    "role": "County Fair Board Member",
+    "problems": [
+      "years_experience (22) conflicts with age (61) and career start: would require starting at age 39, which is plausible but the tagline claims '22 yrs on the fairgrounds committee' and occupation lists 'retired bookkeeper' — timeline suggests bookkeeper career ended before fair board work began, so 22 years should apply to fair board tenure only, not total work experience"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "51649dc1-72c6-4279-83d2-1af1480dad7d",
+    "name": "Otis B.",
+    "role": "Festival Camping Ops Manager",
+    "problems": [
+      "occupation field missing",
+      "credentials field missing"
+    ],
+    "fixes": {
+      "occupation": "Festival Camping Operations Manager",
+      "credentials": "Certified Special Event Professional (CSEP) or equivalent"
+    }
+  },
+  {
+    "id": "ba0d5ed6-9c83-4890-a2a6-86d73e44db08",
+    "name": "Vanessa C.",
+    "role": "Event Meteorologist",
+    "problems": [
+      "tagline claims '12 yrs' but years_experience is 15; inconsistent"
+    ],
+    "fixes": {
+      "years_experience": 12
+    }
+  },
+  {
+    "id": "68598d10-867d-4793-ba92-2b47ce08bc40",
+    "name": "Garrett C.",
+    "role": "Powered-Land Aggregator",
+    "problems": [
+      "tenure field missing; aggregator role requires clarity on whether persona owns or rents residential property"
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "e7b4cc4d-e06f-400a-9378-43c477122514",
+    "name": "Salvatore B.",
+    "role": "Prop House Owner",
+    "problems": [
+      "income_band $130–160K is implausibly low for a 40,000 sq ft prop house owner with 31 years experience in LA; established rental/service businesses of this scale typically generate $250K–400K+ annually"
+    ],
+    "fixes": {
+      "income_band": "$240-310K"
+    }
+  },
+  {
+    "id": "d34f73e8-af84-4319-a178-e0c5e6b504fc",
+    "name": "Vincent G.",
+    "role": "Post-Production Facility Owner",
+    "problems": [
+      "income_band $150–190K is low for a 6-suite post-production facility owner with 20 years experience; established independent post houses typically generate $300K–500K+ annually"
+    ],
+    "fixes": {
+      "income_band": "$280-380K"
+    }
+  },
+  {
+    "id": "6fa348cf-1f11-4b7a-ae79-0888accdfc35",
+    "name": "Mitchell Q.",
+    "role": "Camera/Grip Equipment Rental House Owner",
+    "problems": [
+      "income_band $135–165K is implausibly low for an established camera/grip rental fleet owner with 26 years experience operating since 2002; equipment rental businesses of meaningful scale typically generate $250K–400K+ annually"
+    ],
+    "fixes": {
+      "income_band": "$220-310K"
+    }
+  },
+  {
+    "id": "540eee23-5731-4705-bf0c-e4d45f31c108",
+    "name": "Priya D.",
+    "role": "Credentialing Manager",
+    "problems": [
+      "years_experience (20) contradicts tagline claim of '18 yrs'; tagline is authoritative source"
+    ],
+    "fixes": {
+      "years_experience": 18
+    }
+  },
+  {
+    "id": "11976b11-65a8-4cad-8ceb-fd0ef9b37e1f",
+    "name": "Douglas H.",
+    "role": "Special Event Permit Expeditor",
+    "problems": [
+      "years_experience (30) contradicts tagline claim of '27 yrs'; tagline is authoritative source"
+    ],
+    "fixes": {
+      "years_experience": 27
+    }
+  },
+  {
+    "id": "0b27c1ae-4397-4eba-aab8-fbab418002eb",
+    "name": "Donald R.",
+    "role": "Neighbor Complaint Liaison (Adversarial Context)",
+    "problems": [
+      "years_experience missing; tagline claims '22 yrs on the same block' which should map to tenure/residency, not career experience",
+      "income_band ($85–100K) implausible for retired HVAC contractor with no active employment listed; should reflect retirement/fixed income or part-time association work"
+    ],
+    "fixes": {
+      "years_experience": 22,
+      "income_band": "$60–75K"
+    }
+  },
+  {
+    "id": "7952bc82-068d-4194-81f2-1e22c0c0617e",
+    "name": "Renaldo P.",
+    "role": "Police Liaison",
+    "problems": [
+      "years_experience (19) contradicts tagline claim of '19 yrs badge, 6 as event detail'; the '19 yrs badge' aligns, but tagline structure suggests 19 total years in law enforcement, with 6 in events—should clarify or adjust"
+    ],
+    "fixes": {
+      "years_experience": 19
+    }
+  },
+  {
+    "id": "dc8a5cdc-fcdb-4e14-bda6-62f753379974",
+    "name": "Jamal E.",
+    "role": "Streamer Content Infrastructure Strategist",
+    "problems": [
+      "tenure field 'owner' is inconsistent with role (Director, Content Infrastructure is a W2 employee role, not ownership)",
+      "years_experience (10) matches tagline exactly, which is good, but tenure should reflect employment, not ownership"
+    ],
+    "fixes": {
+      "tenure": "renter"
+    }
+  },
+  {
+    "id": "6c350612-7436-4825-b162-5411640620d7",
+    "name": "Gloria N.",
+    "role": "State Film Commissioner",
+    "problems": [
+      "years_experience (22) conflicts with tagline '9 yrs courting productions' — tagline should win",
+      "tenure 'owner' is implausible for a state government role (State Film Commissioner is a civil service/appointed position, not business ownership)"
+    ],
+    "fixes": {
+      "years_experience": 9,
+      "tenure": "renter"
+    }
+  },
+  {
+    "id": "0fb57622-20f7-42a6-80df-a6ab73e1e7a1",
+    "name": "Mason J.",
+    "role": "Studio Security Chief",
+    "problems": [
+      "tenure 'owner' is inconsistent with role title 'Studio Security Chief, major lot' — this is a salaried employee position at a studio, not self-owned business"
+    ],
+    "fixes": {
+      "tenure": "renter"
+    }
+  },
+  {
+    "id": "4172638d-967f-419f-8656-74fa820b8c98",
+    "name": "Oscar C.",
+    "role": "Amphitheater GM",
+    "problems": [
+      "years_experience (21) exceeds career length available given age (53) and typical career start around age 18—would require starting at age 32, which is plausible but at the edge; tagline claims '21 yrs running sheds' but that's venue ops, not total career. If 21 yrs is venue-specific, total experience should be higher or age should be older."
+    ],
+    "fixes": {
+      "age": 55,
+      "years_experience": 21
+    }
+  },
+  {
+    "id": "3b21c595-3180-4856-be77-61422e0fab7a",
+    "name": "Shawn L.",
+    "role": "Studio Lot GM",
+    "problems": [
+      "years_experience (27) exceeds plausible career length: age 54, career start ~18 = ~36 years available. However, 27 years is feasible. The issue is the tagline claims '22 yrs running a 40-acre lot' but years_experience is set to 27—these should align. If 22 yrs is the correct venue tenure, years_experience should be 22, not 27."
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "ca502cb5-02dc-4f7f-ac51-8fd5efbf7dd7",
+    "name": "Raymond P.",
+    "role": "Uptime Institute Tier Certification Consultant",
+    "problems": [
+      "years_experience (26) exceeds tagline claim (20 yrs of Tier audits); tagline is authoritative",
+      "age (58) with 26 yrs experience implies career start at age 32, which is plausible but inconsistent with tagline's explicit '20 yrs'"
+    ],
+    "fixes": {
+      "years_experience": 20
+    }
+  },
+  {
+    "id": "4abb7ca1-40b5-4f11-85b1-e38d56ddd9ef",
+    "name": "Everett J.",
+    "role": "Raised Floor / Hot-Aisle Containment Installer",
+    "problems": [
+      "No credentials listed for a specialized technical role; installer roles typically require certifications (e.g., raised-floor manufacturer certification, ASSE, or equivalent)"
+    ],
+    "fixes": {
+      "credentials": "Raised Floor Installer Certified"
+    }
+  },
+  {
+    "id": "06966a97-f008-4878-b506-7751149d433d",
+    "name": "Akiko G.",
+    "role": "DCIM Administrator",
+    "problems": [
+      "credentials missing: DCIM Administrator role typically requires or benefits from formal IT infrastructure/facilities certifications (e.g., DCIM-specific training, CDCP, or IT infrastructure cert); none listed"
+    ],
+    "fixes": {
+      "credentials": "DCIM Certified (or equivalent infrastructure management certification)"
+    }
+  },
+  {
+    "id": "3221bbb4-9f9c-4bc3-b6ab-d2a1b1d77f77",
+    "name": "Yvonne Q.",
+    "role": "Commissioning Agent (Levels 1–5)",
+    "problems": [
+      "Missing required demographics fields: age, gender, household, occupation, metro, state, income_band"
+    ],
+    "fixes": {
+      "age": 54,
+      "gender": "female",
+      "metro": "Washington-Arlington-Alexandria, DC-VA",
+      "state": "VA",
+      "occupation": "commissioning agent, HVAC & controls specialist",
+      "household": "married, adult children",
+      "income_band": "$110–140K"
+    }
+  },
+  {
+    "id": "3b5bd4bc-1b00-40d0-a823-3ae275e56f32",
+    "name": "Sophia B.",
+    "role": "Podium Deck Waterproofing Consultant",
+    "problems": [
+      "years_experience (17) exceeds tagline claim (12 yrs); tagline takes precedence",
+      "credential 'WaterprooFing Institute cert' is informal; RRO (Registered Roof Observor) is roofing-specific, not waterproofing-primary"
+    ],
+    "fixes": {
+      "years_experience": 12,
+      "credentials": "RRO, IICRC cert"
+    }
+  },
+  {
+    "id": "516140cc-bcaf-4255-a72c-25d6840f7118",
+    "name": "Augustus N.",
+    "role": "Mission-Critical GC",
+    "problems": [
+      "Missing required demographics fields: household, occupation, metro, state, income_band"
+    ],
+    "fixes": {
+      "household": "married, 2 children",
+      "occupation": "general contractor, mission-critical construction",
+      "metro": "Phoenix-Mesa-Chandler, AZ",
+      "state": "AZ",
+      "income_band": "$140–180K"
+    }
+  },
+  {
+    "id": "cfa598b1-704a-40a9-bc6f-912148e6a11c",
+    "name": "Amit P.",
+    "role": "Switchgear Vendor",
+    "problems": [
+      "Missing required demographics fields: household, occupation, metro, state, income_band"
+    ],
+    "fixes": {
+      "household": "married, 2 children",
+      "occupation": "sales engineer, medium-voltage equipment supplier",
+      "metro": "Columbus, OH",
+      "state": "OH",
+      "income_band": "$120–155K"
+    }
+  },
+  {
+    "id": "25ee4d7b-dda9-443b-b757-331152ea3be1",
+    "name": "Yolanda M.",
+    "role": "Generator Supplier Rep",
+    "problems": [
+      "Missing required demographics fields: household, occupation, metro, state, income_band"
+    ],
+    "fixes": {
+      "household": "married, 1 child",
+      "occupation": "field application engineer, generator supplier",
+      "metro": "San Antonio-New Braunfels, TX",
+      "state": "TX",
+      "income_band": "$100–130K"
+    }
+  },
+  {
+    "id": "5e2d8efb-5b6d-4807-a70c-b2fa05d3ac82",
+    "name": "Tanya U.",
+    "role": "Medium-Voltage Electrical Contractor",
+    "problems": [
+      "Missing required demographics fields: household, occupation, metro, state, income_band"
+    ],
+    "fixes": {
+      "household": "married, 1 child",
+      "occupation": "medium-voltage electrician, contractor",
+      "metro": "Baltimore-Columbia-Towson, MD",
+      "state": "MD",
+      "income_band": "$95–125K"
+    }
+  },
+  {
+    "id": "711c32a0-b467-4a94-a4ed-055ae1366af7",
+    "name": "Carolina D.",
+    "role": "Concrete Pumping Specialist",
+    "problems": [
+      "tenure field missing (required for all personas)"
+    ],
+    "fixes": {
+      "tenure": "owner"
+    }
+  },
+  {
+    "id": "4bf1b6f1-ad17-409e-bcd5-3f0963723d27",
+    "name": "Magnus C.",
+    "role": "Window Washing Contractor",
+    "problems": [
+      "Income band $90–115K is low for a high-rise contractor lead with IRATA Level 3 and 19 years' experience in Chicago (high cost-of-living metro); should reflect operational/crew profitability and market rates for specialized access work."
+    ],
+    "fixes": {
+      "income_band": "$120–155K"
+    }
+  },
+  {
+    "id": "958cc928-2f94-4847-a62a-d0f25b4a91cd",
+    "name": "Julio B.",
+    "role": "Tenant Coordination Manager (TI Buildout)",
+    "problems": [
+      "occupation field is missing",
+      "income_band field is missing",
+      "credentials field is missing"
+    ],
+    "fixes": {
+      "occupation": "Tenant coordination manager, mall property management team",
+      "income_band": "$95-120K",
+      "credentials": "Project management certification or equivalent"
+    }
+  },
+  {
+    "id": "218095d4-c614-4330-b785-2fde52d4b371",
+    "name": "Latoya B.",
+    "role": "Specialty Leasing (Kiosk/Cart) Manager",
+    "problems": [
+      "credentials missing for a professional role (not disqualifying but unusual for an expert persona)"
+    ],
+    "fixes": {
+      "credentials": "Licensed Real Estate Broker (NC)"
+    }
+  },
+  {
+    "id": "b675ee64-0f36-4253-bc0e-cec000ba95df",
+    "name": "Amina H.",
+    "role": "Restaurant Kitchen Designer",
+    "problems": [
+      "credentials missing; restaurant kitchen designers typically hold professional licenses or certifications (NSF, architectural/engineering credentials)"
+    ],
+    "fixes": {
+      "credentials": "Certified Kitchen Designer (CKD)"
+    }
+  },
+  {
+    "id": "11452166-831e-4d7c-85aa-5a3c355f991e",
+    "name": "Hiroshi S.",
+    "role": "Blast Freezer Designer",
+    "problems": [
+      "years_experience (16) inconsistent with tagline claim of airflow expertise and principal role; age 41 with only 16 yrs experience suggests career start at 25, which is plausible but tight for a principal/leadership position in specialized design"
+    ],
+    "fixes": {
+      "years_experience": 18
+    }
+  },
+  {
+    "id": "2338df59-7298-4964-8e23-0ade9f6fafb0",
+    "name": "Samuel D.",
+    "role": "Tilt-Up Concrete Contractor",
+    "problems": [
+      "years_experience (30) inconsistent with age (54): implies career start at age 24, which is acceptable, but tagline claims '27 yrs pouring panels' — tagline wins"
+    ],
+    "fixes": {
+      "years_experience": 27
+    }
+  },
+  {
+    "id": "3eb70225-424d-4026-8cba-961f5cac8ecd",
+    "name": "Sophia G.",
+    "role": "Soundstage Acoustician",
+    "problems": [
+      "Tagline claims '22 yrs' experience but demographics show 26 years_experience"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "2523f0f7-6cab-43ef-855e-d8460c811328",
+    "name": "Lucille T.",
+    "role": "Concessions Design Consultant",
+    "problems": [
+      "Income band ($95–120K) is low for a PE-level expert in venue design with 22 years experience; concessions design at this tenure and scope typically commands $120–150K+"
+    ],
+    "fixes": {
+      "income_band": "$120-155K"
+    }
+  },
+  {
+    "id": "28226eaa-8316-4e7e-8961-6fdd29df6cf0",
+    "name": "Amara D.",
+    "role": "Speech/NLP Engineer",
+    "problems": [
+      "years_experience (10) conflicts with tagline claim of built voice systems for three accents before her own model understood her mother — implies longer career arc; age 35 with PhD suggests PhD completion ~28–30, then 5–7 yrs post-PhD is plausible but tagline tone suggests deeper seniority"
+    ],
+    "fixes": {
+      "years_experience": 11
+    }
+  },
+  {
+    "id": "17c55dcc-faac-4970-926d-e09a93058a3a",
+    "name": "Tomoe N.",
+    "role": "Game Developer",
+    "problems": [
+      "years_experience (9) inconsistent with tagline claim of shipping three titles with two crunches—typical for 12–15 yrs in indie/gaming"
+    ],
+    "fixes": {
+      "years_experience": 13
+    }
+  },
+  {
+    "id": "48cfc25f-1798-4834-b9a2-0222cf7a4b17",
+    "name": "Rosalind C.",
+    "role": "Low-Code/No-Code Builder",
+    "problems": [
+      "years_experience (6) too low for 'ops director turned consultant'—ops director role typically requires 8–12 yrs career minimum; 6 yrs total is implausible",
+      "income_band ($80–100K) likely low for independent consultant in high-CoL metro (Tampa is moderate but consultant pricing higher); $110–140K more realistic"
+    ],
+    "fixes": {
+      "years_experience": 14,
+      "income_band": "$110–140K"
+    }
+  },
+  {
+    "id": "29a8d3ce-8b8b-40a8-ab2d-dbbfd6611c7b",
+    "name": "Soren V.",
+    "role": "Principal Engineer",
+    "problems": [
+      "years_experience (24) inconsistent with age (49)—implies career start at age 25, plausible but tight; tagline claims '22 yrs' which contradicts the field; tagline wins"
+    ],
+    "fixes": {
+      "years_experience": 22
+    }
+  },
+  {
+    "id": "939e90a1-2739-4cbb-973e-0b31afa84b76",
+    "name": "Farrukh K.",
+    "role": "Systems Integrator",
+    "problems": [
+      "years_experience (15) inconsistent with age (41): implies career start at 26, which is plausible but on the late side. More critically, tagline states 'wires disparate platforms' with no specific experience claim, but 15 years is reasonable for a systems integrator at this seniority level.",
+      "income_band ($110–135K) is low for 15 years of systems integration experience at age 41 in Chicago (mid-cost metro). Systems integrators with that tenure typically earn $130–160K+."
+    ],
+    "fixes": {
+      "income_band": "$135–160K"
+    }
+  },
+  {
+    "id": "5f93c02f-0166-49fa-b79d-d52914d6bea1",
+    "name": "Chinelo G.",
+    "role": "Site Reliability Engineer (SRE)",
+    "problems": [
+      "occupation field missing; only role is specified. SRE is the role; need a title for 'occupation' (e.g., 'Staff SRE', 'Senior SRE')."
+    ],
+    "fixes": {
+      "occupation": "Staff Site Reliability Engineer"
+    }
+  },
+  {
+    "id": "569fada0-15f8-4de5-a6a9-264fa152bad9",
+    "name": "Talia G.",
+    "role": "BI Developer",
+    "problems": [
+      "income_band $95–115K is low for age 45 with 17 years experience in a Senior BI Developer role",
+      "Memphis, TN cost of living is low, but Senior title + 17 yrs typically commands $120–150K even in LCOL markets"
+    ],
+    "fixes": {
+      "income_band": "$120–145K"
+    }
+  },
+  {
+    "id": "deed1c91-98cc-4ef8-b471-d8e22ab9c58c",
+    "name": "Sakura E.",
+    "role": "Data Scientist",
+    "problems": [
+      "years_experience (9) inconsistent with PhD in Statistics + Senior title at age 36; PhD typically takes 5–6 yrs (graduation ~age 31), leaving only ~5 yrs post-PhD experience — more aligned with mid-level, not Senior"
+    ],
+    "fixes": {
+      "years_experience": 13
+    }
+  },
+  {
+    "id": "0a6920ac-5c8d-42e2-9b9a-0b2890604abf",
+    "name": "Lionel S.",
+    "role": "Product Manager (Consumer)",
+    "problems": [
+      "years_experience (7) is implausibly low for someone age 31 who has built two 1M+ DAU apps and killed three others; that trajectory typically requires 10–12+ years"
+    ],
+    "fixes": {
+      "years_experience": 11
+    }
+  },
+  {
+    "id": "0f17fd7a-da6c-48d9-b599-823d3e2d608b",
+    "name": "Devrim K.",
+    "role": "Privacy Counsel (GDPR/CCPA)",
+    "problems": [
+      "years_experience (11) exceeds tagline claim (9 yrs); tagline wins"
+    ],
+    "fixes": {
+      "years_experience": 9
+    }
+  },
+  {
+    "id": "d3c379d4-939b-44c2-922a-acd43a9d08fd",
+    "name": "Sofia C.",
+    "role": "Startup Attorney (Formation/Venture)",
+    "problems": [
+      "years_experience (14) exceeds tagline claim (12 yrs); tagline wins"
+    ],
+    "fixes": {
+      "years_experience": 12
+    }
+  },
+  {
+    "id": "1b8433a1-eaa3-4d6d-a2d3-c00df271e983",
+    "name": "Vidya P.",
+    "role": "SaaS Contracts Counsel",
+    "problems": [
+      "years_experience (18) exceeds tagline claim (15 yrs); tagline wins"
+    ],
+    "fixes": {
+      "years_experience": 15
+    }
+  },
+  {
+    "id": "6d1edba6-021f-48d9-bdf1-9390dd73b2d5",
+    "name": "Isabela H.",
+    "role": "Hotel Brand Design & Construction Reviewer",
+    "problems": [
+      "NCARB credential listed for non-licensed role is contradictory; NCARB is the national architecture licensing board and should not appear for non-licensed reviewer"
+    ],
+    "fixes": {
+      "credentials": ""
+    }
+  },
+  {
+    "id": "2fb8d298-0b62-4add-8596-76e2dbf4b771",
+    "name": "Tyson W.",
+    "role": "CISO",
+    "problems": [
+      "Metro/state mismatch: tagline and role suggest DC-based, but metro is Washington, DC and state is VA (inconsistent)"
+    ],
+    "fixes": {
+      "state": "DC"
+    }
+  },
+  {
+    "id": "632d0db5-a515-4fc2-8015-8595884c02c3",
+    "name": "Liam A.",
+    "role": "AI Governance/Policy Lead",
+    "problems": [
+      "years_experience (12) too low for claimed career trajectory: 'former ML engineer turned policy translator' suggests mid-to-senior shift requiring 15+ years minimum"
+    ],
+    "fixes": {
+      "years_experience": 15
+    }
+  },
+  {
+    "id": "eaa3cd36-82ad-4fe8-b410-b03522b0c351",
+    "name": "Xavier D.",
+    "role": "Management Consultant (Strategy Firm)",
+    "problems": [
+      "Tagline claims 'six years' in role but years_experience is 7: minor inconsistency in specificity",
+      "Age 33 with 7 years experience implies career start at ~26, which is realistic (typical MBA/consulting hire path), but the '6 years, 4 industries' should align with either 6 or 7 years in field"
+    ],
+    "fixes": {
+      "years_experience": 6
+    }
+  },
+  {
+    "id": "2cf65c83-1d68-4faf-9cc8-efbfd37377f9",
+    "name": "Kavya Z.",
+    "role": "Technical Evaluator (Skeptical Architect)",
+    "problems": [
+      "years_experience (15) contradicts tagline claim of '18 yrs breaking vendor claims'"
+    ],
+    "fixes": {
+      "years_experience": 18
+    }
+  },
+  {
+    "id": "cdaae692-0f1b-4f98-adf3-a91d3dc53841",
+    "name": "Sienna P.",
+    "role": "End-User Champion",
+    "problems": [
+      "years_experience (11) implausible: age 33 with career start at ~22 would allow ~11 years, but 'Customer Support Team Lead' title typically requires 5–8 years to reach; 11 years is achievable but tight. However, the larger issue is income_band ($70–85K) is low for a 'Team Lead' title in a buying-committee context at an enterprise. This suggests either title inflation or undercompensation."
+    ],
+    "fixes": {
+      "years_experience": 9
+    }
+  },
+  {
+    "id": "58919873-914f-4ff3-81c6-c0bcf0e8a291",
+    "name": "Ruben L.",
+    "role": "SMB Owner-Operator (No IT Staff)",
+    "problems": [
+      "years_experience (9) too low for a 41-year-old HVAC company owner; implies career start at age 32, suggesting late entry or missing prior experience"
+    ],
+    "fixes": {
+      "years_experience": 20
+    }
+  },
+  {
+    "id": "db0d66fb-b72e-4eb9-8b1e-fa88441c7198",
+    "name": "Tanisha W.",
+    "role": "User Research Participant (By Segment)",
+    "problems": [
+      "missing years_experience field for employed persona"
+    ],
+    "fixes": {
+      "years_experience": 9
+    }
+  },
+  {
+    "id": "d3ea21f4-72b5-4b17-a660-1f925bad137c",
+    "name": "Alyssa F.",
+    "role": "App Store / G2 Reviewer",
+    "problems": [
+      "income_band ($58–68K) misaligned with role (Maintenance Coordination Manager) and tenure (homeowner); likely underpaid for title and responsibility level in mid-size metro"
+    ],
+    "fixes": {
+      "income_band": "$68–82K"
+    }
+  }
+]

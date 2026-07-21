@@ -112,7 +112,7 @@ export default function Hero() {
           Microcosm convenes a panel of AI experts and a census-grounded crowd — buyers, renters, neighbors, lenders — around your hardest real-estate question. They read your documents, deliberate in the open, and hand you a decision-grade report before a single dollar of capital is committed.
         </p>
         <div style={{ display: "flex", gap: 14, marginTop: 38, flexWrap: "wrap", animation: "fadeUp .7s .24s ease both" }}>
-          <a href="/#access" className="btnAcc" style={{ padding: "14px 28px", fontSize: 15 }}>Get started</a>
+          <a href="/login" className="btnAcc" style={{ padding: "14px 28px", fontSize: 15 }}>Get started</a>
           <a href="/demo.html" style={{ border: "1px solid rgba(255,255,255,.25)", color: "#ececec", fontWeight: 500, fontSize: 15, padding: "14px 28px", borderRadius: 100, backdropFilter: "blur(6px)" }}>
             Watch a live simulation
           </a>

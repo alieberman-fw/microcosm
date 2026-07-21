@@ -220,7 +220,7 @@ export default function Home() {
           <a href="/#product" style={{ color: "var(--t6)" }}>How it works</a>
           <a href="/#usecases" style={{ color: "var(--t6)" }}>Use cases</a>
           <a href="/demo.html" style={{ color: "var(--t6)" }}>Live demo</a>
-          <a href="/#access" style={{ color: "var(--t6)" }}>Get started</a>
+          <a href="/login" style={{ color: "var(--t6)" }}>Get started</a>
         </div>
       </footer>
     </>

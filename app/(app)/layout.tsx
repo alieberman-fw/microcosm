@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/app/AppShell";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabase, getLocalUser } from "@/lib/supabase/server";
 import { supabaseConfigured } from "@/lib/supabase/env";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   if (!supabaseConfigured()) redirect("/login");
   const supabase = await createServerSupabase();
-  const { data: { user } } = await supabase!.auth.getUser();
+  const user = await getLocalUser(supabase!);
   if (!user) redirect("/login");
 
   const { data: userRow } = await supabase!

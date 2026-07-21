@@ -43,12 +43,14 @@ function parseMentions(content: string, participants: Participant[]): Participan
 }
 
 function renderTranscript(
-  msgs: { role: string; agent_name: string | null; content: string; attachments?: Attachment[] }[],
+  msgs: { role: string; agent_key?: string | null; agent_name: string | null; content: string; attachments?: Attachment[] }[],
+  labelFor?: (key: string | null | undefined, name: string | null) => string,
 ): string {
   return msgs
     .map((m) => {
       const att = m.attachments?.length ? ` [attached: ${m.attachments.map((a) => a.name).join(", ")}]` : "";
-      return `${m.role === "user" ? "USER" : (m.agent_name ?? "AGENT").toUpperCase()}: ${m.content}${att}`;
+      const label = m.role === "user" ? "USER" : (labelFor ? labelFor(m.agent_key, m.agent_name) : m.agent_name ?? "AGENT").toUpperCase();
+      return `${label}: ${m.content}${att}`;
     })
     .join("\n\n");
 }
@@ -68,6 +70,9 @@ export async function POST(request: Request) {
     content?: string;
     attachments?: Attachment[];
     modelOverrides?: Record<string, string>;
+    /** persona keys the user explicitly picked in the @mention typeahead —
+     * disambiguates two participants who share a display name */
+    mentionKeys?: string[];
   };
   try {
     body = await request.json();
@@ -144,7 +149,7 @@ export async function POST(request: Request) {
 
   const { data: history } = await supabase
     .from("conversation_messages")
-    .select("role, agent_name, content, attachments")
+    .select("role, agent_key, agent_name, content, attachments")
     .eq("conversation_id", convId)
     .order("id", { ascending: true })
     .limit(HISTORY_LIMIT);
@@ -174,9 +179,23 @@ export async function POST(request: Request) {
 
   const anthropic = new Anthropic();
   const transcriptBase = [
-    ...(history ?? []) as { role: string; agent_name: string | null; content: string; attachments?: Attachment[] }[],
-    { role: "user", agent_name: null, content, attachments },
+    ...(history ?? []) as { role: string; agent_key?: string | null; agent_name: string | null; content: string; attachments?: Attachment[] }[],
+    { role: "user", agent_key: null, agent_name: null, content, attachments },
   ];
+
+  // two participants can share a display name (e.g. two "Bob G."s) — in that
+  // case transcript labels and prompts carry the role so identities never blur
+  const nameCounts = new Map<string, number>();
+  participants.forEach((p) => nameCounts.set(p.name, (nameCounts.get(p.name) ?? 0) + 1));
+  const displayName = (p: Participant) => (nameCounts.get(p.name) ?? 0) > 1 ? `${p.name} (${p.role})` : p.name;
+  const labelFor = (key: string | null | undefined, name: string | null) => {
+    if (!name) return "AGENT";
+    if ((nameCounts.get(name) ?? 0) > 1 && key) {
+      const p = participants.find((x) => x.key === key);
+      if (p) return `${name} (${p.role})`;
+    }
+    return name;
+  };
 
   const logInteraction = async (row: {
     surface: string; agent_key?: string | null; agent_name?: string | null; model: string;
@@ -191,8 +210,13 @@ export async function POST(request: Request) {
     });
   };
 
-  // choose responders: mentions win; otherwise route (or the sole participant)
-  let responders = parseMentions(content, participants).slice(0, MAX_RESPONDERS);
+  // choose responders: typeahead-resolved keys win (exact, survives duplicate
+  // names) → text-parsed mentions → router (or the sole participant)
+  let responders = (body.mentionKeys ?? [])
+    .map((k) => participants.find((p) => p.key === k))
+    .filter((p): p is Participant => Boolean(p))
+    .slice(0, MAX_RESPONDERS);
+  if (responders.length === 0) responders = parseMentions(content, participants).slice(0, MAX_RESPONDERS);
   if (responders.length === 0) {
     if (participants.length === 1) {
       responders = [participants[0]];
@@ -206,7 +230,7 @@ export async function POST(request: Request) {
             "You route messages in a group chat to the right expert(s). Reply with ONLY the comma-separated keys of 1-2 participants best suited to answer, nothing else.",
           messages: [{
             role: "user",
-            content: `Participants:\n${participants.map((p) => `${p.key}: ${p.name} — ${p.role}`).join("\n")}\n\nConversation tail:\n${renderTranscript(transcriptBase.slice(-6))}\n\nWhich participant key(s) should answer the last user message?`,
+            content: `Participants:\n${participants.map((p) => `${p.key}: ${p.name} — ${p.role}`).join("\n")}\n\nConversation tail:\n${renderTranscript(transcriptBase.slice(-6), labelFor)}\n\nWhich participant key(s) should answer the last user message?`,
           }],
         });
         const text = routing.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
@@ -224,9 +248,12 @@ export async function POST(request: Request) {
   const replies: { agentKey: string; name: string; initials: string; content: string }[] = [];
   const rolling = [...transcriptBase];
   for (const p of responders) {
-    const others = participants.filter((x) => x.key !== p.key).map((x) => x.name);
+    const others = participants.filter((x) => x.key !== p.key).map((x) => displayName(x));
+    const dupNote = (nameCounts.get(p.name) ?? 0) > 1
+      ? ` Note: another participant shares your name — YOU are ${p.name}, the ${p.role.toLowerCase()}; transcript lines are labeled with roles to keep you apart.`
+      : "";
     const groupNote = participants.length > 1
-      ? `\n\nYou are in a group conversation with the user${others.length ? ` and ${others.join(", ")}` : ""}. Reply only as yourself; react to others' points when relevant; never speak for them.`
+      ? `\n\nYou are in a group conversation with the user${others.length ? ` and ${others.join(", ")}` : ""}. Reply only as yourself; react to others' points when relevant; never speak for them.${dupNote}`
       : "";
     const attNote = attachmentBlocks.length
       ? `\n\nThe user attached ${attachments.length} file(s) to their latest message — they are provided to you directly; analyze them concretely.`
@@ -244,13 +271,13 @@ export async function POST(request: Request) {
           role: "user",
           content: [
             ...attachmentBlocks,
-            { type: "text" as const, text: `Conversation transcript:\n\n${renderTranscript(rolling)}\n\n---\nReply now as ${p.name}. Do not prefix your reply with your name.` },
+            { type: "text" as const, text: `Conversation transcript:\n\n${renderTranscript(rolling, labelFor)}\n\n---\nReply now as ${displayName(p)}. Do not prefix your reply with your name.` },
           ],
         }],
       });
       const text = resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
       replies.push({ agentKey: p.key, name: p.name, initials: p.initials, content: text });
-      rolling.push({ role: "agent", agent_name: p.name, content: text });
+      rolling.push({ role: "agent", agent_key: p.key, agent_name: p.name, content: text });
       await supabase.from("conversation_messages").insert({
         conversation_id: convId, role: "agent", agent_key: p.key, agent_name: p.name, content: text,
       });

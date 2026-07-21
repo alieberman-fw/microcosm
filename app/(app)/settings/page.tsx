@@ -1,5 +1,5 @@
 import { CSSProperties } from "react";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabase, getLocalUser } from "@/lib/supabase/server";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -17,7 +17,7 @@ function Row({ k, v }: { k: string; v: string }) {
 
 export default async function Settings() {
   const supabase = await createServerSupabase();
-  const { data: { user } } = await supabase!.auth.getUser();
+  const user = await getLocalUser(supabase!);
   const { data: userRow } = await supabase!
     .from("users").select("role, created_at, orgs(name, plan)").eq("id", user!.id).single();
   const org = (userRow as { orgs?: { name?: string; plan?: string } } | null)?.orgs;
