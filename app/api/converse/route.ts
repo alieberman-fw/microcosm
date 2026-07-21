@@ -17,7 +17,6 @@ const ROUTER_MODEL = process.env.ROUTER_MODEL ?? "claude-haiku-4-5";
 const DEFAULT_REPLY_MODEL = process.env.CONSULT_MODEL ?? DEFAULT_CHAT_MODEL;
 
 const MAX_CONTENT = 6000;
-const MAX_RESPONDERS = 3;
 const MAX_PARTICIPANTS = 20; // mirrored client-side in components/app/Conversations.tsx
 const HISTORY_LIMIT = 60;
 const MAX_ATTACHMENTS = 8;
@@ -211,12 +210,12 @@ export async function POST(request: Request) {
   };
 
   // choose responders: typeahead-resolved keys win (exact, survives duplicate
-  // names) → text-parsed mentions → router (or the sole participant)
+  // names) → text-parsed mentions → router (or the sole participant). No
+  // artificial cap: if the user addresses five people, five people answer.
   let responders = (body.mentionKeys ?? [])
     .map((k) => participants.find((p) => p.key === k))
-    .filter((p): p is Participant => Boolean(p))
-    .slice(0, MAX_RESPONDERS);
-  if (responders.length === 0) responders = parseMentions(content, participants).slice(0, MAX_RESPONDERS);
+    .filter((p): p is Participant => Boolean(p));
+  if (responders.length === 0) responders = parseMentions(content, participants);
   if (responders.length === 0) {
     if (participants.length === 1) {
       responders = [participants[0]];
@@ -227,15 +226,19 @@ export async function POST(request: Request) {
           model: ROUTER_MODEL,
           max_tokens: 60,
           system:
-            "You route messages in a group chat to the right expert(s). Reply with ONLY the comma-separated keys of 1-2 participants best suited to answer, nothing else.",
+            "You route messages in a group chat to the right expert(s). If the user's message addresses the WHOLE group — 'everyone', 'each of you', 'all of you', 'you all', 'hi guys/team', or it asks every participant for input — reply with only the word ALL. Otherwise reply with ONLY the comma-separated keys of the 1-2 participants best suited to answer. Nothing else.",
           messages: [{
             role: "user",
-            content: `Participants:\n${participants.map((p) => `${p.key}: ${p.name} — ${p.role}`).join("\n")}\n\nConversation tail:\n${renderTranscript(transcriptBase.slice(-6), labelFor)}\n\nWhich participant key(s) should answer the last user message?`,
+            content: `Participants:\n${participants.map((p) => `${p.key}: ${p.name} — ${p.role}`).join("\n")}\n\nConversation tail:\n${renderTranscript(transcriptBase.slice(-6), labelFor)}\n\nWho should answer the last user message?`,
           }],
         });
         const text = routing.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-        const keys = text.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
-        responders = participants.filter((p) => keys.includes(p.key)).slice(0, 2);
+        if (/\bALL\b/.test(text)) {
+          responders = [...participants];
+        } else {
+          const keys = text.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+          responders = participants.filter((p) => keys.includes(p.key));
+        }
         await logInteraction({ surface: "conversation.router", model: ROUTER_MODEL, input_tokens: routing.usage.input_tokens, output_tokens: routing.usage.output_tokens, latency_ms: Date.now() - t0 });
       } catch (e) {
         await logInteraction({ surface: "conversation.router", model: ROUTER_MODEL, latency_ms: Date.now() - t0, status: "error", error: e instanceof Error ? e.message : "router failed" });
@@ -244,52 +247,74 @@ export async function POST(request: Request) {
     }
   }
 
-  // generate replies sequentially so later responders see earlier ones
-  const replies: { agentKey: string; name: string; initials: string; content: string }[] = [];
-  const rolling = [...transcriptBase];
-  for (const p of responders) {
-    const others = participants.filter((x) => x.key !== p.key).map((x) => displayName(x));
-    const dupNote = (nameCounts.get(p.name) ?? 0) > 1
-      ? ` Note: another participant shares your name — YOU are ${p.name}, the ${p.role.toLowerCase()}; transcript lines are labeled with roles to keep you apart.`
-      : "";
-    const groupNote = participants.length > 1
-      ? `\n\nYou are in a group conversation with the user${others.length ? ` and ${others.join(", ")}` : ""}. Reply only as yourself; react to others' points when relevant; never speak for them.${dupNote}`
-      : "";
-    const attNote = attachmentBlocks.length
-      ? `\n\nThe user attached ${attachments.length} file(s) to their latest message — they are provided to you directly; analyze them concretely.`
-      : "";
-    const t0 = Date.now();
-    // per-participant tier (§6.4): thread-level override wins, else the
-    // lightweight default — the UI toggle is the only way to spend more
-    const model = modelByKey[p.key] ?? DEFAULT_REPLY_MODEL;
-    try {
-      const resp = await anthropic.messages.create({
-        model,
-        max_tokens: 900,
-        system: compilePersonaPrompt(p) + groupNote + attNote,
-        messages: [{
-          role: "user",
-          content: [
-            ...attachmentBlocks,
-            { type: "text" as const, text: `Conversation transcript:\n\n${renderTranscript(rolling, labelFor)}\n\n---\nReply now as ${displayName(p)}. Do not prefix your reply with your name.` },
-          ],
-        }],
+  // stream ND-JSON events: responders (→ typing indicators), then each reply
+  // the moment its author finishes, then done — iMessage, not batch mail
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const emit = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
+      emit({
+        type: "responders",
+        conversationId: convId,
+        responders: responders.map((p) => ({ key: p.key, name: p.name, initials: p.initials })),
       });
-      const text = resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
-      replies.push({ agentKey: p.key, name: p.name, initials: p.initials, content: text });
-      rolling.push({ role: "agent", agent_key: p.key, agent_name: p.name, content: text });
-      await supabase.from("conversation_messages").insert({
-        conversation_id: convId, role: "agent", agent_key: p.key, agent_name: p.name, content: text,
-      });
-      await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model, input_tokens: resp.usage.input_tokens, output_tokens: resp.usage.output_tokens, latency_ms: Date.now() - t0 });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Model call failed";
-      await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model, latency_ms: Date.now() - t0, status: "error", error: msg });
-      return NextResponse.json({ error: msg, conversationId: convId, replies }, { status: 502 });
-    }
-  }
 
-  await supabase.from("conversations").update({ updated_at: new Date().toISOString(), model_overrides: modelByKey }).eq("id", convId);
+      // generate replies sequentially so later responders see earlier ones
+      const rolling = [...transcriptBase];
+      for (const p of responders) {
+        const others = participants.filter((x) => x.key !== p.key).map((x) => displayName(x));
+        const dupNote = (nameCounts.get(p.name) ?? 0) > 1
+          ? ` Note: another participant shares your name — YOU are ${p.name}, the ${p.role.toLowerCase()}; transcript lines are labeled with roles to keep you apart.`
+          : "";
+        const groupNote = participants.length > 1
+          ? `\n\nYou are in a group conversation with the user${others.length ? ` and ${others.join(", ")}` : ""}. Reply only as yourself; react to others' points when relevant; never speak for them.${dupNote}`
+          : "";
+        const attNote = attachmentBlocks.length
+          ? `\n\nThe user attached ${attachments.length} file(s) to their latest message — they are provided to you directly; analyze them concretely.`
+          : "";
+        const t0 = Date.now();
+        // per-participant tier (§6.4): thread-level override wins, else the
+        // lightweight default — the UI toggle is the only way to spend more
+        const model = modelByKey[p.key] ?? DEFAULT_REPLY_MODEL;
+        try {
+          const resp = await anthropic.messages.create({
+            model,
+            max_tokens: 900,
+            system: compilePersonaPrompt(p) + groupNote + attNote,
+            messages: [{
+              role: "user",
+              content: [
+                ...attachmentBlocks,
+                { type: "text" as const, text: `Conversation transcript:\n\n${renderTranscript(rolling, labelFor)}\n\n---\nReply now as ${displayName(p)}. Do not prefix your reply with your name.` },
+              ],
+            }],
+          });
+          const text = resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
+          rolling.push({ role: "agent", agent_key: p.key, agent_name: p.name, content: text });
+          await supabase.from("conversation_messages").insert({
+            conversation_id: convId, role: "agent", agent_key: p.key, agent_name: p.name, content: text,
+          });
+          await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model, input_tokens: resp.usage.input_tokens, output_tokens: resp.usage.output_tokens, latency_ms: Date.now() - t0 });
+          emit({ type: "reply", agentKey: p.key, name: p.name, initials: p.initials, content: text });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "Model call failed";
+          await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model, latency_ms: Date.now() - t0, status: "error", error: msg });
+          emit({ type: "error", agentKey: p.key, message: msg });
+          break;
+        }
+      }
 
-  return NextResponse.json({ conversationId: convId, replies });
+      await supabase.from("conversations").update({ updated_at: new Date().toISOString(), model_overrides: modelByKey }).eq("id", convId);
+      emit({ type: "done", conversationId: convId });
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

@@ -69,7 +69,7 @@ function RoomTicker() {
 
 function AuthForm() {
   const params = useSearchParams();
-  const next = params.get("next") || "/dashboard";
+  const next = params.get("next") || "/home";
   const supabase = createClient();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
