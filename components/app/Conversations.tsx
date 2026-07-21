@@ -39,8 +39,10 @@ interface Msg {
 type Pending = Attachment & { preview?: string };
 type Draft = { participantKeys: string[] };
 
-const MAX_ATTACH = 3;
+const MAX_ATTACH = 8;
 const MAX_BYTES = 5 * 1024 * 1024;
+/** combined cap keeps the base64-inflated request under Claude's 32MB API limit */
+const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
 
 function timeAgo(iso: string): string {
   const d = Date.now() - new Date(iso).getTime();
@@ -99,7 +101,56 @@ function Highlighted({ text, participants }: { text: string; participants: Libra
   );
 }
 
-/** overlapping attachment chips pinned to a message bubble */
+/**
+ * Attachment chips pinned to a message bubble.
+ * ≤3 files: overlapping circles. >3 files: two chips + a "+N" expander;
+ * expanded, all chips spread across the message top with a "−" to collapse.
+ */
+function Chip({
+  a, urls, onOpen, overlap, z,
+}: {
+  a: Attachment; urls: Record<string, string>; onOpen: (a: Attachment) => void; overlap: boolean; z: number;
+}) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onOpen(a); }}
+      title={a.name}
+      style={{
+        width: 27, height: 27, borderRadius: "50%", padding: 0, cursor: "pointer",
+        border: "1.5px solid var(--acc)", background: "var(--sf2)", overflow: "hidden",
+        marginLeft: overlap ? -9 : 0, position: "relative", zIndex: z, flex: "none",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      {a.mime.startsWith("image/") && urls[a.path] ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={urls[a.path]} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      ) : (
+        <span style={{ ...mono, fontSize: 6.5, letterSpacing: ".03em", color: "var(--acc)" }}>
+          {a.mime === "application/pdf" ? "PDF" : "FILE"}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function ToggleChip({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      title={title}
+      style={{
+        ...mono, width: 27, height: 27, borderRadius: "50%", padding: 0, cursor: "pointer",
+        border: "1.5px solid var(--acc)", background: "var(--acc-dim)", color: "var(--acc)",
+        fontSize: label.length > 2 ? 8 : 11, fontWeight: 700, flex: "none",
+        display: "flex", alignItems: "center", justifyContent: "center", position: "relative", zIndex: 0,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 function AttachmentChips({
   attachments, urls, onOpen,
 }: {
@@ -107,30 +158,21 @@ function AttachmentChips({
   urls: Record<string, string>;
   onOpen: (a: Attachment) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const many = attachments.length > 3;
+  const shown = many && !expanded ? attachments.slice(0, 2) : attachments;
+  const spread = many && expanded;
   return (
-    <div style={{ position: "absolute", top: -13, right: 10, display: "flex", zIndex: 3 }}>
-      {attachments.map((a, i) => (
-        <button
-          key={a.path}
-          onClick={(e) => { e.stopPropagation(); onOpen(a); }}
-          title={a.name}
-          style={{
-            width: 27, height: 27, borderRadius: "50%", padding: 0, cursor: "pointer",
-            border: "1.5px solid var(--acc)", background: "var(--sf2)", overflow: "hidden",
-            marginLeft: i > 0 ? -9 : 0, position: "relative", zIndex: attachments.length - i,
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-        >
-          {a.mime.startsWith("image/") && urls[a.path] ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={urls[a.path]} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          ) : (
-            <span style={{ ...mono, fontSize: 6.5, letterSpacing: ".03em", color: "var(--acc)" }}>
-              {a.mime === "application/pdf" ? "PDF" : "FILE"}
-            </span>
-          )}
-        </button>
+    <div style={{ position: "absolute", top: -13, right: 10, display: "flex", zIndex: 3, gap: spread ? 4 : 0, maxWidth: "calc(100% + 60px)" }}>
+      {shown.map((a, i) => (
+        <Chip key={a.path} a={a} urls={urls} onOpen={onOpen} overlap={!spread && i > 0} z={shown.length - i} />
       ))}
+      {many && !expanded && (
+        <span style={{ marginLeft: -9, position: "relative", zIndex: 0, display: "flex" }}>
+          <ToggleChip label={`+${attachments.length - 2}`} title={`Show all ${attachments.length} files`} onClick={() => setExpanded(true)} />
+        </span>
+      )}
+      {spread && <ToggleChip label="−" title="Collapse" onClick={() => setExpanded(false)} />}
     </div>
   );
 }
@@ -215,10 +257,13 @@ export default function Conversations({
     setErr(null);
     const room = MAX_ATTACH - pending.length;
     const list = [...files].slice(0, room);
+    let total = pending.reduce((a, p) => a + p.size, 0);
     for (const f of list) {
       const ok = f.type.startsWith("image/") || f.type === "application/pdf";
       if (!ok) { setErr(`${f.name}: images and PDFs only`); continue; }
-      if (f.size > MAX_BYTES) { setErr(`${f.name}: 5MB limit`); continue; }
+      if (f.size > MAX_BYTES) { setErr(`${f.name}: 5MB limit per file`); continue; }
+      if (total + f.size > MAX_TOTAL_BYTES) { setErr(`${f.name}: 20MB combined limit per message`); continue; }
+      total += f.size;
       setUploading(true);
       const safe = f.name.replace(/[^\w.\-]+/g, "_").slice(-80);
       const path = `${orgId}/chat/${crypto.randomUUID()}-${safe}`;

@@ -17,8 +17,10 @@ const ROUTER_MODEL = process.env.ROUTER_MODEL ?? "claude-haiku-4-5";
 const MAX_CONTENT = 6000;
 const MAX_RESPONDERS = 3;
 const HISTORY_LIMIT = 60;
-const MAX_ATTACHMENTS = 3;
+const MAX_ATTACHMENTS = 8;
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+/** combined cap keeps the base64-inflated request under Claude's 32MB API limit */
+const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 type Participant = PersonaSpec & { key: string };
 export interface Attachment { path: string; name: string; mime: string; size: number }
@@ -72,8 +74,10 @@ export async function POST(request: Request) {
   if (!content || content.length > MAX_CONTENT) {
     return NextResponse.json({ error: "Message must be 1–6000 characters" }, { status: 400 });
   }
+  let attachTotal = 0;
   const attachments = (body.attachments ?? []).slice(0, MAX_ATTACHMENTS)
-    .filter((a) => a?.path && a?.mime && (a.mime.startsWith("image/") || a.mime === "application/pdf") && a.size <= MAX_ATTACHMENT_BYTES);
+    .filter((a) => a?.path && a?.mime && (a.mime.startsWith("image/") || a.mime === "application/pdf") && a.size <= MAX_ATTACHMENT_BYTES)
+    .filter((a) => { attachTotal += a.size; return attachTotal <= MAX_TOTAL_ATTACHMENT_BYTES; });
 
   const { data: userRow } = await supabase.from("users").select("org_id").eq("id", user.id).single();
   if (!userRow) return NextResponse.json({ error: "No org" }, { status: 400 });
