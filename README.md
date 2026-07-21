@@ -143,6 +143,8 @@ Model ids live in config only ([lib/chat-models.ts](lib/chat-models.ts), `CLAUDE
 - [x] **Persona library at scale**: ~1,850 taxonomy-generated personas with full demographics/backstories; profile view; LLM smart search; picker integration
 - [x] **Per-participant model toggle** (Haiku 4.5 default · Sonnet 5 · Opus 4.8), persisted per thread
 - [x] **Chat management**: rename/delete via hover ⋯ menu; rooms up to 20 personas with a roster panel (scroll the list, click through to full profiles, cycle each person's model tier); @mention autocomplete in the composer
+- [x] **Library QC + speed**: every persona name unique library-wide (dedup pass + generator enforcement); LLM audit of demographics coherence (income/credentials/tenure/experience vs role + metro); two-phase search (instant full-text, AI refinement ~2s later); middleware session fast-path; same-name participants disambiguated end-to-end (typeahead-resolved mention keys, role-tagged transcript labels)
+- [x] **Library filters + pagination**: filter rail (kind · category · age band · tenure · sort) with facet counts, composing with tabs and search; 24-per-page pagination with totals; LLM parse cached across pages
 - [ ] **⟶ NEXT: Brief composer + corpus** — problem statement, auto-suggested question chips, document upload → parse/chunk/embed (RAG)
 - [ ] Casting Director: auto-population from brief + corpus, library vector matching, editable persona cards
 - [ ] ACS PUMS demographic seeding (Arizona first — the demo's ZIPs)

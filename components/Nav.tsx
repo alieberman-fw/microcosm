@@ -71,9 +71,9 @@ export default function Nav() {
           )}
         </button>
         <Link href="/login" style={{ color: "var(--t3)", fontWeight: 500 }}>Sign in</Link>
-        <a href="/#access" className="btnAcc" style={{ padding: "8px 18px", fontSize: 13 }}>
+        <Link href="/login" className="btnAcc" style={{ padding: "8px 18px", fontSize: 13 }}>
           Get started
-        </a>
+        </Link>
       </div>
     </nav>
   );

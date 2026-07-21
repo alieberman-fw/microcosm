@@ -137,7 +137,7 @@ Each persona object has exactly these fields:
 Kind rules: professionals reasoning from checkable constraints → "expert". Households, buyers, renters, shoppers, guests → "consumer". Neighbors/community members affected by projects → "resident". Civic officials, advocates, institutional voices → "stakeholder". Any seat whose role says "adversarial" → "adversarial", and its stances must include one beginning "Instructed to oppose:".
 
 Population realism rules:
-- Names: realistic American demographic diversity (Latino, Black, Asian, South Asian, Middle Eastern, white, immigrant names). Never reuse a first name within one reply. No real famous people.
+- Names: realistic American demographic diversity (Latino, Black, Asian, South Asian, Middle Eastern, white, immigrant names). Never reuse a first name within one reply. No real famous people. STRONGLY avoid these overused first names: Marisol, Marcus, Priya, Priyanka, Desmond, Renata, Terrence, Marguerite, Harold, Rosa, Dmitri, Keisha, Darnell, Consuelo, Tamika, Rajiv. Prefer distinctive, less-common real names and vary last initials across the alphabet.
 - Geography: spread across US metros appropriate to the role (a Texas MUD engineer lives in Texas; a co-op specialist in New York). Not everything in the Sun Belt.
 - Ages: spread 24–78. Some early-career, some near retirement.
 - When the same role appears multiple times (variant 2 of 3 etc.), make each variant demographically DISTINCT: different age bracket, metro, income, household shape, and a genuinely different life angle on the same role.
@@ -164,6 +164,31 @@ async function sb(pathname, init = {}) {
   return res;
 }
 
+/** full names already in the library — enforced unique across the catalog */
+const usedNames = new Set();
+
+async function loadExistingNames() {
+  for (let from = 0; ; from += 1000) {
+    const res = await sb(`/rest/v1/personas?select=name:spec->>name&org_id=is.null&source=eq.library`, {
+      headers: { Range: `${from}-${from + 999}` },
+    });
+    const rows = await res.json();
+    rows.forEach((r) => r.name && usedNames.add(r.name));
+    if (rows.length < 1000) break;
+  }
+}
+
+/** if the proposed name collides, walk last initials until it doesn't */
+function uniqueName(name) {
+  if (!usedNames.has(name)) return name;
+  const first = name.split(/\s+/)[0];
+  for (const L of "ABCDEFGHJKLMNPQRSTVWXZ") {
+    const cand = `${first} ${L}.`;
+    if (!usedNames.has(cand)) return cand;
+  }
+  return name; // 22 collisions on one first name — accept rather than loop
+}
+
 async function existingSeedKeys() {
   const keys = new Set();
   for (let from = 0; ; from += 1000) {
@@ -187,6 +212,8 @@ function initialsOf(name) {
 
 function toRow(p, seat) {
   const kind = ["expert", "consumer", "resident", "stakeholder", "adversarial"].includes(p.kind) ? p.kind : "expert";
+  const name = uniqueName(p.name ?? "??");
+  usedNames.add(name);
   return {
     org_id: null,
     public: true,
@@ -195,8 +222,8 @@ function toRow(p, seat) {
     spec: {
       seed_key: seat.seedKey,
       kind,
-      name: p.name,
-      initials: initialsOf(p.name ?? "??"),
+      name,
+      initials: initialsOf(name),
       role: p.role ?? seat.role,
       tagline: p.tagline ?? "",
       discipline: (p.discipline ?? "GENERAL").toUpperCase(),
@@ -268,6 +295,7 @@ async function main() {
   }
 
   const existing = await existingSeedKeys();
+  await loadExistingNames();
   const todo = seats.filter((s) => !existing.has(s.seedKey));
   console.log(`${existing.size} already in library · ${todo.length} to generate.`);
 

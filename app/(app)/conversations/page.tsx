@@ -1,4 +1,4 @@
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabase, getLocalUser } from "@/lib/supabase/server";
 import Conversations, { ConversationRow } from "@/components/app/Conversations";
 import { LIBRARY_PERSONAS, LibraryPersona, PersonaSpec } from "@/lib/personas";
 
@@ -10,7 +10,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export default async function ConversationsPage({ searchParams }: { searchParams: Promise<{ with?: string }> }) {
   const { with: withKey } = await searchParams;
   const supabase = await createServerSupabase();
-  const { data: { user } } = await supabase!.auth.getUser();
+  const user = await getLocalUser(supabase!);
   const { data: userRow } = await supabase!.from("users").select("org_id").eq("id", user!.id).single();
 
   const [{ data: convRows }, { data: customRows }, { count: libraryCount }] = await Promise.all([

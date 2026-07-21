@@ -299,9 +299,11 @@ export default function Conversations({
   const [titleDraft, setTitleDraft] = useState("");
   const [roster, setRoster] = useState(false);
   const [profileOf, setProfileOf] = useState<LibraryPersona | null>(null);
-  // @mention typeahead over the room's participants
+  // @mention typeahead over the room's participants; picked keys ride along
+  // with send() so two participants with the same display name stay distinct
   const [mentionQ, setMentionQ] = useState<string | null>(null);
   const [mentionIx, setMentionIx] = useState(0);
+  const pickedMentions = useRef<{ handle: string; key: string }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -396,6 +398,7 @@ export default function Conversations({
     // mention resolves unambiguously
     const dupFirst = participants.filter((x) => x.name.split(/\s+/)[0].toLowerCase() === first.toLowerCase()).length > 1;
     const handle = dupFirst ? p.name : first;
+    pickedMentions.current.push({ handle, key: p.key });
     const next = `${before}@${handle} ${input.slice(caret)}`;
     setInput(next);
     setMentionQ(null);
@@ -451,7 +454,12 @@ export default function Conversations({
     const content = input.trim();
     if (!content || busy || participants.length === 0) return;
     const atts: Attachment[] = pending.map(({ path, name, mime, size }) => ({ path, name, mime, size }));
-    setInput(""); setErr(null); setPending([]);
+    // resolved mention keys: only picks whose @handle survived editing
+    const mentionKeys = [...new Set(
+      pickedMentions.current.filter((m) => content.includes(`@${m.handle}`)).map((m) => m.key)
+    )];
+    pickedMentions.current = [];
+    setInput(""); setErr(null); setPending([]); setMentionQ(null);
     setMessages((m) => [...m, { role: "user", content, attachments: atts }]);
     setBusy(true);
     try {
@@ -464,6 +472,7 @@ export default function Conversations({
           content,
           attachments: atts,
           modelOverrides: models,
+          mentionKeys,
         }),
       });
       const data = await res.json();
@@ -499,37 +508,45 @@ export default function Conversations({
     }
   };
 
-  // picker search: local personas filter instantly; the global library is
-  // searched through /api/personas/search (smart search) with a debounce
+  // picker search: local personas filter instantly; the global library runs
+  // two-phase — instant plain FTS, then the smart pass replaces it
   useEffect(() => {
     if (!picker) return;
     const q = search.trim();
     if (q.length < 2) { setLibResults([]); setSearchingLib(false); return; }
     setSearchingLib(true);
     const seq = ++searchSeq.current;
-    const t = setTimeout(async () => {
-      try {
-        const res = await fetch("/api/personas/search", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ q, limit: 40 }),
-        });
-        const json = await res.json();
-        if (seq !== searchSeq.current) return;
-        if (res.ok) {
+    let smartDone = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const apply = (rows: LibraryPersona[]) => {
+      setLibResults(rows);
+      setExtras((prev) => {
+        const m = new Map(prev.map((p) => [p.key, p] as const));
+        rows.forEach((r) => { if (!m.has(r.key)) m.set(r.key, r); });
+        return [...m.values()];
+      });
+    };
+    const run = (smartPass: boolean, delay: number) => {
+      timers.push(setTimeout(async () => {
+        try {
+          const res = await fetch("/api/personas/search", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ q, limit: 40, smart: smartPass }),
+          });
+          const json = await res.json();
+          if (seq !== searchSeq.current || !res.ok) return;
           const rows: LibraryPersona[] = (json.personas as { id: string; spec: PersonaSpec }[])
             .map((r) => ({ ...r.spec, key: r.id, id: r.id, source: "library" as const }));
-          setLibResults(rows);
-          setExtras((prev) => {
-            const m = new Map(prev.map((p) => [p.key, p] as const));
-            rows.forEach((r) => { if (!m.has(r.key)) m.set(r.key, r); });
-            return [...m.values()];
-          });
+          if (smartPass) { smartDone = true; apply(rows); setSearchingLib(false); }
+          else if (!smartDone) { apply(rows); setSearchingLib(false); }
+        } catch {
+          if (seq === searchSeq.current && smartPass) setSearchingLib(false);
         }
-      } finally {
-        if (seq === searchSeq.current) setSearchingLib(false);
-      }
-    }, 400);
-    return () => clearTimeout(t);
+      }, delay));
+    };
+    run(false, 120);
+    run(true, 400);
+    return () => timers.forEach(clearTimeout);
   }, [search, picker]);
 
   const q = search.trim().toLowerCase();
@@ -667,7 +684,7 @@ export default function Conversations({
                   </div>
                 </div>
               </div>
-              {participants.length > 1 && (
+              {participants.length > 0 && (
                 <button
                   onClick={() => setRoster(true)}
                   style={{ ...mono, flex: "none", fontSize: 9, letterSpacing: ".06em", color: "var(--acc)", background: "transparent", border: "1px solid var(--acc)", borderRadius: 100, padding: "5px 12px", cursor: "pointer" }}
@@ -879,7 +896,7 @@ export default function Conversations({
                 : `${personas.length} RECENT & CUSTOM · TYPE TO SEARCH ${libraryCount ? libraryCount.toLocaleString() : "ALL"} PERSONAS`}
               {picked.length ? ` · ${picked.length}/${MAX_PARTICIPANTS} SELECTED` : ""}
             </div>
-            <div style={{ flex: 1, overflowY: "auto", marginTop: 10, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, alignContent: "start" }}>
+            <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", marginTop: 10, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, alignContent: "start" }}>
               {filteredPersonas.map((p) => {
                 const on = picked.includes(p.key);
                 return (
@@ -888,6 +905,7 @@ export default function Conversations({
                     onClick={() => setPicked((prev) => prev.includes(p.key) ? prev.filter((k) => k !== p.key) : prev.length >= MAX_PARTICIPANTS ? prev : [...prev, p.key])}
                     style={{
                       display: "flex", alignItems: "center", gap: 10, textAlign: "left",
+                      minWidth: 0, width: "100%", boxSizing: "border-box", overflow: "hidden",
                       border: `1px solid ${on ? "var(--acc)" : "var(--ln4)"}`,
                       background: on ? "var(--acc-dim)" : "transparent",
                       borderRadius: 12, padding: "10px 12px", cursor: "pointer",
