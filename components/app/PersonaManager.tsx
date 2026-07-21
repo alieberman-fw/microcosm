@@ -32,6 +32,15 @@ export default function PersonaManager({ orgId, initial }: { orgId: string; init
   const [err, setErr] = useState<string | null>(null);
 
   const [form, setForm] = useState({ name: "", role: "", kind: "expert", backstory: "", stances: "" });
+  const [search, setSearch] = useState("");
+
+  const q = search.trim().toLowerCase();
+  const libFiltered = q
+    ? LIBRARY_PERSONAS.filter((p) => [p.name, p.role, p.tagline ?? "", p.backstory, p.discipline ?? ""].join(" ").toLowerCase().includes(q))
+    : LIBRARY_PERSONAS;
+  const customFiltered = q
+    ? custom.filter((c) => [c.spec.name, c.spec.role, c.spec.backstory].join(" ").toLowerCase().includes(q))
+    : custom;
 
   const create = async () => {
     if (!form.name.trim() || !form.role.trim() || !form.backstory.trim()) {
@@ -81,7 +90,7 @@ export default function PersonaManager({ orgId, initial }: { orgId: string; init
         </button>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginTop: 30 }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 30, alignItems: "center", flexWrap: "wrap" }}>
         {(["library", "custom"] as const).map((t) => (
           <button
             key={t}
@@ -93,9 +102,17 @@ export default function PersonaManager({ orgId, initial }: { orgId: string; init
               color: tab === t ? "var(--acc)" : "var(--t5)",
             }}
           >
-            {t === "library" ? `LIBRARY · ${LIBRARY_PERSONAS.length}` : `CUSTOM · ${custom.length}`}
+            {t === "library" ? `LIBRARY · ${libFiltered.length}` : `CUSTOM · ${customFiltered.length}`}
           </button>
         ))}
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name, role, or background…"
+          style={{ flex: 1, minWidth: 220, boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "9px 18px", fontSize: 13, color: "var(--t1)", outline: "none" }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
+          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln5)")}
+        />
       </div>
 
       {err && (
@@ -106,7 +123,7 @@ export default function PersonaManager({ orgId, initial }: { orgId: string; init
 
       <div className="grid3" style={{ marginTop: 24 }}>
         {tab === "library" &&
-          LIBRARY_PERSONAS.map((p) => (
+          libFiltered.map((p) => (
             <div key={p.key} className="card cardHoverQuiet" style={{ padding: "24px 26px", display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span style={{ ...mono, width: 38, height: 38, borderRadius: "50%", background: "var(--sf2)", border: "1px solid var(--ln5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--t2)" }}>
@@ -129,7 +146,7 @@ export default function PersonaManager({ orgId, initial }: { orgId: string; init
             </div>
           ))}
 
-        {tab === "custom" && custom.length === 0 && (
+        {tab === "custom" && customFiltered.length === 0 && (
           <div className="card" style={{ padding: "34px 28px", border: "1px dashed var(--ln6)", textAlign: "center", gridColumn: "1 / -1" }}>
             <div style={{ ...mono, fontSize: 11, letterSpacing: ".07em", color: "var(--t6)" }}>NO CUSTOM PERSONAS YET</div>
             <p style={{ margin: "10px auto 0", maxWidth: 420, fontSize: 13.5, lineHeight: 1.6, color: "var(--t5)" }}>
@@ -139,7 +156,7 @@ export default function PersonaManager({ orgId, initial }: { orgId: string; init
         )}
 
         {tab === "custom" &&
-          custom.map((c) => (
+          customFiltered.map((c) => (
             <div key={c.id} className="card cardHoverQuiet" style={{ padding: "24px 26px", display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span style={{ ...mono, width: 38, height: 38, borderRadius: "50%", background: "var(--acc-dim)", border: "1px solid var(--acc)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--acc)" }}>

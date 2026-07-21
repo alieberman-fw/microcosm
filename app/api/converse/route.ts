@@ -7,8 +7,9 @@ import { compilePersonaPrompt, LIBRARY_PERSONAS, PersonaSpec } from "@/lib/perso
  * Conversations: persistent 1:1 and group chats with personas (CLAUDE.md §3.4).
  * - Replies come from @mentioned participants; with no mention, a cheap router
  *   model picks the most relevant participant(s).
- * - History lives in conversation_messages; each reply sees the full transcript.
- * Models per §6.4: experts on Sonnet, routing on Haiku. Config, not code.
+ * - Image/PDF attachments on the latest message are passed to the model as
+ *   content blocks, so experts genuinely analyze them.
+ * - Every model call is logged to agent_interactions (monitoring surface).
  */
 const EXPERT_MODEL = process.env.CONSULT_MODEL ?? "claude-sonnet-5";
 const ROUTER_MODEL = process.env.ROUTER_MODEL ?? "claude-haiku-4-5";
@@ -16,8 +17,11 @@ const ROUTER_MODEL = process.env.ROUTER_MODEL ?? "claude-haiku-4-5";
 const MAX_CONTENT = 6000;
 const MAX_RESPONDERS = 3;
 const HISTORY_LIMIT = 60;
+const MAX_ATTACHMENTS = 3;
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
 type Participant = PersonaSpec & { key: string };
+export interface Attachment { path: string; name: string; mime: string; size: number }
 
 function esc(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -34,10 +38,13 @@ function parseMentions(content: string, participants: Participant[]): Participan
 }
 
 function renderTranscript(
-  msgs: { role: string; agent_name: string | null; content: string }[],
+  msgs: { role: string; agent_name: string | null; content: string; attachments?: Attachment[] }[],
 ): string {
   return msgs
-    .map((m) => `${m.role === "user" ? "USER" : (m.agent_name ?? "AGENT").toUpperCase()}: ${m.content}`)
+    .map((m) => {
+      const att = m.attachments?.length ? ` [attached: ${m.attachments.map((a) => a.name).join(", ")}]` : "";
+      return `${m.role === "user" ? "USER" : (m.agent_name ?? "AGENT").toUpperCase()}: ${m.content}${att}`;
+    })
     .join("\n\n");
 }
 
@@ -50,7 +57,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
   }
 
-  let body: { conversationId?: string; personaKeys?: string[]; content?: string };
+  let body: {
+    conversationId?: string;
+    personaKeys?: string[];
+    content?: string;
+    attachments?: Attachment[];
+  };
   try {
     body = await request.json();
   } catch {
@@ -60,8 +72,9 @@ export async function POST(request: Request) {
   if (!content || content.length > MAX_CONTENT) {
     return NextResponse.json({ error: "Message must be 1–6000 characters" }, { status: 400 });
   }
+  const attachments = (body.attachments ?? []).slice(0, MAX_ATTACHMENTS)
+    .filter((a) => a?.path && a?.mime && (a.mime.startsWith("image/") || a.mime === "application/pdf") && a.size <= MAX_ATTACHMENT_BYTES);
 
-  // org for inserts
   const { data: userRow } = await supabase.from("users").select("org_id").eq("id", user.id).single();
   if (!userRow) return NextResponse.json({ error: "No org" }, { status: 400 });
   const orgId = userRow.org_id as string;
@@ -99,7 +112,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No valid participants" }, { status: 400 });
   }
 
-  // create conversation lazily on first message
   if (!convId) {
     const title = participants.map((p) => p.name.split(/\s+/)[0]).join(", ");
     const { data: created, error } = await supabase
@@ -110,20 +122,54 @@ export async function POST(request: Request) {
     convId = created.id as string;
   }
 
-  // history + persist the user message
   const { data: history } = await supabase
     .from("conversation_messages")
-    .select("role, agent_name, content")
+    .select("role, agent_name, content, attachments")
     .eq("conversation_id", convId)
     .order("id", { ascending: true })
     .limit(HISTORY_LIMIT);
   const { error: umErr } = await supabase.from("conversation_messages").insert({
-    conversation_id: convId, role: "user", content,
+    conversation_id: convId, role: "user", content, attachments,
   });
   if (umErr) return NextResponse.json({ error: umErr.message }, { status: 500 });
 
+  // download attachments once; reuse blocks for every responder this round
+  const attachmentBlocks: Anthropic.ContentBlockParam[] = [];
+  for (const a of attachments) {
+    const { data: blob, error } = await supabase.storage.from("documents").download(a.path);
+    if (error || !blob) continue;
+    const b64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
+    if (a.mime.startsWith("image/")) {
+      attachmentBlocks.push({
+        type: "image",
+        source: { type: "base64", media_type: a.mime as "image/png" | "image/jpeg" | "image/gif" | "image/webp", data: b64 },
+      });
+    } else {
+      attachmentBlocks.push({
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: b64 },
+      });
+    }
+  }
+
   const anthropic = new Anthropic();
-  const transcriptBase = [...(history ?? []), { role: "user", agent_name: null, content }];
+  const transcriptBase = [
+    ...(history ?? []) as { role: string; agent_name: string | null; content: string; attachments?: Attachment[] }[],
+    { role: "user", agent_name: null, content, attachments },
+  ];
+
+  const logInteraction = async (row: {
+    surface: string; agent_key?: string | null; agent_name?: string | null; model: string;
+    input_tokens?: number | null; output_tokens?: number | null; latency_ms: number;
+    status?: string; error?: string | null;
+  }) => {
+    await supabase.from("agent_interactions").insert({
+      org_id: orgId, user_id: user.id, conversation_id: convId,
+      surface: row.surface, agent_key: row.agent_key ?? null, agent_name: row.agent_name ?? null,
+      model: row.model, input_tokens: row.input_tokens ?? null, output_tokens: row.output_tokens ?? null,
+      latency_ms: row.latency_ms, status: row.status ?? "ok", error: row.error ?? null,
+    });
+  };
 
   // choose responders: mentions win; otherwise route (or the sole participant)
   let responders = parseMentions(content, participants).slice(0, MAX_RESPONDERS);
@@ -131,6 +177,7 @@ export async function POST(request: Request) {
     if (participants.length === 1) {
       responders = [participants[0]];
     } else {
+      const t0 = Date.now();
       try {
         const routing = await anthropic.messages.create({
           model: ROUTER_MODEL,
@@ -145,7 +192,10 @@ export async function POST(request: Request) {
         const text = routing.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
         const keys = text.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
         responders = participants.filter((p) => keys.includes(p.key)).slice(0, 2);
-      } catch { /* fall through */ }
+        await logInteraction({ surface: "conversation.router", model: ROUTER_MODEL, input_tokens: routing.usage.input_tokens, output_tokens: routing.usage.output_tokens, latency_ms: Date.now() - t0 });
+      } catch (e) {
+        await logInteraction({ surface: "conversation.router", model: ROUTER_MODEL, latency_ms: Date.now() - t0, status: "error", error: e instanceof Error ? e.message : "router failed" });
+      }
       if (responders.length === 0) responders = [participants[0]];
     }
   }
@@ -158,14 +208,21 @@ export async function POST(request: Request) {
     const groupNote = participants.length > 1
       ? `\n\nYou are in a group conversation with the user${others.length ? ` and ${others.join(", ")}` : ""}. Reply only as yourself; react to others' points when relevant; never speak for them.`
       : "";
+    const attNote = attachmentBlocks.length
+      ? `\n\nThe user attached ${attachments.length} file(s) to their latest message — they are provided to you directly; analyze them concretely.`
+      : "";
+    const t0 = Date.now();
     try {
       const resp = await anthropic.messages.create({
         model: EXPERT_MODEL,
-        max_tokens: 700,
-        system: compilePersonaPrompt(p) + groupNote,
+        max_tokens: 900,
+        system: compilePersonaPrompt(p) + groupNote + attNote,
         messages: [{
           role: "user",
-          content: `Conversation transcript:\n\n${renderTranscript(rolling)}\n\n---\nReply now as ${p.name}. Do not prefix your reply with your name.`,
+          content: [
+            ...attachmentBlocks,
+            { type: "text" as const, text: `Conversation transcript:\n\n${renderTranscript(rolling)}\n\n---\nReply now as ${p.name}. Do not prefix your reply with your name.` },
+          ],
         }],
       });
       const text = resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
@@ -174,8 +231,10 @@ export async function POST(request: Request) {
       await supabase.from("conversation_messages").insert({
         conversation_id: convId, role: "agent", agent_key: p.key, agent_name: p.name, content: text,
       });
+      await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model: EXPERT_MODEL, input_tokens: resp.usage.input_tokens, output_tokens: resp.usage.output_tokens, latency_ms: Date.now() - t0 });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Model call failed";
+      await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model: EXPERT_MODEL, latency_ms: Date.now() - t0, status: "error", error: msg });
       return NextResponse.json({ error: msg, conversationId: convId, replies }, { status: 502 });
     }
   }

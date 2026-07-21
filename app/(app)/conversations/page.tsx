@@ -34,6 +34,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
 
   return (
     <Conversations
+      orgId={userRow!.org_id as string}
       personas={personas}
       initial={(convRows ?? []) as ConversationRow[]}
       initialWith={withKey && personas.some((p) => p.key === withKey) ? withKey : undefined}
