@@ -136,6 +136,27 @@ export default function PersonaManager({
   const [custom, setCustom] = useState<CustomPersonaRow[]>(initial);
   const [editor, setEditor] = useState<{ mode: "create" | "edit" | "remix"; source?: EditorSource | null } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // custom-card ⋮ menu + subtle bulk selection
+  const [cardMenu, setCardMenu] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [confirmBulk, setConfirmBulk] = useState(false);
+
+  const exitSelect = () => { setSelectMode(false); setSelected([]); setConfirmBulk(false); };
+
+  const toggleSel = (id: string) => {
+    setConfirmBulk(false);
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  };
+
+  const bulkDelete = async () => {
+    const ids = selected;
+    if (!ids.length) return;
+    setCustom((cs) => cs.filter((c) => !ids.includes(c.id)));
+    exitSelect();
+    const { error } = await supabase!.from("personas").delete().in("id", ids);
+    if (error) setErr(error.message);
+  };
 
   const [search, setSearch] = useState("");
   const [libRows, setLibRows] = useState<LibraryRow[]>(library);
@@ -289,7 +310,7 @@ export default function PersonaManager({
         {(["library", "custom"] as const).map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => { setTab(t); exitSelect(); setCardMenu(null); }}
             style={{
               ...mono, fontSize: 11, letterSpacing: ".06em", padding: "8px 16px", borderRadius: 100, cursor: "pointer",
               border: `1px solid ${tab === t ? "var(--acc)" : "var(--ln6)"}`,
@@ -300,6 +321,15 @@ export default function PersonaManager({
             {t === "library" ? `LIBRARY · ${(pristine ? libraryCount : total).toLocaleString()}` : `CUSTOM · ${customFiltered.length}`}
           </button>
         ))}
+        {tab === "custom" && custom.length > 0 && !selectMode && (
+          <button
+            onClick={() => setSelectMode(true)}
+            title="Select personas for bulk actions"
+            style={{ ...mono, fontSize: 9, letterSpacing: ".08em", background: "none", border: "none", color: "var(--t7)", cursor: "pointer", padding: "0 2px" }}
+          >
+            SELECT
+          </button>
+        )}
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -363,6 +393,31 @@ export default function PersonaManager({
         </div>
       )}
 
+      {/* quiet bulk-select bar */}
+      {tab === "custom" && selectMode && (
+        <div style={{ ...mono, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap", marginTop: 14, fontSize: 9.5, letterSpacing: ".07em", color: "var(--t6)" }}>
+          <span>{selected.length} SELECTED</span>
+          <button onClick={() => { setConfirmBulk(false); setSelected(customFiltered.map((c) => c.id)); }} style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", background: "none", border: "none", color: "var(--t5)", cursor: "pointer", padding: 0 }}>
+            SELECT ALL ({customFiltered.length})
+          </button>
+          <button onClick={() => { setSelected([]); setConfirmBulk(false); }} style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0 }}>
+            CLEAR
+          </button>
+          {selected.length > 0 && (
+            <button
+              onClick={() => (confirmBulk ? bulkDelete() : setConfirmBulk(true))}
+              style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", background: confirmBulk ? "var(--warn-dim)" : "none", border: confirmBulk ? "1px solid var(--warn)" : "none", borderRadius: 100, color: "var(--warn)", cursor: "pointer", padding: confirmBulk ? "4px 12px" : 0 }}
+            >
+              {confirmBulk ? `CONFIRM — DELETE ${selected.length}?` : "DELETE SELECTED"}
+            </button>
+          )}
+          <span style={{ flex: 1 }} />
+          <button onClick={exitSelect} style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", background: "none", border: "none", color: "var(--acc)", cursor: "pointer", padding: 0 }}>
+            DONE
+          </button>
+        </div>
+      )}
+
       <div className="grid3" style={{ marginTop: 24 }}>
         {tab === "library" && searching && libRows.length === 0 &&
           Array.from({ length: 6 }, (_, i) => <ShimCard key={i} />)}
@@ -409,22 +464,29 @@ export default function PersonaManager({
         )}
 
         {tab === "custom" &&
-          customFiltered.map((c) => (
+          customFiltered.map((c) => {
+            const sel = selected.includes(c.id);
+            return (
             <div
               key={c.id}
-              className="card cardHoverQuiet"
-              onClick={() => setProfile({ kind: c.kind, spec: c.spec, chatKey: c.id, source: "custom" })}
-              style={{ padding: "24px 26px", display: "flex", flexDirection: "column", gap: 10, cursor: "pointer" }}
+              className="card cardHoverQuiet convRow"
+              onClick={() => (selectMode ? toggleSel(c.id) : setProfile({ kind: c.kind, spec: c.spec, chatKey: c.id, source: "custom" }))}
+              style={{ padding: "24px 26px", display: "flex", flexDirection: "column", gap: 10, cursor: "pointer", ...(sel ? { borderColor: "var(--acc)", background: "var(--acc-dim)" } : {}) }}
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 <span style={{ ...mono, width: 38, height: 38, borderRadius: "50%", background: "var(--acc-dim)", border: "1px solid var(--acc)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--acc)", flex: "none" }}>
                   {c.spec.initials}
                 </span>
-                <span style={{ display: "flex", gap: 5 }}>
+                <span style={{ display: "flex", gap: 5, alignItems: "center" }}>
                   {(c.spec.lineage?.length ?? 0) > 0 && (
                     <span style={{ ...kindChip(false), color: "var(--acc)", borderColor: "var(--acc)", background: "var(--acc-dim)" }}>⑂ REMIX</span>
                   )}
                   <span style={kindChip(false)}>{c.kind}</span>
+                  {selectMode && (
+                    <span style={{ width: 18, height: 18, borderRadius: "50%", flex: "none", border: `1px solid ${sel ? "var(--acc)" : "var(--ln6)"}`, background: sel ? "var(--acc)" : "transparent", color: "var(--acc-c)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>
+                      {sel ? "✓" : ""}
+                    </span>
+                  )}
                 </span>
               </div>
               <div>
@@ -436,23 +498,30 @@ export default function PersonaManager({
               </p>
               <div style={{ marginTop: "auto", paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <span style={{ ...mono, fontSize: 10.5, letterSpacing: ".06em", color: "var(--acc)" }}>VIEW PROFILE →</span>
-                <span style={{ display: "flex", gap: 12 }}>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setEditor({ mode: "edit", source: { id: c.id, kind: c.kind, spec: c.spec } }); }}
-                    style={{ ...mono, background: "none", border: "none", cursor: "pointer", fontSize: 10, letterSpacing: ".05em", color: "var(--t5)" }}
-                  >
-                    EDIT
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); remove(c.id); }}
-                    style={{ ...mono, background: "none", border: "none", cursor: "pointer", fontSize: 10, letterSpacing: ".05em", color: "var(--t7)" }}
-                  >
-                    DELETE
-                  </button>
-                </span>
+                {!selectMode && (
+                  <span className="rowActions" style={{ position: "relative" }}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setCardMenu(cardMenu === c.id ? null : c.id); }}
+                      aria-label="Persona options"
+                      style={{ ...mono, background: "none", border: "none", color: "var(--t6)", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: "2px 6px" }}
+                    >
+                      ⋮
+                    </button>
+                    {cardMenu === c.id && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ position: "absolute", right: 0, bottom: "calc(100% + 4px)", zIndex: 45, minWidth: 132, background: "var(--sf)", border: "1px solid var(--ln5)", borderRadius: 12, padding: 5, boxShadow: "0 14px 34px rgba(0,0,0,.35)", animation: "fadeUp .15s ease both" }}
+                      >
+                        <button className="menuItem" onClick={() => { setCardMenu(null); setEditor({ mode: "edit", source: { id: c.id, kind: c.kind, spec: c.spec } }); }}>Edit</button>
+                        <button className="menuItem" style={{ color: "var(--warn)" }} onClick={() => { setCardMenu(null); remove(c.id); }}>Delete</button>
+                      </div>
+                    )}
+                  </span>
+                )}
               </div>
             </div>
-          ))}
+            );
+          })}
       </div>
 
       {tab === "library" && total > PAGE_SIZE && (
@@ -476,6 +545,8 @@ export default function PersonaManager({
           </button>
         </div>
       )}
+
+      {cardMenu && <div onClick={() => setCardMenu(null)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />}
 
       {profile && (
         <PersonaProfile
