@@ -145,6 +145,7 @@ Model ids live in config only ([lib/chat-models.ts](lib/chat-models.ts), `CLAUDE
 - [x] **Chat management**: rename/delete via hover ⋯ menu; rooms up to 20 personas with a roster panel (scroll the list, click through to full profiles, cycle each person's model tier); @mention autocomplete in the composer
 - [x] **Library QC + speed**: every persona name unique library-wide (dedup pass + generator enforcement); LLM audit of demographics coherence (income/credentials/tenure/experience vs role + metro); two-phase search (instant full-text, AI refinement ~2s later); middleware session fast-path; same-name participants disambiguated end-to-end (typeahead-resolved mention keys, role-tagged transcript labels)
 - [x] **Library filters + pagination**: filter rail (kind · category · age band · tenure · sort) with facet counts, composing with tabs and search; 24-per-page pagination with totals; LLM parse cached across pages
+- [x] **Chat polish**: markdown rendering in replies (bold/headers/lists/code + @mention highlighting, dependency-free); sidebar list fills its height with SEE ALL → searchable `/conversations/history` (deep links reopen the exact thread); landing **Conversations** section ("Don't need a full simulation? Just ask the room.")
 - [ ] **⟶ NEXT: Brief composer + corpus** — problem statement, auto-suggested question chips, document upload → parse/chunk/embed (RAG)
 - [ ] Casting Director: auto-population from brief + corpus, library vector matching, editable persona cards
 - [ ] ACS PUMS demographic seeding (Arizona first — the demo's ZIPs)
