@@ -109,7 +109,8 @@ function FilterOption({
 function demoLine(spec: PersonaSpec) {
   const d = spec.demographics;
   if (!d) return null;
-  return [d.age, d.metro].filter(Boolean).join(" · ") || null;
+  const place = [d.metro, d.state].filter(Boolean).join(", ");
+  return [d.age, place].filter(Boolean).join(" · ") || null;
 }
 
 function ShimCard() {

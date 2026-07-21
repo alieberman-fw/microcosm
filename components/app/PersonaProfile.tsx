@@ -50,7 +50,7 @@ export default function PersonaProfile({
   const facts: [string, string][] = (
     [
       ["Age", d.age ? String(d.age) : null],
-      ["Location", d.metro ?? null],
+      ["Location", [d.metro, d.state].filter(Boolean).join(", ") || null],
       ["Experience", d.years_experience ? `${d.years_experience} yrs` : null],
       ["Credentials", d.credentials ?? null],
       ["Occupation", d.occupation ?? null],

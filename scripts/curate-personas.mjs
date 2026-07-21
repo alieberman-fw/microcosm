@@ -92,10 +92,8 @@ function redFlags(spec) {
   if (!d.age) flags.push("missing age");
   if (d.age && (d.age < 18 || d.age > 90)) flags.push(`implausible age ${d.age}`);
   if (d.age && d.years_experience && d.years_experience > d.age - 16) flags.push(`yoe ${d.years_experience} vs age ${d.age}`);
-  if (d.metro && d.state) {
-    const m = String(d.metro).match(/,\s*([A-Z]{2})(?:[–-]([A-Z]{2}))*\s*$/);
-    if (m && !String(d.metro).includes(d.state)) flags.push(`metro "${d.metro}" vs state ${d.state}`);
-  }
+  // metro must be a bare city/metro name — the state lives in its own field
+  if (d.metro && /,\s*[A-Z]{2}/.test(String(d.metro))) flags.push(`state embedded in metro "${d.metro}"`);
   const tag = (spec.tagline ?? "").match(/(\d{1,2})\s*(?:\+\s*)?(?:yrs|years)/i);
   if (tag && d.years_experience && Math.abs(Number(tag[1]) - d.years_experience) > 4) {
     flags.push(`tagline says ${tag[1]} yrs, field says ${d.years_experience}`);
