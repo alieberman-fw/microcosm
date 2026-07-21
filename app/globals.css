@@ -87,6 +87,8 @@ button { font-family: var(--font-grotesk), sans-serif; }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .whyGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.authVisual { display: flex; }
+@media (max-width: 900px) { .authVisual { display: none !important; } }
 .whySpan2 { grid-column: span 2; }
 .whySpan3 { grid-column: 1 / -1; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
