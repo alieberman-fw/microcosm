@@ -1,5 +1,6 @@
 import { CSSProperties } from "react";
 import { createServerSupabase, getLocalUser } from "@/lib/supabase/server";
+import ChecklistPref from "@/components/app/ChecklistPref";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -19,8 +20,9 @@ export default async function Settings() {
   const supabase = await createServerSupabase();
   const user = await getLocalUser(supabase!);
   const { data: userRow } = await supabase!
-    .from("users").select("role, created_at, orgs(name, plan)").eq("id", user!.id).single();
+    .from("users").select("role, created_at, prefs, orgs(name, plan)").eq("id", user!.id).single();
   const org = (userRow as { orgs?: { name?: string; plan?: string } } | null)?.orgs;
+  const prefs = ((userRow as { prefs?: { hide_onboarding?: boolean } } | null)?.prefs) ?? {};
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", padding: "44px 40px 80px" }}>
@@ -38,6 +40,10 @@ export default async function Settings() {
             {new Date((userRow as { created_at?: string } | null)?.created_at ?? Date.now()).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
           </span>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16, padding: "10px 28px" }}>
+        <ChecklistPref initiallyHidden={Boolean(prefs.hide_onboarding)} />
       </div>
 
       <div className="card" style={{ marginTop: 16, padding: "24px 28px" }}>

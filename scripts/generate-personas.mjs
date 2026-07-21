@@ -212,7 +212,7 @@ function initialsOf(name) {
 
 function toRow(p, seat) {
   const kind = ["expert", "consumer", "resident", "stakeholder", "adversarial"].includes(p.kind) ? p.kind : "expert";
-  const name = uniqueName(p.name ?? "??");
+  const name = uniqueName((p.name ?? "??").trim());
   usedNames.add(name);
   return {
     org_id: null,

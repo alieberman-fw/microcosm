@@ -37,7 +37,7 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAppRoute =
-    path.startsWith("/dashboard") || path.startsWith("/personas") || path.startsWith("/conversations") ||
+    path.startsWith("/home") || path.startsWith("/dashboard") || path.startsWith("/personas") || path.startsWith("/conversations") ||
     path.startsWith("/monitoring") || path.startsWith("/settings") || (path.startsWith("/sim/") && path !== "/sim/demo");
 
   const expiresAt = sessionExpiry(request);
@@ -78,5 +78,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/personas/:path*", "/conversations/:path*", "/monitoring/:path*", "/settings/:path*", "/sim/:path*", "/login"],
+  matcher: ["/home/:path*", "/dashboard/:path*", "/personas/:path*", "/conversations/:path*", "/monitoring/:path*", "/settings/:path*", "/sim/:path*", "/login"],
 };

@@ -22,7 +22,7 @@ const MODEL_CHIP_LIMIT = 6;
 
 /** "Rosa, Derek, Aliyah +5" — compact display for large rooms */
 function firstNames(ps: { name: string }[], max = 3): string {
-  const names = ps.map((p) => p.name.split(/\s+/)[0]);
+  const names = ps.map((p) => p.name.trim().split(/\s+/)[0]);
   return names.length > max + 1 ? `${names.slice(0, max).join(", ")} +${names.length - max}` : names.join(", ");
 }
 
@@ -321,6 +321,8 @@ export default function Conversations({
   };
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(false);
+  // who is still composing a reply this round (iMessage "… is typing")
+  const [typing, setTyping] = useState<{ key: string; name: string; initials: string }[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [lightbox, setLightbox] = useState<{ url: string; name: string; mime: string } | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
@@ -333,7 +335,7 @@ export default function Conversations({
   useEffect(() => {
     const f = feedRef.current;
     if (f) f.scrollTop = f.scrollHeight;
-  }, [messages.length, busy]);
+  }, [messages.length, busy, typing.length]);
 
   // deep links: ?open=<id> from history · ?draft=<keys> from the browser page
   useEffect(() => {
@@ -497,23 +499,57 @@ export default function Conversations({
           mentionKeys,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Request failed");
-      setMessages((m) => [
-        ...m,
-        ...data.replies.map((r: { agentKey: string; name: string; content: string }) => ({
-          role: "agent" as const, agent_key: r.agentKey, agent_name: r.name, content: r.content,
-        })),
-      ]);
-      if (draft) {
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Request failed");
+      }
+      // ND-JSON stream: responders → typing indicators; each reply lands the
+      // moment its author finishes; done carries the conversation id
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      let convIdFromStream: string | null = null;
+      let streamError: string | null = null;
+      const handle = (line: string) => {
+        if (!line.trim()) return;
+        const ev = JSON.parse(line) as {
+          type: string; conversationId?: string; message?: string;
+          responders?: { key: string; name: string; initials: string }[];
+          agentKey?: string; name?: string; content?: string;
+        };
+        if (ev.type === "responders") {
+          convIdFromStream = ev.conversationId ?? null;
+          setTyping(ev.responders ?? []);
+        } else if (ev.type === "reply") {
+          setMessages((m) => [...m, { role: "agent", agent_key: ev.agentKey, agent_name: ev.name, content: ev.content ?? "" }]);
+          setTyping((t) => t.filter((x) => x.key !== ev.agentKey));
+        } else if (ev.type === "error") {
+          streamError = ev.message ?? "Model call failed";
+          setTyping([]);
+        } else if (ev.type === "done") {
+          convIdFromStream = ev.conversationId ?? convIdFromStream;
+        }
+      };
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        lines.forEach(handle);
+      }
+      if (buf.trim()) handle(buf);
+      setTyping([]);
+      if (streamError) setErr(streamError);
+      if (draft && convIdFromStream) {
         const title = firstNames(participants);
         const row: ConversationRow = {
-          id: data.conversationId, title,
+          id: convIdFromStream, title,
           participant_keys: draft.participantKeys,
           updated_at: new Date().toISOString(),
         };
         setConvs([row, ...convs]);
-        setActive(data.conversationId);
+        setActive(convIdFromStream);
         setDraft(null);
       } else if (active) {
         setConvs((cs) => {
@@ -523,6 +559,7 @@ export default function Conversations({
         });
       }
     } catch (e) {
+      setTyping([]);
       setErr(e instanceof Error ? e.message : "Something went wrong");
       setInput(content);
     } finally {
@@ -811,7 +848,36 @@ export default function Conversations({
                   </div>
                 );
               })}
-              {busy && (
+              {/* typing indicator: who is still composing this round */}
+              {typing.length > 0 && (
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-end", animation: "fadeUp .2s ease both" }}>
+                  <span style={{ display: "flex", flex: "none" }}>
+                    {typing.slice(0, 3).map((t, i) => (
+                      <span key={t.key} style={{ ...mono, width: 30, height: 30, borderRadius: "50%", background: "var(--sf2)", border: "1px solid var(--ln5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--t3)", marginLeft: i ? -8 : 0, position: "relative", zIndex: 3 - i }}>
+                        {t.initials}
+                      </span>
+                    ))}
+                  </span>
+                  <div style={{ borderRadius: "4px 14px 14px 14px", padding: "11px 15px", background: "var(--sf2)", border: "1px solid var(--ln3)", display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ display: "inline-flex", gap: 4 }}>
+                      {[0, 1, 2].map((i) => (
+                        <span key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--t6)", animation: `pulseDot 1.1s ${i * 0.18}s ease-in-out infinite` }} />
+                      ))}
+                    </span>
+                    <span style={{ ...mono, fontSize: 10, letterSpacing: ".05em", color: "var(--t6)" }}>
+                      {(() => {
+                        const first = (n: string) => n.trim().split(/\s+/)[0];
+                        return typing.length === 1
+                          ? `${typing[0].name.trim()} is typing`
+                          : typing.length === 2
+                            ? `${first(typing[0].name)} & ${first(typing[1].name)} are typing`
+                            : `${first(typing[0].name)}, ${first(typing[1].name)} & ${typing.length - 2} more are typing`;
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {busy && typing.length === 0 && (
                 <div style={{ ...mono, fontSize: 11, color: "var(--t7)" }}>
                   {participants.length === 1
                     ? `${participants[0].name} is typing`
