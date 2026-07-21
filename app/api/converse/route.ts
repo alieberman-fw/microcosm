@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { compilePersonaPrompt, LIBRARY_PERSONAS, PersonaSpec } from "@/lib/personas";
+import { CHAT_MODEL_IDS, DEFAULT_CHAT_MODEL } from "@/lib/chat-models";
 
 /**
  * Conversations: persistent 1:1 and group chats with personas (CLAUDE.md §3.4).
@@ -11,11 +12,13 @@ import { compilePersonaPrompt, LIBRARY_PERSONAS, PersonaSpec } from "@/lib/perso
  *   content blocks, so experts genuinely analyze them.
  * - Every model call is logged to agent_interactions (monitoring surface).
  */
-const EXPERT_MODEL = process.env.CONSULT_MODEL ?? "claude-sonnet-5";
 const ROUTER_MODEL = process.env.ROUTER_MODEL ?? "claude-haiku-4-5";
+/** replies default to the lightweight tier; per-participant overrides win */
+const DEFAULT_REPLY_MODEL = process.env.CONSULT_MODEL ?? DEFAULT_CHAT_MODEL;
 
 const MAX_CONTENT = 6000;
 const MAX_RESPONDERS = 3;
+const MAX_PARTICIPANTS = 20; // mirrored client-side in components/app/Conversations.tsx
 const HISTORY_LIMIT = 60;
 const MAX_ATTACHMENTS = 8;
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
@@ -64,6 +67,7 @@ export async function POST(request: Request) {
     personaKeys?: string[];
     content?: string;
     attachments?: Attachment[];
+    modelOverrides?: Record<string, string>;
   };
   try {
     body = await request.json();
@@ -83,16 +87,25 @@ export async function POST(request: Request) {
   if (!userRow) return NextResponse.json({ error: "No org" }, { status: 400 });
   const orgId = userRow.org_id as string;
 
+  // per-participant model tier: stored overrides merged with this request's
+  // picks; unknown model ids are dropped
+  const requestOverrides: Record<string, string> = {};
+  for (const [k, v] of Object.entries(body.modelOverrides ?? {})) {
+    if (typeof v === "string" && CHAT_MODEL_IDS.includes(v)) requestOverrides[k] = v;
+  }
+
   // load or create the conversation
   let convId = body.conversationId ?? null;
   let participantKeys: string[];
+  let storedOverrides: Record<string, string> = {};
   if (convId) {
     const { data: conv } = await supabase
-      .from("conversations").select("id, participant_keys").eq("id", convId).single();
+      .from("conversations").select("id, participant_keys, model_overrides").eq("id", convId).single();
     if (!conv) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
     participantKeys = conv.participant_keys as string[];
+    storedOverrides = (conv.model_overrides ?? {}) as Record<string, string>;
   } else {
-    participantKeys = (body.personaKeys ?? []).slice(0, 8);
+    participantKeys = (body.personaKeys ?? []).slice(0, MAX_PARTICIPANTS);
     if (participantKeys.length === 0) {
       return NextResponse.json({ error: "Pick at least one participant" }, { status: 400 });
     }
@@ -116,11 +129,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No valid participants" }, { status: 400 });
   }
 
+  const modelByKey = { ...storedOverrides, ...requestOverrides };
+
   if (!convId) {
-    const title = participants.map((p) => p.name.split(/\s+/)[0]).join(", ");
+    const names = participants.map((p) => p.name.split(/\s+/)[0]);
+    const title = names.length > 4 ? `${names.slice(0, 3).join(", ")} +${names.length - 3}` : names.join(", ");
     const { data: created, error } = await supabase
       .from("conversations")
-      .insert({ org_id: orgId, created_by: user.id, title, participant_keys: participantKeys })
+      .insert({ org_id: orgId, created_by: user.id, title, participant_keys: participantKeys, model_overrides: modelByKey })
       .select("id").single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     convId = created.id as string;
@@ -216,9 +232,12 @@ export async function POST(request: Request) {
       ? `\n\nThe user attached ${attachments.length} file(s) to their latest message — they are provided to you directly; analyze them concretely.`
       : "";
     const t0 = Date.now();
+    // per-participant tier (§6.4): thread-level override wins, else the
+    // lightweight default — the UI toggle is the only way to spend more
+    const model = modelByKey[p.key] ?? DEFAULT_REPLY_MODEL;
     try {
       const resp = await anthropic.messages.create({
-        model: EXPERT_MODEL,
+        model,
         max_tokens: 900,
         system: compilePersonaPrompt(p) + groupNote + attNote,
         messages: [{
@@ -235,15 +254,15 @@ export async function POST(request: Request) {
       await supabase.from("conversation_messages").insert({
         conversation_id: convId, role: "agent", agent_key: p.key, agent_name: p.name, content: text,
       });
-      await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model: EXPERT_MODEL, input_tokens: resp.usage.input_tokens, output_tokens: resp.usage.output_tokens, latency_ms: Date.now() - t0 });
+      await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model, input_tokens: resp.usage.input_tokens, output_tokens: resp.usage.output_tokens, latency_ms: Date.now() - t0 });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Model call failed";
-      await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model: EXPERT_MODEL, latency_ms: Date.now() - t0, status: "error", error: msg });
+      await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model, latency_ms: Date.now() - t0, status: "error", error: msg });
       return NextResponse.json({ error: msg, conversationId: convId, replies }, { status: 502 });
     }
   }
 
-  await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
+  await supabase.from("conversations").update({ updated_at: new Date().toISOString(), model_overrides: modelByKey }).eq("id", convId);
 
   return NextResponse.json({ conversationId: convId, replies });
 }

@@ -4,6 +4,19 @@
  * regressions; change it deliberately.
  */
 
+export interface PersonaDemographics {
+  age?: number;
+  gender?: string;
+  metro?: string;
+  state?: string;
+  years_experience?: number;
+  credentials?: string;
+  household?: string;
+  income_band?: string;
+  tenure?: string;
+  occupation?: string;
+}
+
 export interface PersonaSpec {
   name: string;
   initials: string;
@@ -13,6 +26,15 @@ export interface PersonaSpec {
   kind: "expert" | "consumer" | "resident" | "stakeholder" | "adversarial";
   backstory: string;
   stances: string[];
+  // library-scale fields (CLAUDE.md §3.1 / §3.3) — optional on hand-written personas
+  category?: string;
+  subgroup?: string;
+  skills?: string[];
+  traits?: { risk_tolerance?: number; agreeableness?: number; verbosity?: number };
+  demographics?: PersonaDemographics;
+  seed_key?: string;
+  /** per-persona model tier config (§6.4) — never hardcode models in logic */
+  model?: { name?: string };
 }
 
 export interface LibraryPersona extends PersonaSpec {
@@ -84,15 +106,30 @@ export const LIBRARY_PERSONAS: LibraryPersona[] = [
 /** Persona → system prompt. Pure function (CLAUDE.md §6.1). */
 export function compilePersonaPrompt(p: PersonaSpec): string {
   const stances = p.stances.map((s) => `- ${s}`).join("\n");
+  const d = p.demographics;
+  const who = d
+    ? [
+        d.age ? `age ${d.age}` : null,
+        d.metro ? `based in ${d.metro}` : null,
+        d.years_experience ? `${d.years_experience} years in the field` : null,
+        d.credentials ? `credentials: ${d.credentials}` : null,
+        d.occupation ? `works as ${d.occupation}` : null,
+        d.household ? `household: ${d.household}` : null,
+        d.income_band ? `household income ${d.income_band}` : null,
+        d.tenure ? `housing tenure: ${d.tenure}` : null,
+      ].filter(Boolean).join(" · ")
+    : "";
   return [
     `You are ${p.name}, ${p.role.toLowerCase()}${p.discipline ? ` (discipline: ${p.discipline})` : ""}.`,
     ``,
     `Background: ${p.backstory}`,
+    who ? `\nWho you are: ${who}` : ``,
+    p.skills?.length ? `\nCore competencies: ${p.skills.join(", ")}` : ``,
     ``,
     `Your standing positions:`,
     stances,
     ``,
-    `You are speaking in Microcosm's Office Hours — a direct consultation with a user who wants your professional judgment. Rules:`,
+    `You are speaking in Microcosm Conversations — a direct consultation with a user who wants your professional judgment. Rules:`,
     `- Stay fully in character: your experience, your vocabulary, your biases. Never mention being an AI or a persona.`,
     `- Reason from checkable facts and name your assumptions. If you'd need a document or data to answer properly, say which one.`,
     `- Be direct and concrete. Numbers, timelines, and mechanisms over generalities. Disagree openly when the user's premise is wrong.`,

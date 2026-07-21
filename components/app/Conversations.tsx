@@ -7,9 +7,22 @@
  * that the experts genuinely analyze, searchable participant picker.
  */
 
-import { CSSProperties, Fragment, useEffect, useRef, useState } from "react";
+import { CSSProperties, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { LibraryPersona } from "@/lib/personas";
+import { LibraryPersona, PersonaSpec } from "@/lib/personas";
+import { CHAT_MODELS, DEFAULT_CHAT_MODEL, chatModel } from "@/lib/chat-models";
+import PersonaProfile from "@/components/app/PersonaProfile";
+
+/** room cap — mirrored server-side in app/api/converse/route.ts */
+const MAX_PARTICIPANTS = 20;
+/** model chips shown inline before overflowing into the roster panel */
+const MODEL_CHIP_LIMIT = 6;
+
+/** "Rosa, Derek, Aliyah +5" — compact display for large rooms */
+function firstNames(ps: { name: string }[], max = 3): string {
+  const names = ps.map((p) => p.name.split(/\s+/)[0]);
+  return names.length > max + 1 ? `${names.slice(0, max).join(", ")} +${names.length - max}` : names.join(", ");
+}
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -18,6 +31,7 @@ export interface ConversationRow {
   title: string;
   participant_keys: string[];
   updated_at: string;
+  model_overrides?: Record<string, string>;
 }
 
 export interface Attachment {
@@ -141,7 +155,10 @@ function ToggleChip({ label, title, onClick }: { label: string; title: string; o
       title={title}
       style={{
         ...mono, width: 27, height: 27, borderRadius: "50%", padding: 0, cursor: "pointer",
-        border: "1.5px solid var(--acc)", background: "var(--acc-dim)", color: "var(--acc)",
+        border: "1.5px solid var(--acc)",
+        // opaque: accent tint layered over a solid surface so bubble text never shows through
+        background: "linear-gradient(0deg, var(--acc-dim), var(--acc-dim)), var(--sf)",
+        color: "var(--acc)",
         fontSize: label.length > 2 ? 8 : 11, fontWeight: 700, flex: "none",
         display: "flex", alignItems: "center", justifyContent: "center", position: "relative", zIndex: 0,
       }}
@@ -168,7 +185,9 @@ function AttachmentChips({
         <Chip key={a.path} a={a} urls={urls} onOpen={onOpen} overlap={!spread && i > 0} z={shown.length - i} />
       ))}
       {many && !expanded && (
-        <span style={{ marginLeft: -9, position: "relative", zIndex: 0, display: "flex" }}>
+        // the +N counter sits ON TOP of the stack (avatar-stack pattern) so its
+        // label is never clipped by the neighboring chip
+        <span style={{ marginLeft: -9, position: "relative", zIndex: 5, display: "flex" }}>
           <ToggleChip label={`+${attachments.length - 2}`} title={`Show all ${attachments.length} files`} onClick={() => setExpanded(true)} />
         </span>
       )}
@@ -177,19 +196,86 @@ function AttachmentChips({
   );
 }
 
+/**
+ * Per-participant model tier selector (CLAUDE.md §6.4). Every voice defaults
+ * to the lightweight tier; the chip opens a menu to bump one persona to a
+ * deeper model for this thread only.
+ */
+function ModelChip({
+  persona, modelId, open, onToggle, onPick,
+}: {
+  persona: LibraryPersona; modelId: string; open: boolean;
+  onToggle: () => void; onPick: (id: string) => void;
+}) {
+  const m = chatModel(modelId);
+  return (
+    <span style={{ position: "relative", flex: "none", display: "inline-flex" }}>
+      <button
+        onClick={onToggle}
+        title={`${persona.name} answers on ${m.name} (${m.desc.toLowerCase()}) — click to change`}
+        style={{
+          ...mono, display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
+          fontSize: 9.5, letterSpacing: ".05em", color: open ? "var(--acc)" : "var(--t5)",
+          background: "var(--sf2)", border: `1px solid ${open ? "var(--acc)" : "var(--ln5)"}`,
+          borderRadius: 100, padding: "5px 11px 5px 6px",
+        }}
+      >
+        <span style={{ width: 20, height: 20, borderRadius: "50%", background: "var(--sf)", border: "1px solid var(--ln5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7.5, color: "var(--t3)", flex: "none" }}>
+          {persona.initials}
+        </span>
+        {persona.name.split(" ")[0].toUpperCase()} · {m.short}
+        <span style={{ fontSize: 8, color: "var(--t7)" }}>▾</span>
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40, minWidth: 235, background: "var(--sf)", border: "1px solid var(--ln5)", borderRadius: 14, padding: 6, boxShadow: "0 18px 44px rgba(0,0,0,.35)", animation: "fadeUp .15s ease both" }}>
+          {CHAT_MODELS.map((opt) => {
+            const on = opt.id === m.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => onPick(opt.id)}
+                style={{
+                  display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 12,
+                  textAlign: "left", cursor: "pointer", borderRadius: 9, padding: "9px 11px",
+                  background: on ? "var(--acc-dim)" : "transparent", border: "none",
+                }}
+              >
+                <span>
+                  <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: on ? "var(--acc)" : "var(--t2)" }}>{opt.name}</span>
+                  <span style={{ ...mono, display: "block", fontSize: 9, letterSpacing: ".05em", color: "var(--t6)", marginTop: 2, textTransform: "uppercase" }}>{opt.desc}</span>
+                </span>
+                {on && <span style={{ color: "var(--acc)", fontSize: 12 }}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </span>
+  );
+}
+
 export default function Conversations({
   orgId,
   personas,
   initial,
   initialWith,
+  libraryCount = 0,
 }: {
   orgId: string;
   personas: LibraryPersona[];
   initial: ConversationRow[];
   initialWith?: string;
+  libraryCount?: number;
 }) {
   const supabase = createClient();
-  const byKey = new Map(personas.map((p) => [p.key, p]));
+  // library personas discovered via search are accumulated so picked chips
+  // and thread headers keep resolving after the result list changes
+  const [extras, setExtras] = useState<LibraryPersona[]>([]);
+  const byKey = useMemo(() => {
+    const m = new Map<string, LibraryPersona>();
+    [...personas, ...extras].forEach((p) => m.set(p.key, p));
+    return m;
+  }, [personas, extras]);
 
   const [convs, setConvs] = useState<ConversationRow[]>(initial);
   const [active, setActive] = useState<string | null>(null);
@@ -201,6 +287,22 @@ export default function Conversations({
   const [picker, setPicker] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [libResults, setLibResults] = useState<LibraryPersona[]>([]);
+  const [searchingLib, setSearchingLib] = useState(false);
+  const searchSeq = useRef(0);
+  // per-participant model tier for the open thread ({} = everyone on default)
+  const [models, setModels] = useState<Record<string, string>>({});
+  const [modelMenu, setModelMenu] = useState<string | null>(null);
+  // conversation-row ⋯ menu, inline rename, roster panel, profile card
+  const [rowMenu, setRowMenu] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [roster, setRoster] = useState(false);
+  const [profileOf, setProfileOf] = useState<LibraryPersona | null>(null);
+  // @mention typeahead over the room's participants
+  const [mentionQ, setMentionQ] = useState<string | null>(null);
+  const [mentionIx, setMentionIx] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(false);
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -231,6 +333,7 @@ export default function Conversations({
 
   const openConversation = async (id: string) => {
     setActive(id); setDraft(null); setErr(null); setMessages([]); setPending([]);
+    setModels(convs.find((c) => c.id === id)?.model_overrides ?? {}); setModelMenu(null);
     const { data } = await supabase!
       .from("conversation_messages")
       .select("id, role, agent_key, agent_name, content, attachments")
@@ -244,12 +347,63 @@ export default function Conversations({
   const startDraft = (keys: string[]) => {
     setDraft({ participantKeys: keys });
     setActive(null); setMessages([]); setErr(null); setPicker(false); setPicked([]); setSearch(""); setPending([]);
+    setModels({}); setModelMenu(null);
+  };
+
+  const setModel = async (key: string, modelId: string) => {
+    const next = { ...models, [key]: modelId };
+    setModels(next); setModelMenu(null);
+    if (active) {
+      setConvs((cs) => cs.map((c) => (c.id === active ? { ...c, model_overrides: next } : c)));
+      await supabase!.from("conversations").update({ model_overrides: next }).eq("id", active);
+    }
   };
 
   const removeConversation = async (id: string) => {
     setConvs(convs.filter((c) => c.id !== id));
     if (active === id) { setActive(null); setMessages([]); }
     await supabase!.from("conversations").delete().eq("id", id);
+  };
+
+  const startRename = (c: ConversationRow) => {
+    setRenaming(c.id); setTitleDraft(c.title); setRowMenu(null);
+  };
+
+  const saveRename = async () => {
+    const id = renaming;
+    const t = titleDraft.trim();
+    setRenaming(null);
+    if (!id || !t) return;
+    setConvs((cs) => cs.map((c) => (c.id === id ? { ...c, title: t } : c)));
+    await supabase!.from("conversations").update({ title: t }).eq("id", id);
+  };
+
+  // ---- @mention typeahead ----
+  const mentionMatches = mentionQ !== null
+    ? participants.filter((p) =>
+        p.name.toLowerCase().startsWith(mentionQ.toLowerCase()) ||
+        p.name.toLowerCase().split(/\s+/).some((w) => w.startsWith(mentionQ.toLowerCase()))
+      ).slice(0, 6)
+    : [];
+
+  const pickMention = (p: LibraryPersona) => {
+    const el = inputRef.current;
+    if (!el) return;
+    const caret = el.selectionStart ?? input.length;
+    const before = input.slice(0, caret).replace(/@[\w]*$/, "");
+    const first = p.name.split(/\s+/)[0];
+    // if two participants share a first name, insert the full name so the
+    // mention resolves unambiguously
+    const dupFirst = participants.filter((x) => x.name.split(/\s+/)[0].toLowerCase() === first.toLowerCase()).length > 1;
+    const handle = dupFirst ? p.name : first;
+    const next = `${before}@${handle} ${input.slice(caret)}`;
+    setInput(next);
+    setMentionQ(null);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = `${before}@${handle} `.length;
+      el.setSelectionRange(pos, pos);
+    });
   };
 
   const attachFiles = async (files: FileList | null) => {
@@ -309,6 +463,7 @@ export default function Conversations({
           personaKeys: draft?.participantKeys,
           content,
           attachments: atts,
+          modelOverrides: models,
         }),
       });
       const data = await res.json();
@@ -320,7 +475,7 @@ export default function Conversations({
         })),
       ]);
       if (draft) {
-        const title = participants.map((p) => p.name.split(/\s+/)[0]).join(", ");
+        const title = firstNames(participants);
         const row: ConversationRow = {
           id: data.conversationId, title,
           participant_keys: draft.participantKeys,
@@ -344,11 +499,47 @@ export default function Conversations({
     }
   };
 
+  // picker search: local personas filter instantly; the global library is
+  // searched through /api/personas/search (smart search) with a debounce
+  useEffect(() => {
+    if (!picker) return;
+    const q = search.trim();
+    if (q.length < 2) { setLibResults([]); setSearchingLib(false); return; }
+    setSearchingLib(true);
+    const seq = ++searchSeq.current;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/personas/search", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ q, limit: 40 }),
+        });
+        const json = await res.json();
+        if (seq !== searchSeq.current) return;
+        if (res.ok) {
+          const rows: LibraryPersona[] = (json.personas as { id: string; spec: PersonaSpec }[])
+            .map((r) => ({ ...r.spec, key: r.id, id: r.id, source: "library" as const }));
+          setLibResults(rows);
+          setExtras((prev) => {
+            const m = new Map(prev.map((p) => [p.key, p] as const));
+            rows.forEach((r) => { if (!m.has(r.key)) m.set(r.key, r); });
+            return [...m.values()];
+          });
+        }
+      } finally {
+        if (seq === searchSeq.current) setSearchingLib(false);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [search, picker]);
+
   const q = search.trim().toLowerCase();
-  const filteredPersonas = q
+  const localMatches = q
     ? personas.filter((p) =>
         [p.name, p.role, p.tagline ?? "", p.backstory, p.discipline ?? ""].join(" ").toLowerCase().includes(q)
       )
+    : personas;
+  const filteredPersonas = q
+    ? [...localMatches, ...libResults.filter((r) => !localMatches.some((l) => l.key === r.key))]
     : personas;
 
   const showThread = draft !== null || active !== null;
@@ -391,6 +582,7 @@ export default function Conversations({
             return (
               <div
                 key={c.id}
+                className="convRow"
                 onClick={() => openConversation(c.id)}
                 style={{
                   display: "flex", alignItems: "center", gap: 10, borderRadius: 12, padding: "11px 12px",
@@ -401,22 +593,48 @@ export default function Conversations({
                 <AvatarStack personas={ps} />
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: isActive ? "var(--t0)" : "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {c.title}
-                    </span>
+                    {renaming === c.id ? (
+                      <input
+                        value={titleDraft}
+                        autoFocus
+                        onChange={(e) => setTitleDraft(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveRename();
+                          if (e.key === "Escape") setRenaming(null);
+                        }}
+                        onBlur={saveRename}
+                        style={{ width: "100%", boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--acc)", borderRadius: 7, padding: "3px 8px", fontSize: 13, color: "var(--t0)", outline: "none", fontFamily: "inherit" }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: 13.5, fontWeight: 600, color: isActive ? "var(--t0)" : "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {c.title}
+                      </span>
+                    )}
                     <span style={{ ...mono, fontSize: 9, color: "var(--t7)", flex: "none" }}>{timeAgo(c.updated_at)}</span>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--t6)", marginTop: 2 }}>
                     {ps.length} {ps.length === 1 ? "expert" : "experts"}
                   </div>
                 </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); removeConversation(c.id); }}
-                  aria-label="Delete conversation"
-                  style={{ ...mono, background: "none", border: "none", color: "var(--t7)", cursor: "pointer", fontSize: 12, padding: 4 }}
-                >
-                  ×
-                </button>
+                <span className="rowActions" style={{ position: "relative", flex: "none" }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setRowMenu(rowMenu === c.id ? null : c.id); }}
+                    aria-label="Conversation options"
+                    style={{ ...mono, background: "none", border: "none", color: "var(--t6)", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: "3px 4px", letterSpacing: "1px" }}
+                  >
+                    ⋯
+                  </button>
+                  {rowMenu === c.id && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 45, minWidth: 132, background: "var(--sf)", border: "1px solid var(--ln5)", borderRadius: 12, padding: 5, boxShadow: "0 14px 34px rgba(0,0,0,.35)", animation: "fadeUp .15s ease both" }}
+                    >
+                      <button className="menuItem" onClick={() => startRename(c)}>Rename</button>
+                      <button className="menuItem" style={{ color: "var(--warn)" }} onClick={() => { setRowMenu(null); removeConversation(c.id); }}>Delete</button>
+                    </div>
+                  )}
+                </span>
               </div>
             );
           })}
@@ -442,7 +660,7 @@ export default function Conversations({
                 <AvatarStack personas={participants} size={34} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {participants.map((p) => p.name).join(", ")}
+                    {activeConv?.title ?? (participants.length > 3 ? firstNames(participants) : participants.map((p) => p.name).join(", "))}
                   </div>
                   <div style={{ fontSize: 11.5, color: "var(--t6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {participants.length === 1 ? participants[0].role : `${participants.length} experts · tag with @name to direct`}
@@ -450,11 +668,38 @@ export default function Conversations({
                 </div>
               </div>
               {participants.length > 1 && (
-                <span style={{ ...mono, flex: "none", fontSize: 9, letterSpacing: ".06em", color: "var(--acc)", border: "1px solid var(--acc)", borderRadius: 100, padding: "4px 10px" }}>
-                  GROUP
-                </span>
+                <button
+                  onClick={() => setRoster(true)}
+                  style={{ ...mono, flex: "none", fontSize: 9, letterSpacing: ".06em", color: "var(--acc)", background: "transparent", border: "1px solid var(--acc)", borderRadius: 100, padding: "5px 12px", cursor: "pointer" }}
+                >
+                  {participants.length} IN THE ROOM →
+                </button>
               )}
             </div>
+
+            {/* per-participant model tier strip — overflows into the roster panel */}
+            <div style={{ flex: "none", padding: "9px 26px", borderBottom: "1px solid var(--ln2)", display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+              <span style={{ ...mono, flex: "none", fontSize: 8.5, letterSpacing: ".12em", color: "var(--t7)" }}>MODELS</span>
+              {participants.slice(0, MODEL_CHIP_LIMIT).map((p) => (
+                <ModelChip
+                  key={p.key}
+                  persona={p}
+                  modelId={models[p.key] ?? DEFAULT_CHAT_MODEL}
+                  open={modelMenu === p.key}
+                  onToggle={() => setModelMenu(modelMenu === p.key ? null : p.key)}
+                  onPick={(id) => setModel(p.key, id)}
+                />
+              ))}
+              {participants.length > MODEL_CHIP_LIMIT && (
+                <button
+                  onClick={() => setRoster(true)}
+                  style={{ ...mono, fontSize: 9.5, letterSpacing: ".05em", color: "var(--t5)", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "6px 12px", cursor: "pointer" }}
+                >
+                  +{participants.length - MODEL_CHIP_LIMIT} MORE →
+                </button>
+              )}
+            </div>
+            {modelMenu && !roster && <div onClick={() => setModelMenu(null)} style={{ position: "fixed", inset: 0, zIndex: 30 }} />}
 
             <div ref={feedRef} style={{ flex: 1, overflowY: "auto", padding: "24px 26px", display: "flex", flexDirection: "column", gap: 18 }}>
               {messages.length === 0 && !busy && (
@@ -543,15 +788,53 @@ export default function Conversations({
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                   </svg>
                 </button>
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                  placeholder={participants.length > 1 ? "Message the group — @name to direct" : `Message ${participants[0]?.name.split(" ")[0] ?? ""}…`}
-                  style={{ flex: 1, boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 12, padding: "13px 16px", fontSize: 14, color: "var(--t1)", outline: "none" }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln5)")}
-                />
+                <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+                  {/* @mention typeahead — participants matching the @prefix */}
+                  {mentionQ !== null && mentionMatches.length > 0 && (
+                    <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 45, minWidth: 250, maxWidth: 360, background: "var(--sf)", border: "1px solid var(--ln5)", borderRadius: 14, padding: 5, boxShadow: "0 14px 34px rgba(0,0,0,.35)", animation: "fadeUp .12s ease both" }}>
+                      {mentionMatches.map((p, i) => (
+                        <button
+                          key={p.key}
+                          onMouseDown={(e) => { e.preventDefault(); pickMention(p); }}
+                          onMouseEnter={() => setMentionIx(i)}
+                          style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", textAlign: "left", background: i === mentionIx ? "var(--acc-dim)" : "transparent", border: "none", borderRadius: 9, padding: "7px 9px", cursor: "pointer" }}
+                        >
+                          <span style={{ ...mono, width: 24, height: 24, borderRadius: "50%", flex: "none", background: "var(--sf2)", border: "1px solid var(--ln5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8.5, color: i === mentionIx ? "var(--acc)" : "var(--t3)" }}>
+                            {p.initials}
+                          </span>
+                          <span style={{ minWidth: 0 }}>
+                            <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</span>
+                            <span style={{ display: "block", fontSize: 10, color: "var(--t6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.role}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setInput(v);
+                      const caret = e.target.selectionStart ?? v.length;
+                      const m = v.slice(0, caret).match(/@([\w]*)$/);
+                      if (m) { setMentionQ(m[1]); setMentionIx(0); } else setMentionQ(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (mentionQ !== null && mentionMatches.length > 0) {
+                        if (e.key === "ArrowDown") { e.preventDefault(); setMentionIx((i) => (i + 1) % mentionMatches.length); return; }
+                        if (e.key === "ArrowUp") { e.preventDefault(); setMentionIx((i) => (i - 1 + mentionMatches.length) % mentionMatches.length); return; }
+                        if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pickMention(mentionMatches[mentionIx]); return; }
+                        if (e.key === "Escape") { setMentionQ(null); return; }
+                      }
+                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+                    }}
+                    placeholder={participants.length > 1 ? "Message the group — @name to direct" : `Message ${participants[0]?.name.split(" ")[0] ?? ""}…`}
+                    style={{ width: "100%", boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 12, padding: "13px 16px", fontSize: 14, color: "var(--t1)", outline: "none" }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = "var(--ln5)"; setTimeout(() => setMentionQ(null), 150); }}
+                  />
+                </div>
                 <button onClick={send} disabled={busy || uploading || !input.trim()} className="btnAcc" style={{ padding: "13px 24px", fontSize: 14, borderRadius: 12, opacity: busy || uploading || !input.trim() ? 0.55 : 1 }}>
                   {uploading ? "Uploading…" : "Send"}
                 </button>
@@ -582,14 +865,19 @@ export default function Conversations({
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, role, or background…"
+              placeholder={libraryCount ? `Search ${libraryCount.toLocaleString()} personas — a problem, a role, a person…` : "Search by name, role, or background…"}
               autoFocus
               style={{ flex: "none", marginTop: 16, boxSizing: "border-box", width: "100%", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 12, padding: "11px 16px", fontSize: 13.5, color: "var(--t1)", outline: "none" }}
               onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
               onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln5)")}
             />
             <div style={{ ...mono, flex: "none", marginTop: 10, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t7)" }}>
-              {filteredPersonas.length} OF {personas.length} PERSONAS{picked.length ? ` · ${picked.length} SELECTED` : ""}
+              {q
+                ? searchingLib
+                  ? `SEARCHING ${libraryCount ? libraryCount.toLocaleString() : "THE"} PERSONA LIBRARY…`
+                  : `${filteredPersonas.length} MATCH${filteredPersonas.length === 1 ? "" : "ES"}`
+                : `${personas.length} RECENT & CUSTOM · TYPE TO SEARCH ${libraryCount ? libraryCount.toLocaleString() : "ALL"} PERSONAS`}
+              {picked.length ? ` · ${picked.length}/${MAX_PARTICIPANTS} SELECTED` : ""}
             </div>
             <div style={{ flex: 1, overflowY: "auto", marginTop: 10, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, alignContent: "start" }}>
               {filteredPersonas.map((p) => {
@@ -597,7 +885,7 @@ export default function Conversations({
                 return (
                   <button
                     key={p.key}
-                    onClick={() => setPicked((prev) => prev.includes(p.key) ? prev.filter((k) => k !== p.key) : [...prev, p.key])}
+                    onClick={() => setPicked((prev) => prev.includes(p.key) ? prev.filter((k) => k !== p.key) : prev.length >= MAX_PARTICIPANTS ? prev : [...prev, p.key])}
                     style={{
                       display: "flex", alignItems: "center", gap: 10, textAlign: "left",
                       border: `1px solid ${on ? "var(--acc)" : "var(--ln4)"}`,
@@ -617,7 +905,9 @@ export default function Conversations({
               })}
               {filteredPersonas.length === 0 && (
                 <div style={{ gridColumn: "1 / -1", padding: "26px 0", textAlign: "center", color: "var(--t6)", fontSize: 13 }}>
-                  No personas match &quot;{search}&quot; — try a role, like &quot;water&quot; or &quot;zoning&quot;.
+                  {searchingLib
+                    ? "Searching the library…"
+                    : <>No personas match &quot;{search}&quot; — try a problem (&quot;build a data center&quot;) or a person (&quot;under 40 homeowner&quot;).</>}
                 </div>
               )}
             </div>
@@ -631,6 +921,70 @@ export default function Conversations({
             </button>
           </div>
         </div>
+      )}
+
+      {/* conversation-row menu backdrop */}
+      {rowMenu && <div onClick={() => setRowMenu(null)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />}
+
+      {/* roster panel — everyone in the room, scrollable, with quick model cycling */}
+      {roster && (
+        <>
+          <div onClick={() => setRoster(false)} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(10,11,12,.45)", backdropFilter: "blur(3px)" }} />
+          <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 340, maxWidth: "88vw", zIndex: 61, background: "var(--sf)", borderLeft: "1px solid var(--ln4)", display: "flex", flexDirection: "column", animation: "fadeUp .22s ease both" }}>
+            <div style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "18px 20px", borderBottom: "1px solid var(--ln2)" }}>
+              <span style={{ ...mono, fontSize: 10, letterSpacing: ".12em", color: "var(--acc)" }}>IN THE ROOM · {participants.length}</span>
+              <button onClick={() => setRoster(false)} aria-label="Close" style={{ border: "1px solid var(--ln6)", background: "transparent", color: "var(--t4)", width: 28, height: 28, borderRadius: "50%", cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px" }}>
+              {participants.map((p) => {
+                const mid = models[p.key] ?? DEFAULT_CHAT_MODEL;
+                const m = chatModel(mid);
+                return (
+                  <div
+                    key={p.key}
+                    onClick={() => setProfileOf(p)}
+                    style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 10px", borderRadius: 12, cursor: "pointer" }}
+                    className="rosterRow"
+                  >
+                    <span style={{ ...mono, width: 34, height: 34, borderRadius: "50%", flex: "none", background: p.kind === "adversarial" ? "var(--warn-dim)" : "var(--sf2)", border: `1px solid ${p.kind === "adversarial" ? "var(--warn)" : "var(--ln5)"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: p.kind === "adversarial" ? "var(--warn)" : "var(--t3)" }}>
+                      {p.initials}
+                    </span>
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <span style={{ display: "block", fontSize: 13.5, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</span>
+                      <span style={{ display: "block", fontSize: 11, color: "var(--t6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.role}</span>
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const order = CHAT_MODELS.map((x) => x.id as string);
+                        setModel(p.key, order[(order.indexOf(mid) + 1) % order.length]);
+                      }}
+                      title={`${m.name} — ${m.desc.toLowerCase()} · click to switch tier`}
+                      style={{ ...mono, flex: "none", fontSize: 8.5, letterSpacing: ".05em", color: "var(--t5)", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "5px 10px", cursor: "pointer" }}
+                    >
+                      {m.short}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ ...mono, flex: "none", padding: "12px 20px", borderTop: "1px solid var(--ln2)", fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)" }}>
+              CLICK A PERSON FOR THEIR FULL PROFILE · CLICK A TIER TO SWITCH MODEL
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* persona profile card (from roster) */}
+      {profileOf && (
+        <PersonaProfile
+          kind={profileOf.kind}
+          spec={profileOf}
+          chatKey={profileOf.key}
+          source={profileOf.source}
+          onClose={() => setProfileOf(null)}
+          showChatCta={false}
+        />
       )}
 
       {/* attachment lightbox */}
