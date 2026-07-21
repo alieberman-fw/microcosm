@@ -24,7 +24,7 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
   const isAppRoute =
-    path.startsWith("/dashboard") || path.startsWith("/personas") || path.startsWith("/consult") ||
+    path.startsWith("/dashboard") || path.startsWith("/personas") || path.startsWith("/conversations") ||
     path.startsWith("/settings") || (path.startsWith("/sim/") && path !== "/sim/demo");
   if (!user && isAppRoute) {
     const redirect = request.nextUrl.clone();
@@ -36,5 +36,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/personas/:path*", "/consult/:path*", "/settings/:path*", "/sim/:path*", "/login"],
+  matcher: ["/dashboard/:path*", "/personas/:path*", "/conversations/:path*", "/settings/:path*", "/sim/:path*", "/login"],
 };

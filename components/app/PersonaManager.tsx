@@ -73,7 +73,7 @@ export default function PersonaManager({ orgId, initial }: { orgId: string; init
           <div className="kicker">Agent Library</div>
           <h1 style={{ margin: "12px 0 0", fontSize: "clamp(26px,3vw,36px)", fontWeight: 600, letterSpacing: "-.03em" }}>Your personas</h1>
           <p style={{ margin: "12px 0 0", maxWidth: 560, fontSize: 14, lineHeight: 1.6, color: "var(--t5)" }}>
-            Library personas ship with Microcosm; custom personas are yours — reusable in simulations and available in Office Hours.
+            Library personas ship with Microcosm; custom personas are yours — reusable in simulations and available in Conversations.
           </p>
         </div>
         <button onClick={() => { setCreating(true); setErr(null); }} className="btnAcc" style={{ padding: "11px 22px", fontSize: 14 }}>
@@ -122,8 +122,8 @@ export default function PersonaManager({ orgId, initial }: { orgId: string; init
               </div>
               <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: "var(--t6)" }}>{p.tagline}</p>
               <div style={{ marginTop: "auto", paddingTop: 8 }}>
-                <Link href={`/consult?p=${p.key}`} style={{ ...mono, fontSize: 10.5, letterSpacing: ".06em", color: "var(--acc)" }}>
-                  CONSULT IN OFFICE HOURS →
+                <Link href={`/conversations?with=${p.key}`} style={{ ...mono, fontSize: 10.5, letterSpacing: ".06em", color: "var(--acc)" }}>
+                  START A CONVERSATION →
                 </Link>
               </div>
             </div>
@@ -133,7 +133,7 @@ export default function PersonaManager({ orgId, initial }: { orgId: string; init
           <div className="card" style={{ padding: "34px 28px", border: "1px dashed var(--ln6)", textAlign: "center", gridColumn: "1 / -1" }}>
             <div style={{ ...mono, fontSize: 11, letterSpacing: ".07em", color: "var(--t6)" }}>NO CUSTOM PERSONAS YET</div>
             <p style={{ margin: "10px auto 0", maxWidth: 420, fontSize: 13.5, lineHeight: 1.6, color: "var(--t5)" }}>
-              Write your own expert — a person whose judgment you want in the room. They become available in simulations and Office Hours.
+              Write your own expert — a person whose judgment you want in the room. They become available in simulations and Conversations.
             </p>
           </div>
         )}
@@ -157,8 +157,8 @@ export default function PersonaManager({ orgId, initial }: { orgId: string; init
                 {c.spec.backstory}
               </p>
               <div style={{ marginTop: "auto", paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <Link href={`/consult?p=${c.id}`} style={{ ...mono, fontSize: 10.5, letterSpacing: ".06em", color: "var(--acc)" }}>
-                  CONSULT →
+                <Link href={`/conversations?with=${c.id}`} style={{ ...mono, fontSize: 10.5, letterSpacing: ".06em", color: "var(--acc)" }}>
+                  CHAT →
                 </Link>
                 <button onClick={() => remove(c.id)} style={{ ...mono, background: "none", border: "none", cursor: "pointer", fontSize: 10, letterSpacing: ".05em", color: "var(--t7)" }}>
                   DELETE

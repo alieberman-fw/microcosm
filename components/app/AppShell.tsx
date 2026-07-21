@@ -34,9 +34,8 @@ type NavItem = { href: string | null; label: string; icon: string; soon?: boolea
 
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Simulations", icon: ICONS.sims },
+  { href: "/conversations", label: "Conversations", icon: ICONS.consult },
   { href: "/personas", label: "Agent Library", icon: ICONS.personas },
-  { href: "/consult", label: "Office Hours", icon: ICONS.consult },
-  { href: "/sim/demo", label: "Live Demo", icon: ICONS.demo },
   { href: null, label: "Reports", icon: ICONS.reports, soon: true },
   { href: null, label: "Marketplace", icon: ICONS.market, soon: true },
 ];

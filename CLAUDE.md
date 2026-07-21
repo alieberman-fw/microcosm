@@ -157,7 +157,11 @@ Manual creation and editing: the user writes (or dictates) role, backstory, stan
 
 - Every persona (and every **Persona Set** — a saved panel composition like "Phoenix data-center diligence panel") is versioned and org-scoped.
 - Users can favorite, fork, and re-run personas across simulations. Reuse is the retention loop.
-- **Office Hours (direct consultation — shipped early).** Any library or custom persona can be consulted outside a simulation: a 1:1 chat grounded in the persona's compiled system prompt (§6.1), running on the expert-tier model (§6.4). Phase 2 adds **group sessions** — several personas plus the user in one thread with @mentions, on the same InteractiveGroupChat machinery as Take the Floor. Office Hours is the lightest product surface (no run, no report — just the expert) and the cheapest daily-retention hook. POC conversations are ephemeral; persistence arrives with simulation history.
+- **Conversations (direct chat — shipped early).** The second product surface, complementary to simulations: where a simulation is agents deliberating *autonomously* in the forum UI (with the user taking the floor at the edges), Conversations is the user talking *directly* with personas in an iMessage-style thread. Shipped behavior:
+  - **1:1 and group threads.** Any mix of library and custom personas, up to 8 per conversation.
+  - **@mentions direct the room.** Tagging `@Name` makes those personas answer; with no tag, a Haiku-tier router picks the most relevant participant(s). Repliers see the full transcript, including each other's replies in the same round, and never speak for one another.
+  - **Persistent history.** Conversations and messages live in Postgres (`conversations`, `conversation_messages`, org-scoped RLS). Fresh threads are first-class: starting a new conversation with the same participants creates a clean history — memory is per-thread, by design.
+  - **Roadmap (Conversations v2):** document attachments flowing through the corpus pipeline (§2 Stage 2) so experts analyze uploaded files in-thread; chart generation as a tool call rendering slick, customizable charts in the thread; per-persona long-term memory across threads (opt-in); group sessions upgraded onto InteractiveGroupChat when the engine lands.
 
 ### 3.5 Marketplace (Phase 3) — our own, first-party
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { CSSProperties, Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Logo } from "@/components/Nav";
 import AgentCanvas from "@/components/AgentCanvas";
@@ -17,7 +17,7 @@ const label: CSSProperties = {
 const inputStyle: CSSProperties = {
   width: "100%", boxSizing: "border-box", background: "var(--sf2)",
   border: "1px solid var(--ln5)", borderRadius: 12, padding: "13px 16px",
-  fontSize: 14.5, color: "var(--t1)", outline: "none", transition: "border-color .2s",
+  fontSize: 14.5, color: "var(--t1)", outline: "none",
 };
 
 const roomLines: [string, string][] = [
@@ -68,16 +68,11 @@ function RoomTicker() {
 }
 
 function AuthForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") || "/dashboard";
   const supabase = createClient();
-
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState<"none" | "email" | "google" | "magic">("none");
-  const [msg, setMsg] = useState<{ kind: "err" | "ok"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   if (!supabase) {
     return (
@@ -88,147 +83,62 @@ function AuthForm() {
   }
 
   const google = async () => {
-    setBusy("google"); setMsg(null);
+    setBusy(true); setErr(null);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
     });
-    if (error) {
-      setMsg({ kind: "err", text: /not enabled|unsupported/i.test(error.message) ? "Google sign-in isn't enabled yet — email works today." : error.message });
-      setBusy("none");
-    }
+    if (error) { setErr(error.message); setBusy(false); }
     // on success the browser redirects to Google
-  };
-
-  const magic = async () => {
-    if (!email.trim()) { setMsg({ kind: "err", text: "Enter your email first, then request the link." }); return; }
-    setBusy("magic"); setMsg(null);
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
-    });
-    setMsg(error ? { kind: "err", text: error.message } : { kind: "ok", text: "Sign-in link sent — check your email." });
-    setBusy("none");
-  };
-
-  const submit = async () => {
-    if (!email.trim() || !password) return;
-    setBusy("email"); setMsg(null);
-    try {
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email, password,
-          options: { emailRedirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
-        });
-        if (error) throw error;
-        setMsg({ kind: "ok", text: "Account created — check your email to confirm, then sign in." });
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        router.push(next);
-        router.refresh();
-        return;
-      }
-    } catch (e) {
-      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Something went wrong" });
-    } finally {
-      setBusy("none");
-    }
   };
 
   return (
     <>
-      <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-.02em" }}>
-        {mode === "signin" ? "Welcome back" : "Create your account"}
-      </h1>
+      <h1 style={{ margin: 0, fontSize: 27, fontWeight: 600, letterSpacing: "-.02em" }}>Welcome to Microcosm</h1>
       <p style={{ margin: "10px 0 0", fontSize: 14, lineHeight: 1.6, color: "var(--t5)" }}>
-        {mode === "signin" ? "Sign in to your simulations, agents, and reports." : "A personal workspace is created the moment you join."}
+        Sign in to your simulations, agents, and reports.
       </p>
 
       <button
         onClick={google}
-        disabled={busy !== "none"}
+        disabled={busy}
         style={{
           marginTop: 26, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
           background: "var(--t0)", color: "#1a1c1e", border: "none", borderRadius: 12,
-          padding: "13px 16px", fontSize: 14.5, fontWeight: 600, cursor: "pointer",
-          opacity: busy === "google" ? 0.6 : 1, transition: "filter .2s",
+          padding: "14px 16px", fontSize: 14.5, fontWeight: 600, cursor: "pointer",
+          opacity: busy ? 0.6 : 1,
         }}
       >
         <GoogleIcon />
-        {busy === "google" ? "Redirecting…" : "Continue with Google"}
+        {busy ? "Redirecting…" : "Continue with Google"}
       </button>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "22px 0" }}>
-        <span style={{ flex: 1, height: 1, background: "var(--ln3)" }} />
-        <span style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: "var(--t7)" }}>OR WITH EMAIL</span>
-        <span style={{ flex: 1, height: 1, background: "var(--ln3)" }} />
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <div>
-          <label style={label} htmlFor="email">Work email</label>
-          <input
-            id="email" type="email" placeholder="you@company.com" value={email} autoComplete="email"
-            onChange={(e) => setEmail(e.target.value)} style={inputStyle}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln5)")}
-          />
-        </div>
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <label style={label} htmlFor="password">Password</label>
-            {mode === "signin" && (
-              <button onClick={magic} disabled={busy !== "none"} style={{ ...mono, background: "none", border: "none", cursor: "pointer", fontSize: 10, letterSpacing: ".06em", color: "var(--acc)", padding: 0 }}>
-                {busy === "magic" ? "SENDING…" : "EMAIL ME A LINK INSTEAD"}
-              </button>
-            )}
-          </div>
-          <input
-            id="password" type="password" placeholder={mode === "signup" ? "8+ characters" : "••••••••"} value={password}
-            autoComplete={mode === "signup" ? "new-password" : "current-password"}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-            style={inputStyle}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln5)")}
-          />
-        </div>
-        <button onClick={submit} disabled={busy !== "none"} className="btnAcc" style={{ padding: "13px 24px", fontSize: 15, borderRadius: 12, opacity: busy === "email" ? 0.6 : 1 }}>
-          {busy === "email" ? "Working…" : mode === "signin" ? "Sign in" : "Create account"}
-        </button>
-      </div>
-
-      {msg && (
-        <div
-          className="mono"
-          style={{
-            marginTop: 16, fontSize: 11, lineHeight: 1.6, letterSpacing: ".04em", borderRadius: 12, padding: "12px 16px",
-            border: `1px solid ${msg.kind === "err" ? "var(--warn)" : "var(--acc)"}`,
-            background: msg.kind === "err" ? "var(--warn-dim)" : "var(--acc-dim)",
-            color: msg.kind === "err" ? "var(--warn)" : "var(--acc)",
-            animation: "fadeUp .3s ease both",
-          }}
-        >
-          {msg.text}
+      {err && (
+        <div className="mono" style={{ marginTop: 14, fontSize: 11, lineHeight: 1.6, borderRadius: 12, padding: "12px 16px", border: "1px solid var(--warn)", background: "var(--warn-dim)", color: "var(--warn)", animation: "fadeUp .3s ease both" }}>
+          {err}
         </div>
       )}
 
-      <p style={{ margin: "24px 0 0", fontSize: 13.5, color: "var(--t5)", textAlign: "center" }}>
-        {mode === "signin" ? (
-          <>Don&apos;t have an account?{" "}
-            <button onClick={() => { setMode("signup"); setMsg(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--acc)", fontSize: 13.5, fontWeight: 600, padding: 0 }}>
-              Create one
-            </button>
-          </>
-        ) : (
-          <>Already have an account?{" "}
-            <button onClick={() => { setMode("signin"); setMsg(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--acc)", fontSize: 13.5, fontWeight: 600, padding: 0 }}>
-              Sign in
-            </button>
-          </>
-        )}
-      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "24px 0" }}>
+        <span style={{ flex: 1, height: 1, background: "var(--ln3)" }} />
+        <span style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: "var(--t7)" }}>EMAIL SIGN-IN</span>
+        <span style={{ flex: 1, height: 1, background: "var(--ln3)" }} />
+      </div>
+
+      {/* email sign-in is disabled at the auth layer during the internal preview */}
+      <div style={{ opacity: 0.35, pointerEvents: "none", userSelect: "none", display: "flex", flexDirection: "column", gap: 14 }} aria-disabled>
+        <div>
+          <label style={label} htmlFor="email">Work email</label>
+          <input id="email" type="email" placeholder="you@company.com" disabled style={inputStyle} />
+        </div>
+        <div>
+          <label style={label} htmlFor="password">Password</label>
+          <input id="password" type="password" placeholder="••••••••" disabled style={inputStyle} />
+        </div>
+      </div>
+      <div className="mono" style={{ marginTop: 14, fontSize: 10, lineHeight: 1.6, letterSpacing: ".05em", borderRadius: 10, padding: "10px 14px", border: "1px dashed var(--ln6)", color: "var(--t6)" }}>
+        INTERNAL PREVIEW · EMAIL SIGN-IN IS DISABLED — USE YOUR FIFTH WALL GOOGLE ACCOUNT
+      </div>
     </>
   );
 }
