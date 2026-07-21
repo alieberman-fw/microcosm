@@ -6,6 +6,7 @@ import Modes from "@/components/Modes";
 import LiveDemo from "@/components/LiveDemo";
 import UseCases from "@/components/UseCases";
 import WhyItWorks from "@/components/WhyItWorks";
+import ConversationsPromo from "@/components/ConversationsPromo";
 import Access from "@/components/Access";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -141,6 +142,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <ConversationsPromo />
 
       <WhyItWorks />
 

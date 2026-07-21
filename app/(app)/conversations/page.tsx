@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default async function ConversationsPage({ searchParams }: { searchParams: Promise<{ with?: string }> }) {
-  const { with: withKey } = await searchParams;
+export default async function ConversationsPage({ searchParams }: { searchParams: Promise<{ with?: string; open?: string }> }) {
+  const { with: withKey, open } = await searchParams;
   const supabase = await createServerSupabase();
   const user = await getLocalUser(supabase!);
   const { data: userRow } = await supabase!.from("users").select("org_id").eq("id", user!.id).single();
@@ -66,6 +66,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
       personas={personas}
       initial={(convRows ?? []) as ConversationRow[]}
       initialWith={withKey && personas.some((p) => p.key === withKey) ? withKey : undefined}
+      initialOpen={open}
       libraryCount={libraryCount ?? 0}
     />
   );

@@ -12,6 +12,8 @@ import { createClient } from "@/lib/supabase/client";
 import { LibraryPersona, PersonaSpec } from "@/lib/personas";
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL, chatModel } from "@/lib/chat-models";
 import PersonaProfile from "@/components/app/PersonaProfile";
+import Markdown from "@/components/app/Markdown";
+import Link from "next/link";
 
 /** room cap — mirrored server-side in app/api/converse/route.ts */
 const MAX_PARTICIPANTS = 20;
@@ -259,12 +261,14 @@ export default function Conversations({
   personas,
   initial,
   initialWith,
+  initialOpen,
   libraryCount = 0,
 }: {
   orgId: string;
   personas: LibraryPersona[];
   initial: ConversationRow[];
   initialWith?: string;
+  initialOpen?: string;
   libraryCount?: number;
 }) {
   const supabase = createClient();
@@ -304,7 +308,15 @@ export default function Conversations({
   const [mentionQ, setMentionQ] = useState<string | null>(null);
   const [mentionIx, setMentionIx] = useState(0);
   const pickedMentions = useRef<{ handle: string; key: string }[]>([]);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // composer grows vertically as you type (capped), never scrolls sideways
+  const autosize = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+  };
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(false);
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -320,6 +332,12 @@ export default function Conversations({
     const f = feedRef.current;
     if (f) f.scrollTop = f.scrollHeight;
   }, [messages.length, busy]);
+
+  // deep link from the history page: /conversations?open=<id>
+  useEffect(() => {
+    if (initialOpen && initial.some((c) => c.id === initialOpen)) openConversation(initialOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const signAll = async (atts: Attachment[]) => {
     const missing = atts.filter((a) => !urls[a.path]);
@@ -460,6 +478,7 @@ export default function Conversations({
     )];
     pickedMentions.current = [];
     setInput(""); setErr(null); setPending([]); setMentionQ(null);
+    requestAnimationFrame(autosize);
     setMessages((m) => [...m, { role: "user", content, attachments: atts }]);
     setBusy(true);
     try {
@@ -561,6 +580,23 @@ export default function Conversations({
 
   const showThread = draft !== null || active !== null;
 
+  // sidebar shows only as many rows as fit the height — no overscroll; the
+  // rest live on /conversations/history (searchable)
+  const listRef = useRef<HTMLDivElement>(null);
+  const [fitCount, setFitCount] = useState(10);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const ROW = 66; // row height + gap
+    const measure = () => setFitCount(Math.max(3, Math.floor((el.clientHeight - (draft ? ROW : 0) - 44) / ROW)));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [draft]);
+  const visibleConvs = convs.slice(0, fitCount);
+  const hiddenCount = convs.length - visibleConvs.length;
+
   return (
     <div style={{ display: "flex", height: "100%", minHeight: 0 }}>
       {/* conversation list */}
@@ -571,7 +607,7 @@ export default function Conversations({
             + New
           </button>
         </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "0 10px 20px", display: "flex", flexDirection: "column", gap: 3 }}>
+        <div ref={listRef} style={{ flex: 1, overflow: "hidden", padding: "0 10px 20px", display: "flex", flexDirection: "column", gap: 3 }}>
           {convs.length === 0 && !draft && (
             <div style={{ padding: "28px 14px", textAlign: "center" }}>
               <div style={{ ...mono, fontSize: 10, letterSpacing: ".07em", color: "var(--t7)" }}>NO CONVERSATIONS YET</div>
@@ -593,7 +629,7 @@ export default function Conversations({
               </div>
             </div>
           )}
-          {convs.map((c) => {
+          {visibleConvs.map((c) => {
             const ps = c.participant_keys.map((k) => byKey.get(k)).filter((p): p is LibraryPersona => !!p);
             const isActive = c.id === active && !draft;
             return (
@@ -655,6 +691,14 @@ export default function Conversations({
               </div>
             );
           })}
+          {hiddenCount > 0 && (
+            <Link
+              href="/conversations/history"
+              style={{ ...mono, marginTop: 6, display: "block", textAlign: "center", fontSize: 9.5, letterSpacing: ".08em", color: "var(--acc)", border: "1px dashed var(--ln5)", borderRadius: 10, padding: "10px 12px" }}
+            >
+              SEE ALL {convs.length} CONVERSATIONS →
+            </Link>
+          )}
         </div>
       </div>
 
@@ -751,7 +795,9 @@ export default function Conversations({
                         {(m.agent_name ?? "AGENT").toUpperCase()}
                       </div>
                       <div style={{ borderRadius: "4px 16px 16px 16px", padding: "11px 15px", background: "var(--sf)", border: "1px solid var(--ln4)" }}>
-                        <div style={{ fontSize: 14, lineHeight: 1.62, color: "var(--t2)", whiteSpace: "pre-wrap" }}>{m.content}</div>
+                        <div style={{ fontSize: 14, lineHeight: 1.62, color: "var(--t2)" }}>
+                          <Markdown text={m.content} mentions={participants.flatMap((x) => [x.name, x.name.split(/\s+/)[0]])} />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -827,12 +873,14 @@ export default function Conversations({
                       ))}
                     </div>
                   )}
-                  <input
+                  <textarea
                     ref={inputRef}
                     value={input}
+                    rows={1}
                     onChange={(e) => {
                       const v = e.target.value;
                       setInput(v);
+                      autosize();
                       const caret = e.target.selectionStart ?? v.length;
                       const m = v.slice(0, caret).match(/@([\w]*)$/);
                       if (m) { setMentionQ(m[1]); setMentionIx(0); } else setMentionQ(null);
@@ -844,10 +892,11 @@ export default function Conversations({
                         if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pickMention(mentionMatches[mentionIx]); return; }
                         if (e.key === "Escape") { setMentionQ(null); return; }
                       }
-                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+                      // Enter sends · Shift+Enter adds a line
+                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); requestAnimationFrame(autosize); }
                     }}
                     placeholder={participants.length > 1 ? "Message the group — @name to direct" : `Message ${participants[0]?.name.split(" ")[0] ?? ""}…`}
-                    style={{ width: "100%", boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 12, padding: "13px 16px", fontSize: 14, color: "var(--t1)", outline: "none" }}
+                    style={{ width: "100%", boxSizing: "border-box", display: "block", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 12, padding: "13px 16px", fontSize: 14, lineHeight: 1.5, color: "var(--t1)", outline: "none", resize: "none", overflowY: "auto", maxHeight: 150, fontFamily: "inherit" }}
                     onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
                     onBlur={(e) => { e.currentTarget.style.borderColor = "var(--ln5)"; setTimeout(() => setMentionQ(null), 150); }}
                   />

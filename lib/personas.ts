@@ -35,6 +35,8 @@ export interface PersonaSpec {
   seed_key?: string;
   /** per-persona model tier config (§6.4) — never hardcode models in logic */
   model?: { name?: string };
+  /** remix ancestry, oldest-first, ending with the direct source */
+  lineage?: { key: string; name: string }[];
 }
 
 export interface LibraryPersona extends PersonaSpec {
