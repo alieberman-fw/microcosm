@@ -124,7 +124,7 @@ Each persona object has exactly these fields:
   "demographics": {
     "age": <int, realistic for the career stage — vary widely across personas>,
     "gender": "female" | "male" | "nonbinary",
-    "metro": "<US metro, e.g. 'Phoenix–Mesa, AZ'>", "state": "<2-letter>",
+    "metro": "<city/metro name ONLY, never a state suffix — 'Phoenix', 'Kansas City'>", "state": "<2-letter>",
     "years_experience": <int, professionals only>,
     "credentials": "<licenses/certs if natural, else omit>",
     "household": "<e.g. 'married, 2 children', consumers/residents especially>",

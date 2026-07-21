@@ -11,6 +11,7 @@
 import { CSSProperties, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { PersonaSpec } from "@/lib/personas";
+import { US_CITIES, US_STATES } from "@/lib/us-cities";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -71,6 +72,11 @@ export default function PersonaEditor({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // legacy specs embedded the state in the metro ("Kansas City, MO") — split
+  // it so CITY and STATE stay separate fields
+  const rawMetro = d.metro ?? "";
+  const legacy = rawMetro.match(/^(.*?),\s*([A-Z]{2})(?:[–—-][A-Z]{2})*\s*$/);
+
   const [f, setF] = useState({
     name: mode === "remix" ? "" : s?.name ?? "",
     kind: source?.kind ?? "expert",
@@ -82,8 +88,8 @@ export default function PersonaEditor({
     skills: (s?.skills ?? []).join(", "),
     age: d.age ? String(d.age) : "",
     gender: d.gender ?? "",
-    metro: d.metro ?? "",
-    state: d.state ?? "",
+    metro: legacy ? legacy[1] : rawMetro,
+    state: d.state ?? (legacy ? legacy[2] : ""),
     years_experience: d.years_experience ? String(d.years_experience) : "",
     credentials: d.credentials ?? "",
     occupation: d.occupation ?? "",
@@ -95,6 +101,16 @@ export default function PersonaEditor({
     verbosity: Math.round((s?.traits?.verbosity ?? 0.5) * 100),
   });
   const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }));
+
+  // verifiable city typeahead
+  const [cityOpen, setCityOpen] = useState(false);
+  const cityQ = f.metro.trim().toLowerCase();
+  const citySuggestions = cityQ.length >= 2
+    ? US_CITIES.filter((x) => x.c.toLowerCase().startsWith(cityQ)).slice(0, 8)
+    : [];
+  const cityVerified = US_CITIES.some(
+    (x) => x.c.toLowerCase() === cityQ && (!f.state || x.s === f.state)
+  );
 
   const save = async () => {
     if (!f.name.trim() || !f.role.trim() || !f.backstory.trim()) {
@@ -248,13 +264,47 @@ export default function PersonaEditor({
                 <option value="nonbinary">Nonbinary</option>
               </select>
             </div>
-            <div>
-              <label style={label}>Metro</label>
-              <input value={f.metro} onChange={(e) => set({ metro: e.target.value })} placeholder="Phoenix–Mesa, AZ" style={inputStyle} />
+            <div style={{ position: "relative" }}>
+              <label style={label}>
+                City{" "}
+                {f.metro.trim() && (
+                  <span style={{ color: cityVerified ? "var(--acc)" : "var(--t7)", letterSpacing: ".05em" }}>
+                    {cityVerified ? "· ✓ VERIFIED" : "· UNLISTED"}
+                  </span>
+                )}
+              </label>
+              <input
+                value={f.metro}
+                onChange={(e) => { set({ metro: e.target.value }); setCityOpen(true); }}
+                onFocus={() => setCityOpen(true)}
+                onBlur={() => setTimeout(() => setCityOpen(false), 150)}
+                placeholder="Phoenix"
+                style={inputStyle}
+              />
+              {cityOpen && citySuggestions.length > 0 && (
+                <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 60, background: "var(--sf)", border: "1px solid var(--ln5)", borderRadius: 12, padding: 4, maxHeight: 220, overflowY: "auto", boxShadow: "0 14px 34px rgba(0,0,0,.35)", animation: "fadeUp .12s ease both" }}>
+                  {citySuggestions.map((x) => (
+                    <button
+                      key={`${x.c}-${x.s}`}
+                      onMouseDown={(e) => { e.preventDefault(); set({ metro: x.c, state: x.s }); setCityOpen(false); }}
+                      className="menuItem"
+                      style={{ display: "flex", justifyContent: "space-between", gap: 10 }}
+                    >
+                      <span>{x.c}</span>
+                      <span style={{ ...mono, fontSize: 9.5, color: "var(--t6)" }}>{x.s}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <label style={label}>State</label>
-              <input value={f.state} onChange={(e) => set({ state: e.target.value.toUpperCase().slice(0, 2) })} placeholder="AZ" style={inputStyle} />
+              <select value={f.state} onChange={(e) => set({ state: e.target.value })} style={{ ...inputStyle, appearance: "none" }}>
+                <option value="">—</option>
+                {US_STATES.map((st) => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label style={label}>Yrs experience</label>

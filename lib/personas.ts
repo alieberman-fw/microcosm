@@ -112,7 +112,7 @@ export function compilePersonaPrompt(p: PersonaSpec): string {
   const who = d
     ? [
         d.age ? `age ${d.age}` : null,
-        d.metro ? `based in ${d.metro}` : null,
+        d.metro ? `based in ${[d.metro, d.state].filter(Boolean).join(", ")}` : null,
         d.years_experience ? `${d.years_experience} years in the field` : null,
         d.credentials ? `credentials: ${d.credentials}` : null,
         d.occupation ? `works as ${d.occupation}` : null,
