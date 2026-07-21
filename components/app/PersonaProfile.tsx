@@ -83,7 +83,19 @@ export default function PersonaProfile({
                 <div style={{ ...mono, fontSize: 11, letterSpacing: ".04em", color: "var(--t6)", marginTop: 7 }}>{spec.tagline}</div>
               )}
             </div>
-            <button onClick={onClose} aria-label="Close" style={{ flex: "none", border: "1px solid var(--ln6)", background: "transparent", color: "var(--t4)", width: 30, height: 30, borderRadius: "50%", cursor: "pointer" }}>×</button>
+            <span style={{ flex: "none", display: "flex", gap: 8 }}>
+              {onRemix && (
+                <button
+                  onClick={onRemix}
+                  aria-label="Remix this persona"
+                  title="Remix — copy into your library and make them yours"
+                  style={{ border: "1px solid var(--acc)", background: "var(--acc-dim)", color: "var(--acc)", width: 30, height: 30, borderRadius: "50%", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
+                >
+                  ⑂
+                </button>
+              )}
+              <button onClick={onClose} aria-label="Close" style={{ border: "1px solid var(--ln6)", background: "transparent", color: "var(--t4)", width: 30, height: 30, borderRadius: "50%", cursor: "pointer" }}>×</button>
+            </span>
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 16 }}>
             <span style={kindChip(adversarial)}>{kind}</span>
@@ -169,18 +181,11 @@ export default function PersonaProfile({
           <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t7)" }}>
             {source.toUpperCase()} PERSONA · V{(spec as { version?: number }).version ?? 1} · SYNTHETIC COMPOSITE — NO REAL INDIVIDUAL
           </span>
-          <span style={{ display: "flex", gap: 10 }}>
-            {onRemix && (
-              <button onClick={onRemix} className="btnGhost" style={{ padding: "11px 20px", fontSize: 13.5, borderRadius: 100, cursor: "pointer" }}>
-                ⑂ Remix
-              </button>
-            )}
-            {showChatCta && (
-              <Link href={`/conversations?with=${chatKey}`} className="btnAcc" style={{ padding: "11px 22px", fontSize: 13.5 }}>
-                Start a conversation
-              </Link>
-            )}
-          </span>
+          {showChatCta && (
+            <Link href={`/conversations?with=${chatKey}`} className="btnAcc" style={{ padding: "11px 22px", fontSize: 13.5 }}>
+              Start a conversation
+            </Link>
+          )}
         </div>
       </div>
     </div>
