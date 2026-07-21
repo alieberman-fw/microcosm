@@ -37,10 +37,14 @@ function TraitBar({ name, value }: { name: string; value?: number }) {
  * Conversations roster. Renders whatever fields the spec carries.
  */
 export default function PersonaProfile({
-  kind, spec, chatKey, source, onClose, showChatCta = true,
+  kind, spec, chatKey, source, onClose, showChatCta = true, onRemix, onOpenAncestor,
 }: {
   kind: string; spec: PersonaSpec; chatKey: string; source: string;
   onClose: () => void; showChatCta?: boolean;
+  /** offer a "Remix" action (Agent Library passes this) */
+  onRemix?: () => void;
+  /** make lineage ancestors clickable (opens their profile) */
+  onOpenAncestor?: (key: string) => void;
 }) {
   const d = spec.demographics ?? {};
   const facts: [string, string][] = (
@@ -85,7 +89,31 @@ export default function PersonaProfile({
             <span style={kindChip(adversarial)}>{kind}</span>
             {spec.discipline && <span style={kindChip(false)}>{spec.discipline}</span>}
             {cleanCategory(spec.category) && <span style={kindChip(false)}>{cleanCategory(spec.category)}</span>}
+            {(spec.lineage?.length ?? 0) > 0 && (
+              <span style={{ ...kindChip(false), color: "var(--acc)", borderColor: "var(--acc)", background: "var(--acc-dim)" }}>REMIX</span>
+            )}
           </div>
+          {(spec.lineage?.length ?? 0) > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 12, border: "1px dashed var(--ln4)", borderRadius: 12, padding: "9px 13px" }}>
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t7)" }}>LINEAGE</span>
+              {spec.lineage!.map((a, i) => (
+                <span key={`${a.key}-${i}`} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  {onOpenAncestor ? (
+                    <button
+                      onClick={() => onOpenAncestor(a.key)}
+                      style={{ ...mono, fontSize: 10.5, letterSpacing: ".03em", color: "var(--acc)", background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline", textUnderlineOffset: 3 }}
+                    >
+                      {a.name}
+                    </button>
+                  ) : (
+                    <span style={{ ...mono, fontSize: 10.5, color: "var(--t4)" }}>{a.name}</span>
+                  )}
+                  <span style={{ color: "var(--t7)", fontSize: 11 }}>→</span>
+                </span>
+              ))}
+              <span style={{ ...mono, fontSize: 10.5, fontWeight: 700, color: "var(--t2)" }}>{spec.name}</span>
+            </div>
+          )}
         </div>
 
         {facts.length > 0 && (
@@ -141,11 +169,18 @@ export default function PersonaProfile({
           <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t7)" }}>
             {source.toUpperCase()} PERSONA · V{(spec as { version?: number }).version ?? 1} · SYNTHETIC COMPOSITE — NO REAL INDIVIDUAL
           </span>
-          {showChatCta && (
-            <Link href={`/conversations?with=${chatKey}`} className="btnAcc" style={{ padding: "11px 22px", fontSize: 13.5 }}>
-              Start a conversation
-            </Link>
-          )}
+          <span style={{ display: "flex", gap: 10 }}>
+            {onRemix && (
+              <button onClick={onRemix} className="btnGhost" style={{ padding: "11px 20px", fontSize: 13.5, borderRadius: 100, cursor: "pointer" }}>
+                ⑂ Remix
+              </button>
+            )}
+            {showChatCta && (
+              <Link href={`/conversations?with=${chatKey}`} className="btnAcc" style={{ padding: "11px 22px", fontSize: 13.5 }}>
+                Start a conversation
+              </Link>
+            )}
+          </span>
         </div>
       </div>
     </div>

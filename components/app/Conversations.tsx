@@ -308,7 +308,15 @@ export default function Conversations({
   const [mentionQ, setMentionQ] = useState<string | null>(null);
   const [mentionIx, setMentionIx] = useState(0);
   const pickedMentions = useRef<{ handle: string; key: string }[]>([]);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // composer grows vertically as you type (capped), never scrolls sideways
+  const autosize = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+  };
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(false);
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -470,6 +478,7 @@ export default function Conversations({
     )];
     pickedMentions.current = [];
     setInput(""); setErr(null); setPending([]); setMentionQ(null);
+    requestAnimationFrame(autosize);
     setMessages((m) => [...m, { role: "user", content, attachments: atts }]);
     setBusy(true);
     try {
@@ -864,12 +873,14 @@ export default function Conversations({
                       ))}
                     </div>
                   )}
-                  <input
+                  <textarea
                     ref={inputRef}
                     value={input}
+                    rows={1}
                     onChange={(e) => {
                       const v = e.target.value;
                       setInput(v);
+                      autosize();
                       const caret = e.target.selectionStart ?? v.length;
                       const m = v.slice(0, caret).match(/@([\w]*)$/);
                       if (m) { setMentionQ(m[1]); setMentionIx(0); } else setMentionQ(null);
@@ -881,10 +892,11 @@ export default function Conversations({
                         if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pickMention(mentionMatches[mentionIx]); return; }
                         if (e.key === "Escape") { setMentionQ(null); return; }
                       }
-                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+                      // Enter sends · Shift+Enter adds a line
+                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); requestAnimationFrame(autosize); }
                     }}
                     placeholder={participants.length > 1 ? "Message the group — @name to direct" : `Message ${participants[0]?.name.split(" ")[0] ?? ""}…`}
-                    style={{ width: "100%", boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 12, padding: "13px 16px", fontSize: 14, color: "var(--t1)", outline: "none" }}
+                    style={{ width: "100%", boxSizing: "border-box", display: "block", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 12, padding: "13px 16px", fontSize: 14, lineHeight: 1.5, color: "var(--t1)", outline: "none", resize: "none", overflowY: "auto", maxHeight: 150, fontFamily: "inherit" }}
                     onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
                     onBlur={(e) => { e.currentTarget.style.borderColor = "var(--ln5)"; setTimeout(() => setMentionQ(null), 150); }}
                   />

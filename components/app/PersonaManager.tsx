@@ -4,6 +4,7 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { PersonaSpec } from "@/lib/personas";
 import PersonaProfile, { kindChip, cleanCategory } from "@/components/app/PersonaProfile";
+import PersonaEditor, { EditorSource } from "@/components/app/PersonaEditor";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -133,10 +134,8 @@ export default function PersonaManager({
   const supabase = createClient();
   const [tab, setTab] = useState<"library" | "custom">("library");
   const [custom, setCustom] = useState<CustomPersonaRow[]>(initial);
-  const [creating, setCreating] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [editor, setEditor] = useState<{ mode: "create" | "edit" | "remix"; source?: EditorSource | null } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", role: "", kind: "expert", backstory: "", stances: "" });
 
   const [search, setSearch] = useState("");
   const [libRows, setLibRows] = useState<LibraryRow[]>(library);
@@ -242,30 +241,26 @@ export default function PersonaManager({
       }
     });
 
-  const create = async () => {
-    if (!form.name.trim() || !form.role.trim() || !form.backstory.trim()) {
-      setErr("Name, role, and backstory are required."); return;
-    }
-    setBusy(true); setErr(null);
-    const spec: PersonaSpec = {
-      name: form.name.trim(),
-      initials: form.name.trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase(),
-      role: form.role.trim(),
-      kind: form.kind as PersonaSpec["kind"],
-      backstory: form.backstory.trim(),
-      stances: form.stances.split("\n").map((s) => s.trim()).filter(Boolean),
-    };
-    const { data, error } = await supabase!
-      .from("personas")
-      .insert({ org_id: orgId, kind: spec.kind, spec, source: "manual" })
-      .select("id, kind, spec, source, created_at")
-      .single();
-    setBusy(false);
-    if (error) { setErr(error.message); return; }
-    setCustom([data as CustomPersonaRow, ...custom]);
-    setForm({ name: "", role: "", kind: "expert", backstory: "", stances: "" });
-    setCreating(false);
+  const handleSaved = (row: CustomPersonaRow) => {
+    setCustom((cs) => {
+      const ix = cs.findIndex((c) => c.id === row.id);
+      if (ix >= 0) { const next = [...cs]; next[ix] = row; return next; }
+      return [row, ...cs];
+    });
+    setEditor(null);
+    setProfile(null);
     setTab("custom");
+  };
+
+  // lineage ancestors are clickable — open their profile (library or custom)
+  const openAncestor = async (key: string) => {
+    if (!/^[0-9a-f-]{36}$/i.test(key)) return;
+    const { data } = await supabase!.from("personas").select("id, kind, spec, source").eq("id", key).maybeSingle();
+    if (data) {
+      setProfile({ kind: data.kind as string, spec: data.spec as PersonaSpec, chatKey: data.id as string, source: (data.source as string) === "library" ? "library" : "custom" });
+    } else {
+      setErr("That ancestor is no longer in the library.");
+    }
   };
 
   const remove = async (id: string) => {
@@ -285,7 +280,7 @@ export default function PersonaManager({
             {libraryCount.toLocaleString()} synthetic experts, consumers, residents, and stakeholders across the built world — each with a real career, real demographics, and real opinions. Search in plain language: a problem (&ldquo;looking to build a data center&rdquo;) or a person (&ldquo;under 40 homeowner&rdquo;).
           </p>
         </div>
-        <button onClick={() => { setCreating(true); setErr(null); }} className="btnAcc" style={{ padding: "11px 22px", fontSize: 14 }}>
+        <button onClick={() => { setEditor({ mode: "create" }); setErr(null); }} className="btnAcc" style={{ padding: "11px 22px", fontSize: 14 }}>
           + New persona
         </button>
       </div>
@@ -421,11 +416,16 @@ export default function PersonaManager({
               onClick={() => setProfile({ kind: c.kind, spec: c.spec, chatKey: c.id, source: "custom" })}
               style={{ padding: "24px 26px", display: "flex", flexDirection: "column", gap: 10, cursor: "pointer" }}
             >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ ...mono, width: 38, height: 38, borderRadius: "50%", background: "var(--acc-dim)", border: "1px solid var(--acc)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--acc)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ ...mono, width: 38, height: 38, borderRadius: "50%", background: "var(--acc-dim)", border: "1px solid var(--acc)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--acc)", flex: "none" }}>
                   {c.spec.initials}
                 </span>
-                <span style={kindChip(false)}>{c.kind}</span>
+                <span style={{ display: "flex", gap: 5 }}>
+                  {(c.spec.lineage?.length ?? 0) > 0 && (
+                    <span style={{ ...kindChip(false), color: "var(--acc)", borderColor: "var(--acc)", background: "var(--acc-dim)" }}>⑂ REMIX</span>
+                  )}
+                  <span style={kindChip(false)}>{c.kind}</span>
+                </span>
               </div>
               <div>
                 <h3 style={{ margin: 0, fontSize: 16.5, fontWeight: 600 }}>{c.spec.name}</h3>
@@ -434,14 +434,22 @@ export default function PersonaManager({
               <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: "var(--t6)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                 {c.spec.backstory}
               </p>
-              <div style={{ marginTop: "auto", paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ marginTop: "auto", paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <span style={{ ...mono, fontSize: 10.5, letterSpacing: ".06em", color: "var(--acc)" }}>VIEW PROFILE →</span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); remove(c.id); }}
-                  style={{ ...mono, background: "none", border: "none", cursor: "pointer", fontSize: 10, letterSpacing: ".05em", color: "var(--t7)" }}
-                >
-                  DELETE
-                </button>
+                <span style={{ display: "flex", gap: 12 }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditor({ mode: "edit", source: { id: c.id, kind: c.kind, spec: c.spec } }); }}
+                    style={{ ...mono, background: "none", border: "none", cursor: "pointer", fontSize: 10, letterSpacing: ".05em", color: "var(--t5)" }}
+                  >
+                    EDIT
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); remove(c.id); }}
+                    style={{ ...mono, background: "none", border: "none", cursor: "pointer", fontSize: 10, letterSpacing: ".05em", color: "var(--t7)" }}
+                  >
+                    DELETE
+                  </button>
+                </span>
               </div>
             </div>
           ))}
@@ -469,58 +477,23 @@ export default function PersonaManager({
         </div>
       )}
 
-      {profile && <PersonaProfile {...profile} onClose={() => setProfile(null)} />}
+      {profile && (
+        <PersonaProfile
+          {...profile}
+          onClose={() => setProfile(null)}
+          onRemix={() => setEditor({ mode: "remix", source: { key: profile.chatKey, kind: profile.kind, spec: profile.spec } })}
+          onOpenAncestor={openAncestor}
+        />
+      )}
 
-      {/* create dialog */}
-      {creating && (
-        <div
-          onClick={() => setCreating(false)}
-          style={{ position: "fixed", inset: 0, zIndex: 90, background: "rgba(10,11,12,.66)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            role="dialog" aria-modal="true"
-            style={{ background: "var(--sf)", border: "1px solid var(--ln5)", borderRadius: 18, maxWidth: 560, width: "100%", maxHeight: "88vh", overflowY: "auto", padding: "30px 32px", animation: "fadeUp .25s ease both" }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>New persona</h3>
-              <button onClick={() => setCreating(false)} aria-label="Close" style={{ border: "1px solid var(--ln6)", background: "transparent", color: "var(--t4)", width: 30, height: 30, borderRadius: "50%", cursor: "pointer" }}>×</button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 22 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div>
-                  <label style={label}>Name</label>
-                  <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Dana K." style={inputStyle} />
-                </div>
-                <div>
-                  <label style={label}>Kind</label>
-                  <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })} style={{ ...inputStyle, appearance: "none" }}>
-                    <option value="expert">Expert</option>
-                    <option value="consumer">Consumer</option>
-                    <option value="resident">Resident</option>
-                    <option value="stakeholder">Stakeholder</option>
-                    <option value="adversarial">Adversarial</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label style={label}>Role</label>
-                <input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="Land-use attorney, 20 yrs in Maricopa County" style={inputStyle} />
-              </div>
-              <div>
-                <label style={label}>Backstory</label>
-                <textarea value={form.backstory} onChange={(e) => setForm({ ...form, backstory: e.target.value })} rows={5} placeholder="Their career, what they've seen work and fail, what they optimize for…" style={{ ...inputStyle, borderRadius: 12, resize: "vertical" }} />
-              </div>
-              <div>
-                <label style={label}>Stances — one per line</label>
-                <textarea value={form.stances} onChange={(e) => setForm({ ...form, stances: e.target.value })} rows={3} placeholder={"Distrusts unpriced entitlement risk\nBelieves comps beat models"} style={{ ...inputStyle, borderRadius: 12, resize: "vertical" }} />
-              </div>
-              <button onClick={create} disabled={busy} className="btnAcc" style={{ padding: "12px 24px", fontSize: 14.5, opacity: busy ? 0.6 : 1 }}>
-                {busy ? "Creating…" : "Create persona"}
-              </button>
-            </div>
-          </div>
-        </div>
+      {editor && (
+        <PersonaEditor
+          orgId={orgId}
+          mode={editor.mode}
+          source={editor.source}
+          onClose={() => setEditor(null)}
+          onSaved={(row) => handleSaved(row as CustomPersonaRow)}
+        />
       )}
     </div>
   );
