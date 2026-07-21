@@ -157,6 +157,7 @@ Manual creation and editing: the user writes (or dictates) role, backstory, stan
 
 - Every persona (and every **Persona Set** — a saved panel composition like "Phoenix data-center diligence panel") is versioned and org-scoped.
 - Users can favorite, fork, and re-run personas across simulations. Reuse is the retention loop.
+- **Office Hours (direct consultation — shipped early).** Any library or custom persona can be consulted outside a simulation: a 1:1 chat grounded in the persona's compiled system prompt (§6.1), running on the expert-tier model (§6.4). Phase 2 adds **group sessions** — several personas plus the user in one thread with @mentions, on the same InteractiveGroupChat machinery as Take the Floor. Office Hours is the lightest product surface (no run, no report — just the expert) and the cheapest daily-retention hook. POC conversations are ephemeral; persistence arrives with simulation history.
 
 ### 3.5 Marketplace (Phase 3) — our own, first-party
 
