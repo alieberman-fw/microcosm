@@ -104,7 +104,7 @@ function AuthForm() {
         disabled={busy}
         style={{
           marginTop: 26, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-          background: "var(--t0)", color: "#1a1c1e", border: "none", borderRadius: 12,
+          background: "var(--t0)", color: "var(--bg)", border: "none", borderRadius: 12,
           padding: "14px 16px", fontSize: 14.5, fontWeight: 600, cursor: "pointer",
           opacity: busy ? 0.6 : 1,
         }}
