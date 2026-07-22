@@ -12,7 +12,7 @@ export default async function HomePage() {
     .from("users").select("org_id, prefs").eq("id", user!.id).single();
   const prefs = (userRow?.prefs ?? {}) as { hide_onboarding?: boolean };
 
-  const [{ data: convRows }, { data: personaRows }, { data: searchHit }, { data: attachHit }] = await Promise.all([
+  const [{ data: convRows }, { data: personaRows }, { data: searchHit }, { data: attachHit }, { data: simHit }] = await Promise.all([
     supabase!
       .from("conversations")
       .select("id, title, participant_keys, updated_at, conversation_messages(count)")
@@ -34,6 +34,10 @@ export default async function HomePage() {
       .select("id")
       .neq("attachments", "[]")
       .limit(1),
+    supabase!
+      .from("simulations")
+      .select("id")
+      .limit(1),
   ]);
 
   const convs = (convRows ?? []).map((c) => ({
@@ -50,6 +54,7 @@ export default async function HomePage() {
     persona: (personaRows ?? []).length > 0,
     search: (searchHit ?? []).length > 0,
     attachment: (attachHit ?? []).length > 0,
+    simulate: (simHit ?? []).length > 0,
   };
 
   return (

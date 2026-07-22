@@ -34,6 +34,7 @@ export interface ChecklistState {
   persona: boolean;
   search: boolean;
   attachment: boolean;
+  simulate: boolean;
 }
 
 function timeAgo(ts: string) {
@@ -44,13 +45,13 @@ function timeAgo(ts: string) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-const STEPS: { key: keyof ChecklistState | "simulate"; title: string; desc: string; href: string; cta: string; soon?: boolean }[] = [
+const STEPS: { key: keyof ChecklistState; title: string; desc: string; href: string; cta: string; soon?: boolean }[] = [
   { key: "conversation", title: "Start your first conversation", desc: "Open a direct line to any of 1,800+ built-world personas.", href: "/conversations/new", cta: "BUILD THE ROOM →" },
   { key: "search", title: "Search the library in plain language", desc: "Try “looking to build a data center” or “under 40 homeowner”.", href: "/personas", cta: "OPEN LIBRARY →" },
   { key: "group", title: "Assemble a group chat", desc: "Put a lender, an engineer, and a skeptic in one room — direct with @mentions.", href: "/conversations/new", cta: "PICK A PANEL →" },
   { key: "persona", title: "Create or remix a persona", desc: "Remix any library expert into your own, or write one from scratch.", href: "/personas", cta: "REMIX SOMEONE →" },
   { key: "attachment", title: "Attach a plan or PDF", desc: "Drop a site plan into a chat — experts analyze the actual file.", href: "/conversations", cta: "OPEN A CHAT →" },
-  { key: "simulate", title: "Run your first simulation", desc: "Brief → cast → deliberation → decision-grade report.", href: "/sim/demo", cta: "WATCH THE DEMO RUN →", soon: true },
+  { key: "simulate", title: "Open your first simulation brief", desc: "State the problem, attach the diligence docs, and get cited answers from the corpus.", href: "/sim/new", cta: "OPEN THE BRIEF COMPOSER →" },
 ];
 
 function QuickAction({ href, title, sub }: { href: string; title: string; sub: string }) {
@@ -99,8 +100,8 @@ export default function HomeClient({
       <div className="grid4" style={{ marginTop: 30 }}>
         <QuickAction href="/conversations/new" title="New conversation" sub="1:1 OR A ROOM OF 20" />
         <QuickAction href="/personas" title="Browse the library" sub="1,800+ PERSONAS" />
-        <QuickAction href="/personas" title="Create a persona" sub="WRITE OR REMIX" />
-        <QuickAction href="/sim/demo" title="Watch a simulation" sub="SITE 47-A REPLAY" />
+        <QuickAction href="/sim/new" title="Start a simulation" sub="BRIEF → CORPUS → CITED ANSWERS" />
+        <QuickAction href="/sim/demo" title="Watch the demo run" sub="SITE 47-A REPLAY" />
       </div>
 
       {/* getting-started checklist */}
@@ -108,18 +109,18 @@ export default function HomeClient({
         <div className="card" style={{ marginTop: 26, padding: "26px 28px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div style={{ ...mono, fontSize: 10, letterSpacing: ".12em", color: "var(--acc)" }}>
-              GETTING STARTED · {doneCount}/{STEPS.length - 1}
+              GETTING STARTED · {doneCount}/{STEPS.length}
             </div>
             <button onClick={clearChecklist} style={{ ...mono, fontSize: 9, letterSpacing: ".08em", background: "none", border: "none", color: "var(--t7)", cursor: "pointer" }}>
               CLEAR — RE-ENABLE IN SETTINGS
             </button>
           </div>
           <div style={{ height: 6, borderRadius: 100, background: "var(--sf2)", overflow: "hidden", marginTop: 14 }}>
-            <div style={{ height: "100%", width: `${(doneCount / (STEPS.length - 1)) * 100}%`, borderRadius: 100, background: "var(--acc)", transformOrigin: "left", animation: "grow .6s ease both" }} />
+            <div style={{ height: "100%", width: `${(doneCount / STEPS.length) * 100}%`, borderRadius: 100, background: "var(--acc)", transformOrigin: "left", animation: "grow .6s ease both" }} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", marginTop: 8 }}>
             {STEPS.map((s) => {
-              const done = s.key !== "simulate" && checklist[s.key];
+              const done = checklist[s.key];
               return (
                 <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 0", borderBottom: "1px solid var(--ln2)" }}>
                   <span style={{ width: 20, height: 20, borderRadius: "50%", flex: "none", border: `1px solid ${done ? "var(--acc)" : "var(--ln6)"}`, background: done ? "var(--acc)" : "transparent", color: "var(--acc-c)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>
