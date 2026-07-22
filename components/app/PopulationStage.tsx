@@ -13,7 +13,10 @@
 import { CSSProperties, useState } from "react";
 import { useRouter } from "next/navigation";
 import PersonaProfile from "@/components/app/PersonaProfile";
-import { FrozenSpec } from "@/lib/casting";
+import CastingTheater from "@/components/app/CastingTheater";
+import SeatPicker from "@/components/app/SeatPicker";
+import { FrozenSpec, MAX_SEATS } from "@/lib/casting";
+import { PersonaSpec } from "@/lib/personas";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -55,15 +58,18 @@ export default function PopulationStage({
   const [pending, setPending] = useState<PendingSeat[]>([]);
   const [castingInfo, setCastingInfo] = useState<CastingInfo | null>(initialCasting);
   const [casting, setCasting] = useState(false);
+  const [planReady, setPlanReady] = useState(false); // plan arrived → theater gives way to cards
   const [guidance, setGuidance] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<WorkspaceSeat | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const setCount = (list: WorkspaceSeat[]) => onCountChange?.(list.length);
 
   const cast = async () => {
     if (casting) return;
     setCasting(true);
+    setPlanReady(false);
     setError(null);
     setSeats([]);
     setCount([]);
@@ -88,6 +94,7 @@ export default function PopulationStage({
           const p = evt as unknown as CastingInfo & { seats: PendingSeat[] };
           setCastingInfo({ composition: p.composition, rationale: p.rationale, scale: p.scale, mode: p.mode, modeRationale: p.modeRationale });
           setPending((p.seats ?? []).map((s) => ({ key: s.key, role: s.role, discipline: s.discipline, kind: s.kind })));
+          setPlanReady(true); // swap the theater for the resolving card grid
         } else if (evt.type === "seat") {
           const key = String(evt.key);
           if (evt.provenance === "failed" || !evt.spec) {
@@ -133,11 +140,22 @@ export default function PopulationStage({
     await fetch(`/api/simulations/${simId}/agents/${encodeURIComponent(key)}`, { method: "DELETE" });
   };
 
+  const onAdded = (added: { key: string; provenance: "yours" | "library"; spec: PersonaSpec & { seat?: unknown } }[]) => {
+    setSeats((prev) => {
+      const next = [...prev, ...added.map((a) => ({ key: a.key, provenance: a.provenance, spec: a.spec as FrozenSpec }))];
+      setCount(next);
+      return next;
+    });
+    router.refresh();
+  };
+
   const label: CSSProperties = { ...mono, fontSize: 11, letterSpacing: ".1em", color: "var(--t6)" };
   const hasCast = seats.length > 0 || pending.length > 0;
+  const showTheater = casting && !planReady;
+  const remaining = Math.max(0, MAX_SEATS - seats.length);
 
   return (
-    <div className="card" style={{ padding: "26px 30px", marginTop: 20 }}>
+    <div id="stage-population" className="card" style={{ padding: "26px 30px", marginTop: 20, scrollMarginTop: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
         <div style={label}>
           THE POPULATION{seats.length > 0 && ` · ${seats.length} LEAD${seats.length > 1 ? "S" : ""}`}
@@ -161,27 +179,50 @@ export default function PopulationStage({
         </p>
       )}
 
+      {/* pre-cast: choose how to build the panel */}
       {!hasCast && !casting && (
-        <div style={{ marginTop: 18 }}>
-          <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.65, color: "var(--t5)", maxWidth: 680 }}>
-            The Casting Director reads your brief and documents, drafts the seats the problem needs,
-            fills them from your personas and the 1,800-strong library, and generates only the true
-            gaps — every panel gets at least one seeded skeptic. Everything is editable after.
-          </p>
-          <button
-            onClick={() => void cast()}
-            style={{
-              marginTop: 18, background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600,
-              fontSize: 14.5, padding: "13px 28px", borderRadius: 100, border: "none", cursor: "pointer",
-              fontFamily: "var(--font-sans), sans-serif",
-            }}
-          >
-            Cast the population →
-          </button>
+        <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
+          <div className="card" style={{ padding: "22px 24px", border: "1px solid var(--acc)", background: "var(--acc-dim)" }}>
+            <div style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: "var(--acc)" }}>✦ AUTO-CAST</div>
+            <p style={{ margin: "10px 0 0", fontSize: 13, lineHeight: 1.6, color: "var(--t4)" }}>
+              The Casting Director reads your brief and documents, drafts the seats the problem needs,
+              fills them from your personas and the 1,800-strong library, generates only the true gaps,
+              and seeds a skeptic. Editable after.
+            </p>
+            <button
+              onClick={() => void cast()}
+              style={{
+                marginTop: 16, background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600,
+                fontSize: 14, padding: "12px 24px", borderRadius: 100, border: "none", cursor: "pointer",
+                fontFamily: "var(--font-sans), sans-serif",
+              }}
+            >
+              Cast the population →
+            </button>
+          </div>
+          <div className="card" style={{ padding: "22px 24px" }}>
+            <div style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: "var(--t5)" }}>✎ HAND-PICK</div>
+            <p style={{ margin: "10px 0 0", fontSize: 13, lineHeight: 1.6, color: "var(--t5)" }}>
+              Know exactly who you want in the room? Assemble the panel yourself from your personas and
+              the library — no AI, no tokens spent. You can still auto-cast or add more later.
+            </p>
+            <button
+              onClick={() => setPickerOpen(true)}
+              style={{
+                marginTop: 16, background: "transparent", color: "var(--t2)", fontWeight: 600,
+                fontSize: 14, padding: "12px 24px", borderRadius: 100, border: "1px solid var(--ln7)", cursor: "pointer",
+                fontFamily: "var(--font-sans), sans-serif",
+              }}
+            >
+              Pick from the library →
+            </button>
+          </div>
         </div>
       )}
 
-      {(hasCast || casting) && (
+      {showTheater && <CastingTheater />}
+
+      {(hasCast || (casting && planReady)) && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))", gap: 14, marginTop: 20 }}>
           {seats.map((s) => {
             const adversarial = s.spec.seat?.adversarial || s.spec.kind === "adversarial";
@@ -251,7 +292,7 @@ export default function PopulationStage({
             placeholder="Re-cast with guidance — “more first-time buyers; add a school-board voice”"
             maxLength={500}
             style={{
-              flex: 1, minWidth: 260, padding: "11px 16px", background: "var(--sf2)",
+              flex: 1, minWidth: 220, padding: "11px 16px", background: "var(--sf2)",
               border: "1px solid var(--ln3)", borderRadius: 100,
               fontFamily: "var(--font-sans), sans-serif", fontSize: 13, color: "var(--t1)", outline: "none",
             }}
@@ -265,7 +306,27 @@ export default function PopulationStage({
           >
             RE-CAST
           </button>
+          <button
+            onClick={() => setPickerOpen(true)}
+            disabled={remaining === 0}
+            style={{
+              ...mono, fontSize: 10.5, letterSpacing: ".06em", padding: "11px 20px", borderRadius: 100,
+              background: "transparent", border: "1px solid var(--ln7)", color: remaining ? "var(--acc)" : "var(--t7)",
+              cursor: remaining ? "pointer" : "default",
+            }}
+          >
+            + ADD FROM LIBRARY
+          </button>
         </div>
+      )}
+
+      {pickerOpen && (
+        <SeatPicker
+          simId={simId}
+          remaining={remaining || MAX_SEATS}
+          onClose={() => setPickerOpen(false)}
+          onAdded={onAdded}
+        />
       )}
 
       {profile && (

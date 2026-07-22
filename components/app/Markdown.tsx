@@ -1,10 +1,12 @@
 "use client";
 
 /**
- * Minimal markdown renderer for chat bubbles: **bold**, *italics*, `code`,
- * ### headers, bullet/numbered lists, paragraphs — rendered as React elements
- * (no HTML injection), no dependencies. Also highlights @mentions of the
- * room's participants in accent.
+ * Minimal markdown renderer for chat bubbles and corpus answers: **bold**,
+ * *italics*, `code`, ### headers, bullet/numbered lists, GFM tables,
+ * paragraphs — rendered as React elements (no HTML injection), no
+ * dependencies. Also highlights @mentions of the room's participants.
+ * Tables follow the design system's .mtable grammar: mono uppercase header,
+ * --ln2 row borders, horizontal scroll on overflow.
  */
 
 import { CSSProperties, Fragment, ReactNode } from "react";
@@ -56,7 +58,13 @@ export default function Markdown({ text, mentions = [] }: { text: string; mentio
   const blocks: ReactNode[] = [];
   let para: string[] = [];
   let list: { ordered: boolean; items: ReactNode[] } | null = null;
+  let table: string[][] | null = null;
   let key = 0;
+
+  const splitRow = (line: string) =>
+    line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+  const isSeparatorRow = (line: string) =>
+    /^\s*\|?\s*:?-{2,}/.test(line) && /^[\s|:\-]+$/.test(line);
 
   const flushPara = () => {
     if (!para.length) return;
@@ -77,11 +85,65 @@ export default function Markdown({ text, mentions = [] }: { text: string; mentio
     );
     list = null;
   };
+  const flushTable = () => {
+    if (!table || table.length === 0) return;
+    const [head, ...rows] = table;
+    blocks.push(
+      <div key={key++} style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.95em" }}>
+          <thead>
+            <tr>
+              {head.map((c, ci) => (
+                <th
+                  key={ci}
+                  style={{
+                    ...mono, fontSize: "0.72em", letterSpacing: ".08em", textTransform: "uppercase",
+                    color: "var(--t6)", textAlign: "left", padding: "7px 14px 7px 0",
+                    borderBottom: "1px solid var(--ln4)", whiteSpace: "nowrap",
+                  }}
+                >
+                  {inline(c, mentionPat, `th${ci}`)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri}>
+                {row.map((c, ci) => (
+                  <td
+                    key={ci}
+                    style={{
+                      padding: "8px 14px 8px 0", borderBottom: "1px solid var(--ln2)",
+                      verticalAlign: "top", fontWeight: ci === 0 ? 600 : 400,
+                      color: ci === 0 ? "var(--t1)" : undefined, lineHeight: 1.5,
+                    }}
+                  >
+                    {inline(c, mentionPat, `td${ri}.${ci}`)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+    table = null;
+  };
 
   text.split("\n").forEach((line, i) => {
     const h = line.match(/^(#{1,4})\s+(.+)$/);
     const ul = line.match(/^\s*[-•]\s+(.+)$/) ?? line.match(/^\s*\*\s+(.+)$/);
     const ol = line.match(/^\s*(\d{1,2})[.)]\s+(.+)$/);
+    const isTableRow = /^\s*\|.*\|\s*$/.test(line) || (table !== null && line.includes("|") && line.trim() !== "");
+    if (isTableRow) {
+      flushPara(); flushList();
+      if (isSeparatorRow(line)) return; // the |---|---| divider
+      if (!table) table = [];
+      table.push(splitRow(line));
+      return;
+    }
+    flushTable();
     if (h) {
       flushPara(); flushList();
       blocks.push(
@@ -100,13 +162,15 @@ export default function Markdown({ text, mentions = [] }: { text: string; mentio
       // the <ol> — this keeps 1, 2, 3 instead of restarting at 1
       list.items.push(<li key={i} value={Number(ol[1])}>{inline(ol[2], mentionPat, `l${i}`)}</li>);
     } else if (line.trim() === "") {
+      // blank lines end paragraphs/lists but NOT an open table — models often
+      // blank-line between table rows, which would shatter one table into many
       flushPara(); flushList();
     } else {
       flushList();
       para.push(line);
     }
   });
-  flushPara(); flushList();
+  flushPara(); flushList(); flushTable();
 
   return <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{blocks}</div>;
 }

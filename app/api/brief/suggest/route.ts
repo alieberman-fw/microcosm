@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { BRIEF_SUGGEST_MODEL, DECISION_SHAPES, normalizeQuestions } from "@/lib/corpus";
+import { parseLooseObject } from "@/lib/llm-json";
 
 /**
  * Brief composer assist (CLAUDE.md §2 Stage 1): one lightweight pass over the
@@ -34,26 +35,6 @@ export async function POST(request: Request) {
   const anthropic = new Anthropic();
   const t0 = Date.now();
 
-  /** truncated-output salvage: close the questions array at the last complete
-   * object and re-parse, so an over-long response degrades to fewer chips
-   * instead of a failure */
-  const parseLoose = (raw: string): Record<string, unknown> | null => {
-    const start = raw.indexOf("{");
-    if (start === -1) return null;
-    const body = raw.slice(start, raw.lastIndexOf("}") + 1 || undefined);
-    try {
-      return JSON.parse(body);
-    } catch {
-      const lastComplete = body.lastIndexOf("},");
-      if (lastComplete === -1) return null;
-      try {
-        return JSON.parse(`${body.slice(0, lastComplete + 1)}]}`);
-      } catch {
-        return null;
-      }
-    }
-  };
-
   try {
     // one retry: a rare malformed/truncated response shouldn't surface to the user
     let parsed: Record<string, unknown> = {};
@@ -79,7 +60,7 @@ export async function POST(request: Request) {
         });
       }
       const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-      const attempt = parseLoose(text);
+      const attempt = parseLooseObject(text);
       if (attempt && Array.isArray(attempt.questions) && attempt.questions.length) {
         parsed = attempt;
         break;
