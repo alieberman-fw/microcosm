@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { normalizeQuestions, BriefQuestion } from "@/lib/corpus";
+import { normalizeQuestions, normalizeSuccess, BriefQuestion } from "@/lib/corpus";
 
 /**
  * Create a simulation from the brief composer (CLAUDE.md §2 Stage 1).
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  let body: { problem?: string; questions?: BriefQuestion[]; template?: string; success?: string };
+  let body: { problem?: string; questions?: BriefQuestion[]; template?: string; success?: string[] };
   try {
     body = await request.json();
   } catch {
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   }
   const questions = normalizeQuestions(body.questions);
   const template = (body.template ?? "Custom").slice(0, 60);
-  const success = (body.success ?? "").trim().slice(0, 2000);
+  const success = normalizeSuccess(body.success);
 
   const { data: userRow } = await supabase.from("users").select("org_id").eq("id", user.id).single();
   if (!userRow) return NextResponse.json({ error: "No org" }, { status: 400 });

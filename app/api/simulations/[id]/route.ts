@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { normalizeQuestions, BriefQuestion } from "@/lib/corpus";
+import { normalizeQuestions, normalizeSuccess, BriefQuestion } from "@/lib/corpus";
 
 /** Update a simulation's brief (inline edits on /sim/[id]). */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -10,7 +10,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  let body: { problem?: string; questions?: BriefQuestion[]; template?: string; success?: string };
+  let body: { problem?: string; questions?: BriefQuestion[]; template?: string; success?: string[] };
   try {
     body = await request.json();
   } catch {
@@ -24,7 +24,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     problem,
     questions: normalizeQuestions(body.questions),
     template: (body.template ?? "Custom").slice(0, 60),
-    success: (body.success ?? "").trim().slice(0, 2000),
+    success: normalizeSuccess(body.success),
   };
 
   const { data, error } = await supabase

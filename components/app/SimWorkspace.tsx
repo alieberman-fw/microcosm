@@ -177,7 +177,7 @@ export default function SimWorkspace({
             </button>
           </div>
           <div style={{ ...mono, fontSize: 10.5, letterSpacing: ".07em", color: "var(--t6)", marginTop: 14 }}>
-            {brief.template?.toUpperCase() ?? "CUSTOM"} · CREATED {new Date(sim.created_at).toLocaleDateString()} · {sim.status.toUpperCase()}
+            CREATED {new Date(sim.created_at).toLocaleDateString()} · {sim.status.toUpperCase()}
           </div>
           {brief.questions?.length > 0 && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
@@ -192,11 +192,18 @@ export default function SimWorkspace({
               ))}
             </div>
           )}
-          {brief.success && (
-            <p style={{ margin: "16px 0 0", fontSize: 13.5, lineHeight: 1.65, color: "var(--t5)", maxWidth: 720 }}>
-              <span style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)" }}>SUCCESS · </span>
-              {brief.success}
-            </p>
+          {brief.success.length > 0 && (
+            <div style={{ marginTop: 18, maxWidth: 720 }}>
+              <div style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)" }}>SUCCESS CRITERIA</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 9 }}>
+                {brief.success.map((s) => (
+                  <div key={s} style={{ display: "flex", alignItems: "baseline", gap: 11 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: 1, background: "var(--acc)", transform: "rotate(45deg)", flex: "none", position: "relative", top: -1 }} />
+                    <span style={{ fontSize: 13, lineHeight: 1.55, color: "var(--t4)" }}>{s}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}

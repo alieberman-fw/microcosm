@@ -80,9 +80,10 @@ export function chunkText(text: string, target = 4200, overlap = 300): string[] 
 }
 
 /**
- * Decision shapes — inferred from the brief by the suggest pass (user can
- * override), never a required form field. The shape picks the report's lead
- * visual (verdict chip vs price band vs approval odds); report *sections*
+ * Decision shapes — a purely INTERNAL classification. The suggest pass
+ * stores one in brief.template; nothing in the UI asks the user to pick or
+ * confirm it. Downstream it seeds the report's lead visual (verdict chip vs
+ * price band vs approval odds) and casting defaults; report *sections*
  * always come from the questions-to-resolve + success criteria.
  */
 export const DECISION_SHAPES = [
@@ -98,10 +99,13 @@ export const DECISION_SHAPES = [
 ] as const;
 
 /** A question-to-resolve: the chip label plus an optional one-line framing.
- * Each question becomes a required section of the final report. */
+ * Each question becomes a required section of the final report. `ai` marks
+ * suggest-pass chips so a re-suggest replaces them without touching the
+ * user's own additions. */
 export interface BriefQuestion {
   label: string;
   detail?: string;
+  ai?: boolean;
 }
 
 /** Accepts legacy string[] chips and loose LLM output alike. */
@@ -112,15 +116,32 @@ export function normalizeQuestions(raw: unknown): BriefQuestion[] {
     if (typeof item === "string" && item.trim()) {
       out.push({ label: item.trim().toUpperCase().slice(0, 40) });
     } else if (item && typeof item === "object" && typeof (item as { label?: unknown }).label === "string") {
-      const o = item as { label: string; detail?: unknown };
+      const o = item as { label: string; detail?: unknown; ai?: unknown };
       const label = o.label.trim().toUpperCase().slice(0, 40);
       if (!label) continue;
       const detail = typeof o.detail === "string" ? o.detail.trim().slice(0, 140) : "";
-      out.push(detail ? { label, detail } : { label });
+      const q: BriefQuestion = { label };
+      if (detail) q.detail = detail;
+      if (o.ai === true) q.ai = true;
+      out.push(q);
     }
     if (out.length >= 12) break;
   }
   return out;
+}
+
+/** Success criteria — a bulleted list. Accepts the legacy free-text string
+ * (split on newlines / leading bullet glyphs) and loose arrays alike. */
+export function normalizeSuccess(raw: unknown): string[] {
+  const items: string[] = [];
+  const push = (s: unknown) => {
+    if (typeof s !== "string") return;
+    const clean = s.replace(/^[\s•\-–—*✓◆]+/, "").trim().slice(0, 200);
+    if (clean && !items.includes(clean)) items.push(clean);
+  };
+  if (typeof raw === "string") raw.split(/\n+/).forEach(push);
+  else if (Array.isArray(raw)) raw.forEach(push);
+  return items.slice(0, 8);
 }
 
 /**

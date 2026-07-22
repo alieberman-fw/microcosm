@@ -43,9 +43,9 @@ The user states the research problem and what they want answered.
 
 - **Problem statement** — free text, one clear question ("Is ±212 acres at Signal Butte & Pecos suitable for a 300MW data center campus?")
 - **Questions to resolve** — chips (the demo's "POWER TIMELINE / WATER STRATEGY / …") each carrying a one-line framing ("POWER TIMELINE — can 300MW interconnect inside 36 months?"). Auto-suggested by an LLM pass over the problem statement; user can add/remove/edit. Each question becomes a required section of the final report — report structure is always composed from these + the success criteria, never from a fixed template.
-- **Decision shape** (inferred, editable — never a required form field): Site go/no-go · Land & parcel valuation · Product & floor-plan mix · Pricing & absorption · Lease-up & amenity test · Entitlement rehearsal · Policy impact · Investment memo · Custom. The suggest pass classifies the brief and surfaces it as a "READS AS · …" hint the user can override. The shape picks the report's **lead visual** (verdict chip vs price band vs approval odds) and seeds casting defaults; it does not dictate sections.
+- **Decision shape** (fully internal — no UI control of any kind): Site go/no-go · Land & parcel valuation · Product & floor-plan mix · Pricing & absorption · Lease-up & amenity test · Entitlement rehearsal · Policy impact · Investment memo · Custom. The suggest pass classifies the brief silently into `brief.template`; the user never picks, confirms, or sees it. Downstream it seeds the report's **lead visual** (verdict chip vs price band vs approval odds) and casting defaults — and because the report engine re-reads the full brief at synthesis time, a wrong silent classification self-corrects with zero user cost. Report sections are always composed from the questions-to-resolve + success criteria.
 - **Flagship use case — land & parcel valuation** ("is this parcel worth $X / what's a fair price?"): agents don't replace AVMs — they do what an appraiser + IC do: triangulate sales comparison, residual land value (end value − build cost − profit), income capitalization, and highest-and-best-use, argue the adjustments, and deliver a defended price *range* with tripwires and preserved dissent. Grounding layers stack: v1 = user-uploaded comp packages/OMs/appraisals via the corpus (citations built in); Phase 2 = free public tools (parcel/assessor, Census, FRED, HUD, FEMA); Phase 3 = commercial comps/AVM feeds (ATTOM/CoreLogic/CoStar/AcreValue-class) treated as *inputs to argue with*, not ground truth. The `outcomes` table records actual trades for calibration — the valuation moat.
-- **Success criteria** — what a "decision-grade" answer looks like to this user (feeds the report synthesizer).
+- **Success criteria** — a bulleted list (type + Enter per criterion) of what a "decision-grade" answer must deliver; the report synthesizer is held to every bullet.
 
 ### Stage 2 — Corpus (documents & data)
 
@@ -302,6 +302,19 @@ We build on **[swarms](https://github.com/kyegomez/swarms)** (Apache-2.0, `pip i
 | **Jury** | `MixtureOfAgents` | Parallel independent verdicts, scored and aggregated (fast, cheap first pass) | [mixture-of-agents](https://docs.swarms.ai/docs/examples/examples/mixture-of-agents) |
 | **Desk** | `HierarchicalSwarm` (director + workers) | Research-desk memo output; the swarms real-estate example is our template (~$0.20, ~60s per memo) | [real-estate-investment-memo](https://docs.swarms.ai/docs/examples/examples/real-estate-investment-memo) |
 | **Expedition** | `HeavySwarm` (auto 5-phase: questions → research → analysis → alternatives → verification → synthesis) | Autonomous deep research; pre-simulation background packs | [heavy-swarm](https://docs.swarms.ai/docs/examples/examples/heavy-swarm) |
+
+**Mode picker & per-mode live visual grammar (committed design — ships with the run-config + engine work):**
+The mode picker is not a dropdown: each of the seven modes gets a card with a small **looping animated diagram** (canvas/SVG in our tokens — dots for agents, accent pulses for messages) that *shows* the choreography before the user picks it, plus a one-line "use when". The same diagrams double as legends on the live run screen. One visual language (the demo's node/pulse grammar), seven choreographies — the live view keeps the canvas-left / feed-right layout, but the canvas arrangement and feed structure change per mode:
+
+| Mode | Live canvas choreography | Feed structure |
+|---|---|---|
+| **Agora** | The demo as-is: discipline clusters, crisscross pulses, residents on the outer ring | Threaded forum, burst rollups |
+| **Roundtable** | Nodes in a circle; a "talking stick" highlight orbits in order, pulses travel the ring | Turns grouped by round, every voice each cycle |
+| **Tribunal** | Two opposing clusters left/right + judge node top-center; pulses volley side-to-side, judge rules after each round; a verdict scale tilts live | Argument / rebuttal columns, judge's notes between rounds |
+| **Chamber** | Three visual phases: isolated nodes (no edges) → anonymized dotted review edges (identities masked) → chair node draws all threads in | Independent takes → blind peer reviews → chair synthesis |
+| **Jury** | Parallel isolated lanes, each node wired only to a central aggregator; verdicts fly in and a score distribution builds live | Verdict cards with scores; running tally |
+| **Desk** | Org-chart tree: director on top, section workers below; pulses delegate down, drafts flow up, sections light up as they complete | Memo sections filling in, checklist-style |
+| **Expedition** | A route through five phase-waypoints (question → research → analysis → alternatives → verify → synthesize); scout nodes fan out and return per phase | Findings log grouped by phase, progress along the route |
 
 **Composition pattern for a full run (the demo's shape):**
 1. **Expedition** (optional) builds the background research pack from corpus + tools.

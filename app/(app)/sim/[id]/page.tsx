@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import SimWorkspace, { DocRow } from "@/components/app/SimWorkspace";
 import { Brief } from "@/components/app/BriefComposer";
-import { normalizeQuestions } from "@/lib/corpus";
+import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 
 export const metadata = { title: "Simulation — Microcosm" };
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
     problem: stored.problem ?? "",
     questions: normalizeQuestions(stored.questions),
     template: stored.template ?? "Custom",
-    success: stored.success ?? "",
+    success: normalizeSuccess(stored.success),
   };
 
   return (
