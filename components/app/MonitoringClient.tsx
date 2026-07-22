@@ -35,6 +35,8 @@ export interface InteractionRow {
   error: string | null;
   created_at: string;
   conversation_id: string | null;
+  sim_id?: string | null;
+  detail?: Record<string, unknown> | null;
 }
 
 export interface ConvMeta { title: string; participants: number }
@@ -310,11 +312,42 @@ export default function MonitoringClient({ rows, conversations }: { rows: Intera
                                 SURFACE · {r.surface}<br />
                                 SPEND EST · ${costOf(r).toFixed(4)}<br />
                                 {conv && <>ROOM · {conv.title} ({conv.participants} in)<br /></>}
+                                {r.detail?.mode ? <>CAST MODE · {String(r.detail.mode).toUpperCase()}{r.detail.target_seats ? ` · ${String(r.detail.target_seats)} SEATS ASKED` : ""}<br /></> : null}
+                                {r.detail?.docs ? <>CORPUS · {String(r.detail.docs)} DOC{Number(r.detail.docs) > 1 ? "S" : ""}{Number(r.detail.cache_read ?? 0) > 0 ? " · CACHE HIT" : ""}<br /></> : null}
                                 {r.error && <span style={{ color: "var(--warn)" }}>ERROR · {r.error.slice(0, 120)}</span>}
                               </div>
+                              {typeof r.detail?.problem === "string" && r.detail.problem && (
+                                <div style={{ marginTop: 8, maxWidth: 300 }}>
+                                  <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t7)" }}>SIMULATION</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.55, color: "var(--t3)", marginTop: 4, borderLeft: "2px solid var(--ln5)", paddingLeft: 12 }}>
+                                    {r.detail.problem}
+                                  </div>
+                                </div>
+                              )}
+                              {typeof r.detail?.question === "string" && r.detail.question && (
+                                <div style={{ marginTop: 8, maxWidth: 300 }}>
+                                  <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t7)" }}>ASKED THE CORPUS</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.55, color: "var(--t3)", marginTop: 4, borderLeft: "2px solid var(--ln5)", paddingLeft: 12 }}>
+                                    {r.detail.question}
+                                  </div>
+                                </div>
+                              )}
+                              {typeof r.detail?.guidance === "string" && r.detail.guidance && (
+                                <div style={{ marginTop: 8, maxWidth: 300 }}>
+                                  <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t7)" }}>GUIDANCE</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.55, color: "var(--t3)", marginTop: 4, borderLeft: "2px solid var(--ln5)", paddingLeft: 12 }}>
+                                    {r.detail.guidance}
+                                  </div>
+                                </div>
+                              )}
                               {r.conversation_id && conv && (
                                 <Link href={`/conversations?open=${r.conversation_id}`} style={{ ...mono, display: "inline-block", marginTop: 10, fontSize: 9.5, letterSpacing: ".06em", color: "var(--acc)" }}>
                                   OPEN THREAD →
+                                </Link>
+                              )}
+                              {r.sim_id && (
+                                <Link href={`/sim/${r.sim_id}`} style={{ ...mono, display: "inline-block", marginTop: 10, fontSize: 9.5, letterSpacing: ".06em", color: "var(--acc)" }}>
+                                  OPEN SIMULATION →
                                 </Link>
                               )}
                             </div>

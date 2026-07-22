@@ -48,7 +48,50 @@ export default function BriefComposer({
   const [hint, setHint] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draftRestored, setDraftRestored] = useState(false);
   const problemRef = useRef<HTMLTextAreaElement>(null);
+
+  // leaving /sim/new mid-setup must never lose work: the create-mode composer
+  // keeps a localStorage draft, restored on return, cleared on create
+  const DRAFT_KEY = "mc-sim-draft";
+  useEffect(() => {
+    if (mode !== "create") return;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw) as Partial<Brief>;
+      if (!d.problem && !(d.questions ?? []).length && !(d.success ?? []).length) return;
+      setProblem(d.problem ?? "");
+      setQuestions(d.questions ?? []);
+      setShape(d.template ?? "Custom");
+      setSuccess(d.success ?? []);
+      setDraftRestored(true);
+    } catch {
+      /* corrupt draft — start clean */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (mode !== "create") return;
+    const t = setTimeout(() => {
+      if (!problem.trim() && questions.length === 0 && success.length === 0) {
+        localStorage.removeItem(DRAFT_KEY);
+      } else {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ problem, questions, template: shape, success }));
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [mode, problem, questions, shape, success]);
+
+  const discardDraft = () => {
+    localStorage.removeItem(DRAFT_KEY);
+    setProblem("");
+    setQuestions([]);
+    setShape("Custom");
+    setSuccess([]);
+    setHint(null);
+    setDraftRestored(false);
+  };
 
   const autosize = () => {
     const el = problemRef.current;
@@ -123,6 +166,7 @@ export default function BriefComposer({
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Could not create simulation");
+        localStorage.removeItem(DRAFT_KEY);
         router.push(`/sim/${data.id}`);
       } else {
         const res = await fetch(`/api/simulations/${simId}`, {
@@ -146,9 +190,22 @@ export default function BriefComposer({
   return (
     <div style={{ animation: "fadeUp .5s ease both" }}>
       {mode === "create" && (
-        <div style={{ ...mono, fontSize: 12, letterSpacing: ".14em", color: "var(--acc)", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ ...mono, fontSize: 12, letterSpacing: ".14em", color: "var(--acc)", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 2.2s infinite" }} />
           The problem · new run
+          {draftRestored && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, marginLeft: 8 }}>
+              <span style={{ fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "3px 9px" }}>
+                DRAFT RESTORED
+              </span>
+              <button
+                onClick={discardDraft}
+                style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0, textDecoration: "underline", textUnderlineOffset: 3, textTransform: "uppercase" }}
+              >
+                Discard
+              </button>
+            </span>
+          )}
         </div>
       )}
 

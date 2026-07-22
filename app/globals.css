@@ -112,9 +112,9 @@ button { font-family: var(--font-grotesk), sans-serif; }
 @keyframes pulseDot { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.35); } }
 @keyframes shim { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
 
-/* conversation rows: ⋯ actions reveal on hover (or while their menu has focus) */
-.convRow .rowActions { opacity: 0; transition: opacity 0.15s; }
-.convRow:hover .rowActions, .rowActions:focus-within { opacity: 1; }
+/* conversation rows + sim cards: ⋯ actions reveal on hover (or while focused) */
+.convRow .rowActions, .simCard .rowActions { opacity: 0; transition: opacity 0.15s; }
+.convRow:hover .rowActions, .simCard:hover .rowActions, .rowActions:focus-within { opacity: 1; }
 .menuItem {
   display: block; width: 100%; text-align: left; background: none; border: none;
   cursor: pointer; border-radius: 8px; padding: 8px 11px; font-size: 12.5px;

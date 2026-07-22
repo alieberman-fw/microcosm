@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { normalizeQuestions, normalizeSuccess, BriefQuestion } from "@/lib/corpus";
 
@@ -34,7 +35,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return NextResponse.json({ ok: true });
 }
 
-/** Delete a draft simulation (its documents, chunks, and storage objects). */
+/** Delete a simulation and everything under it: documents (chunks cascade),
+ * storage objects, Anthropic Files API objects (best-effort), and the cast. */
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createServerSupabase();
@@ -42,9 +44,21 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  const { data: docs } = await supabase.from("documents").select("id, storage_path").eq("sim_id", id);
+  const { data: docs } = await supabase.from("documents")
+    .select("id, storage_path, anthropic_file_id").eq("sim_id", id);
   if (docs?.length) {
     await supabase.storage.from("documents").remove(docs.map((d) => d.storage_path));
+    if (process.env.ANTHROPIC_API_KEY) {
+      const anthropic = new Anthropic();
+      for (const d of docs) {
+        if (!d.anthropic_file_id) continue;
+        try {
+          await anthropic.beta.files.delete(d.anthropic_file_id, { betas: ["files-api-2025-04-14"] });
+        } catch {
+          // best-effort — orphaned Files API objects are harmless
+        }
+      }
+    }
     await supabase.from("documents").delete().eq("sim_id", id); // chunks cascade
   }
   const { data, error } = await supabase.from("simulations").delete().eq("id", id).select("id").maybeSingle();

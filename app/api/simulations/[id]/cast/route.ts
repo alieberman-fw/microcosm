@@ -5,7 +5,7 @@ import { PersonaSpec } from "@/lib/personas";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import {
   CastPlan, CastSeat, FrozenSpec, MAX_SEATS, SIM_MODES,
-  CASTING_MODEL, castingGenerateSystem, castingPlanSystem, overlapScore, seatKey,
+  CASTING_MODEL, castingAddSystem, castingGenerateSystem, castingPlanSystem, overlapScore, seatKey,
 } from "@/lib/casting";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 
@@ -30,13 +30,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
   }
 
-  let body: { guidance?: string };
+  let body: { guidance?: string; mode?: string; seats?: number; composition?: string };
   try {
     body = await request.json();
   } catch {
     body = {};
   }
   const guidance = (body.guidance ?? "").trim().slice(0, 500);
+  const addMode = body.mode === "add";
+  const targetSeats = typeof body.seats === "number" ? Math.min(Math.max(Math.round(body.seats), 4), MAX_SEATS) : undefined;
+  const compOverride = (["experts", "consumers", "mixed"] as const).find((c) => c === body.composition);
+  if (addMode && !guidance) return NextResponse.json({ error: "Describe who to add" }, { status: 400 });
 
   const { data: userRow } = await supabase.from("users").select("org_id").eq("id", user.id).single();
   if (!userRow) return NextResponse.json({ error: "No org" }, { status: 400 });
@@ -52,9 +56,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .select("id, name, token_estimate, page_count").eq("sim_id", id).eq("parse_status", "parsed");
   const docLines: string[] = [];
   for (const d of docs ?? []) {
-    const { data: chunk } = await supabase.from("doc_chunks")
-      .select("content").eq("document_id", d.id).order("seq").limit(1).maybeSingle();
-    const excerpt = chunk?.content ? ` — opens: "${chunk.content.slice(0, 350).replace(/\s+/g, " ")}…"` : "";
+    const { data: chunks } = await supabase.from("doc_chunks")
+      .select("content").eq("document_id", d.id).order("seq").limit(2);
+    const opening = (chunks ?? []).map((c) => c.content).join(" ").replace(/\s+/g, " ").slice(0, 700);
+    const excerpt = opening ? ` — opens: "${opening}…"` : "";
     docLines.push(`- ${d.name} (${d.page_count ? `${d.page_count}p, ` : ""}~${d.token_estimate ?? "?"} tokens)${excerpt}`);
   }
 
@@ -71,11 +76,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const anthropic = new Anthropic();
   const encoder = new TextEncoder();
 
-  const logCall = async (surface: string, model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string) => {
+  const logCall = async (surface: string, model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string, detail?: Record<string, unknown>) => {
     await supabase.from("agent_interactions").insert({
-      org_id: orgId, user_id: user.id, surface, model,
+      org_id: orgId, user_id: user.id, surface, model, sim_id: id,
       input_tokens: usage?.input_tokens ?? null, output_tokens: usage?.output_tokens ?? null,
       latency_ms: Date.now() - t0, status: error ? "error" : "ok", error: error ?? null,
+      detail: detail ?? null,
     });
   };
 
@@ -84,16 +90,30 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const emit = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
       try {
         // ---- 1 · the plan (salvage truncation; one silent retry) ----
+        // add-more mode extends the current panel instead of replacing it
+        const { data: existingAgents } = addMode
+          ? await supabase.from("sim_agents").select("agent_key, spec_frozen").eq("sim_id", id)
+          : { data: [] as { agent_key: string; spec_frozen: FrozenSpec }[] };
+        const existingRoles = (existingAgents ?? []).map((a) => {
+          const f = a.spec_frozen as FrozenSpec;
+          return `${f.seat?.role ?? f.role} (${f.name})`;
+        });
+        const maxNew = Math.max(1, MAX_SEATS - existingRoles.length);
+        if (addMode && existingRoles.length >= MAX_SEATS) throw new Error(`Panels are capped at ${MAX_SEATS} leads`);
+
         let raw: Record<string, unknown> & { seats?: unknown; scale?: { experts?: unknown; residents?: unknown }; composition?: unknown; mode?: unknown } = {};
         for (let attempt = 0; attempt < 2; attempt++) {
           const t0 = Date.now();
           const planRes = await anthropic.messages.create({
             model: CASTING_MODEL,
-            max_tokens: 3500, // 12 verbose seats + rationales cannot truncate at this cap
-            system: castingPlanSystem(),
+            max_tokens: 3500, // 20 verbose seats + rationales cannot truncate at this cap
+            system: addMode ? castingAddSystem(existingRoles, maxNew) : castingPlanSystem(targetSeats, compOverride),
             messages: [{ role: "user", content: briefText }],
           });
-          await logCall("casting.plan", CASTING_MODEL, planRes.usage, t0);
+          await logCall("casting.plan", CASTING_MODEL, planRes.usage, t0, undefined, {
+            problem: (brief.problem ?? "").slice(0, 160), mode: addMode ? "add" : "recast",
+            guidance: guidance || null, target_seats: targetSeats ?? null, composition: compOverride ?? null,
+          });
           const planText = planRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
           const parsed = parseLooseObject(planText);
           if (parsed && Array.isArray(parsed.seats) && parsed.seats.length) {
@@ -103,9 +123,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           if (attempt === 1) throw new Error(`Casting pass returned no usable plan (stop: ${planRes.stop_reason})`);
         }
 
-        const seats: CastSeat[] = (Array.isArray(raw.seats) ? raw.seats : []).slice(0, MAX_SEATS)
+        const keyOffset = existingRoles.length;
+        const seats: CastSeat[] = (Array.isArray(raw.seats) ? raw.seats : []).slice(0, addMode ? maxNew : MAX_SEATS)
           .map((s: { role?: string; kind?: string; discipline?: string; why?: string; query?: string }, i: number): CastSeat => ({
-            key: seatKey(String(s.role ?? "seat"), i + 1),
+            key: seatKey(String(s.role ?? "seat"), keyOffset + i + 1),
             role: String(s.role ?? "Panelist").slice(0, 80),
             kind: ["expert", "consumer", "resident", "stakeholder", "adversarial"].includes(String(s.kind)) ? (s.kind as CastSeat["kind"]) : "expert",
             discipline: String(s.discipline ?? "PANEL").toUpperCase().slice(0, 20),
@@ -121,7 +142,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), n - 40))}…`;
         };
         const plan: CastPlan = {
-          composition: (["experts", "consumers", "mixed"] as const).find((c) => c === raw.composition) ?? "mixed",
+          composition: compOverride ?? (["experts", "consumers", "mixed"] as const).find((c) => c === raw.composition) ?? "mixed",
           rationale: clip(raw.rationale, 300),
           scale: {
             experts: Math.min(Math.max(Number(raw.scale?.experts) || seats.length, 4), 500),
@@ -131,7 +152,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           modeRationale: clip(raw.mode_rationale, 300),
           seats,
         };
-        emit({ type: "plan", ...plan });
+        emit({ type: "plan", ...plan, add: addMode });
 
         // frozen spec = persona + seat metadata (+ adversarial mandate) — built
         // up-front so live seat events render exactly what gets persisted
@@ -153,6 +174,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const { data: customRows } = await supabase.from("personas")
           .select("id, kind, spec").eq("org_id", orgId).limit(200);
         const usedPersonaIds = new Set<string>();
+        if (addMode) {
+          const { data: seated } = await supabase.from("sim_agents").select("persona_id").eq("sim_id", id);
+          for (const r of seated ?? []) if (r.persona_id) usedPersonaIds.add(r.persona_id as string);
+        }
         const resolved: { seat: CastSeat; personaId: string; spec: FrozenSpec; provenance: "yours" | "library" }[] = [];
         const gaps: CastSeat[] = [];
 
@@ -244,7 +269,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
 
         // ---- 4 · freeze the cast ----
-        await supabase.from("sim_agents").delete().eq("sim_id", id); // re-cast replaces
+        if (!addMode) await supabase.from("sim_agents").delete().eq("sim_id", id); // re-cast replaces; add-more appends
         const all = [
           ...resolved.map((r) => ({ ...r, provenance: r.provenance as "yours" | "library" | "generated" })),
           ...generated.map((g) => ({ ...g, provenance: "generated" as const })),
@@ -256,18 +281,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const { error: agentErr } = await supabase.from("sim_agents").insert(rows);
         if (agentErr) throw new Error(agentErr.message);
 
+        const prevCasting = ((sim.config as { casting?: Record<string, unknown> } | null)?.casting) ?? null;
         await supabase.from("simulations").update({
           config: {
             ...((sim.config as Record<string, unknown>) ?? {}),
-            casting: {
-              composition: plan.composition, rationale: plan.rationale, scale: plan.scale,
-              mode: plan.mode, modeRationale: plan.modeRationale,
-              guidance: guidance || null, cast_at: new Date().toISOString(),
-            },
+            casting: addMode && prevCasting
+              ? { ...prevCasting, last_addition: guidance, cast_at: new Date().toISOString() }
+              : {
+                  composition: plan.composition, rationale: plan.rationale, scale: plan.scale,
+                  mode: plan.mode, modeRationale: plan.modeRationale,
+                  guidance: guidance || null, cast_at: new Date().toISOString(),
+                },
           },
         }).eq("id", id);
 
-        emit({ type: "done", seats: rows.length, generated: generated.length });
+        emit({ type: "done", seats: rows.length, generated: generated.length, add: addMode });
       } catch (e) {
         emit({ type: "error", error: e instanceof Error ? e.message : "Casting failed" });
       } finally {

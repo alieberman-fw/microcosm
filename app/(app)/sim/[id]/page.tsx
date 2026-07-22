@@ -40,10 +40,16 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
     success: normalizeSuccess(stored.success),
   };
 
-  const seats: WorkspaceSeat[] = (agents ?? []).map((a) => {
+  // leads deliberate; crowd members (seat.tier "crowd") are the full-run population
+  const seats: WorkspaceSeat[] = [];
+  const crowd: WorkspaceSeat[] = [];
+  for (const a of agents ?? []) {
     const spec = a.spec_frozen as FrozenSpec;
-    return { key: a.agent_key as string, provenance: spec.seat?.provenance ?? "library", spec };
-  });
+    const seat: WorkspaceSeat = { key: a.agent_key as string, provenance: spec.seat?.provenance ?? "library", spec };
+    if (spec.seat?.tier === "crowd") crowd.push(seat);
+    else seats.push(seat);
+  }
+  crowd.sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
   const casting = ((sim.config as { casting?: CastingInfo } | null)?.casting) ?? null;
 
   return (
@@ -51,6 +57,7 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
       sim={{ id: sim.id, status: sim.status, brief, created_at: sim.created_at }}
       initialDocs={(docs ?? []) as DocRow[]}
       initialSeats={seats}
+      initialCrowd={crowd}
       initialCasting={casting}
     />
   );
