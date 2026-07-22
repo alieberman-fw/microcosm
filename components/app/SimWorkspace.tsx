@@ -73,7 +73,26 @@ export default function SimWorkspace({
   const [asking, setAsking] = useState(false);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [askError, setAskError] = useState<string | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteText, setNoteText] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // notes become a real corpus document — same parse/chunk/Files-API pipeline
+  const saveNotes = () => {
+    const body = noteText.trim();
+    if (!body) return;
+    const title = noteTitle.trim() || "untitled";
+    const file = new File(
+      [`FIELD NOTES — ${title.toUpperCase()}\n\n${body}\n`],
+      `Field notes — ${title.slice(0, 60)}.txt`,
+      { type: "text/plain" },
+    );
+    void uploadFiles([file]);
+    setNotesOpen(false);
+    setNoteTitle("");
+    setNoteText("");
+  };
 
   const parsedDocs = docs.filter((d) => d.parse_status === "parsed");
   const totalTokens = parsedDocs.reduce((s, d) => s + (d.token_estimate ?? 0), 0);
@@ -139,28 +158,34 @@ export default function SimWorkspace({
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "40px 40px 90px" }}>
-      {/* stage rail */}
+      {/* stage rail — live stages jump to their section */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        {STAGES.map((s, i) => (
-          <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-            <span
-              style={{
-                ...mono, fontSize: 10, letterSpacing: ".1em",
-                color: stageDone[i] ? "var(--acc)" : i <= 2 ? "var(--t4)" : "var(--t7)",
-              }}
-            >
-              {String(i + 1).padStart(2, "0")} {s}
-              {stageDone[i] && " ✓"}
-              {i > 2 && <span style={{ marginLeft: 6, border: "1px solid var(--ln4)", borderRadius: 100, padding: "1px 6px", fontSize: 8, color: "var(--t7)" }}>SOON</span>}
+        {STAGES.map((s, i) => {
+          const target = ["stage-brief", "stage-corpus", "stage-population"][i];
+          return (
+            <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+              <button
+                onClick={() => { if (target) document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+                style={{
+                  ...mono, fontSize: 10, letterSpacing: ".1em", background: "none", border: "none", padding: 0,
+                  cursor: target ? "pointer" : "default",
+                  color: stageDone[i] ? "var(--acc)" : i <= 2 ? "var(--t4)" : "var(--t7)",
+                }}
+                title={target ? `Jump to ${s.toLowerCase()}` : undefined}
+              >
+                {String(i + 1).padStart(2, "0")} {s}
+                {stageDone[i] && " ✓"}
+                {i > 2 && <span style={{ marginLeft: 6, border: "1px solid var(--ln4)", borderRadius: 100, padding: "1px 6px", fontSize: 8, color: "var(--t7)" }}>SOON</span>}
+              </button>
+              {i < STAGES.length - 1 && <span style={{ width: 18, height: 1, background: "var(--ln4)" }} />}
             </span>
-            {i < STAGES.length - 1 && <span style={{ width: 18, height: 1, background: "var(--ln4)" }} />}
-          </span>
-        ))}
+          );
+        })}
       </div>
 
       {/* brief */}
       {editing ? (
-        <div style={{ marginTop: 34 }}>
+        <div id="stage-brief" style={{ marginTop: 34, scrollMarginTop: 20 }}>
           <BriefComposer
             mode="edit"
             simId={sim.id}
@@ -170,7 +195,7 @@ export default function SimWorkspace({
           />
         </div>
       ) : (
-        <div style={{ marginTop: 34, animation: "fadeUp .4s ease both" }}>
+        <div id="stage-brief" style={{ marginTop: 34, animation: "fadeUp .4s ease both", scrollMarginTop: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20 }}>
             <h1 style={{ margin: 0, fontSize: "clamp(24px,3vw,36px)", fontWeight: 600, lineHeight: 1.22, letterSpacing: "-.03em", maxWidth: 760 }}>
               {brief.problem}
@@ -215,7 +240,7 @@ export default function SimWorkspace({
       )}
 
       {/* corpus */}
-      <div className="card" style={{ padding: "26px 30px", marginTop: 36 }}>
+      <div id="stage-corpus" className="card" style={{ padding: "26px 30px", marginTop: 36, scrollMarginTop: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <div style={label}>
             DILIGENCE MATERIALS{parsedDocs.length > 0 && ` · ${parsedDocs.length} DOC${parsedDocs.length > 1 ? "S" : ""} · ~${fmtTokens(totalTokens)} TOKENS`}
@@ -234,9 +259,13 @@ export default function SimWorkspace({
               className="doc-row"
               style={{ display: "flex", alignItems: "center", gap: 14, border: "1px solid var(--ln3)", borderRadius: 10, padding: "11px 16px", animation: "fadeUp .35s ease both" }}
             >
-              <svg width="14" height="16" viewBox="0 0 14 17" fill="none" stroke="currentColor" strokeWidth="1.3" style={{ color: "var(--t6)", flex: "none" }}>
-                <path d="M2 1h7l4 4v10.5H2z" /><path d="M9 1v4h4M4.5 9h5M4.5 12h5" />
-              </svg>
+              {d.name.startsWith("Field notes") ? (
+                <span style={{ color: "var(--acc)", fontSize: 13, flex: "none", lineHeight: 1 }}>✎</span>
+              ) : (
+                <svg width="14" height="16" viewBox="0 0 14 17" fill="none" stroke="currentColor" strokeWidth="1.3" style={{ color: "var(--t6)", flex: "none" }}>
+                  <path d="M2 1h7l4 4v10.5H2z" /><path d="M9 1v4h4M4.5 9h5M4.5 12h5" />
+                </svg>
+              )}
               <button
                 onClick={() => openDoc(d.id)}
                 title="Open the original"
@@ -316,6 +345,82 @@ export default function SimWorkspace({
             style={{ display: "none" }}
           />
         </div>
+
+        {/* field notes — no documents? write what you know */}
+        {!notesOpen ? (
+          <button
+            onClick={() => setNotesOpen(true)}
+            style={{
+              ...mono, marginTop: 12, fontSize: 10, letterSpacing: ".08em",
+              background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0,
+            }}
+          >
+            NO DOCUMENTS? <span style={{ color: "var(--acc)" }}>✎ WRITE WHAT YOU KNOW</span> — SAVED TO THE CORPUS LIKE ANY FILE
+          </button>
+        ) : (
+          <div
+            style={{
+              marginTop: 14, borderLeft: "3px solid var(--acc)", borderTop: "1px solid var(--ln3)",
+              borderRight: "1px solid var(--ln3)", borderBottom: "1px solid var(--ln3)",
+              borderRadius: "4px 12px 12px 4px", background: "var(--sf2)", padding: "18px 20px",
+              animation: "fadeUp .3s ease both",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ ...mono, fontSize: 10, letterSpacing: ".12em", color: "var(--acc)" }}>✎ FIELD NOTES</span>
+              <span style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--t7)" }}>
+                PARSED, CHUNKED & CITED LIKE ANY UPLOADED DOCUMENT
+              </span>
+            </div>
+            <input
+              value={noteTitle}
+              onChange={(e) => setNoteTitle(e.target.value)}
+              placeholder="WHAT THE BROKER TOLD US ON THE SITE WALK"
+              maxLength={60}
+              style={{
+                ...mono, width: "100%", boxSizing: "border-box", marginTop: 12, fontSize: 11.5,
+                letterSpacing: ".05em", background: "transparent", border: "none",
+                borderBottom: "1px solid var(--ln4)", padding: "6px 0", color: "var(--t1)",
+                outline: "none", caretColor: "var(--acc)", textTransform: "uppercase",
+              }}
+            />
+            <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder={"Everything you know that isn't in a document yet — seller motivation, verbal quotes, site-walk observations, neighborhood chatter, deal history.\n\nAgents will treat these notes as evidence and cite them by name."}
+              rows={6}
+              maxLength={20000}
+              style={{
+                width: "100%", boxSizing: "border-box", marginTop: 10, background: "transparent",
+                border: "none", outline: "none", resize: "vertical", minHeight: 130,
+                fontFamily: "var(--font-sans), sans-serif", fontSize: 13.5, lineHeight: 1.65,
+                color: "var(--t2)", caretColor: "var(--acc)",
+              }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10 }}>
+              <button
+                onClick={saveNotes}
+                disabled={!noteText.trim()}
+                style={{
+                  background: noteText.trim() ? "var(--acc)" : "var(--sf)", color: noteText.trim() ? "var(--acc-c)" : "var(--t6)",
+                  fontWeight: 600, fontSize: 12.5, padding: "9px 20px", borderRadius: 100, border: "none",
+                  cursor: noteText.trim() ? "pointer" : "default", fontFamily: "var(--font-sans), sans-serif",
+                }}
+              >
+                Save to corpus
+              </button>
+              <button
+                onClick={() => setNotesOpen(false)}
+                style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer" }}
+              >
+                CANCEL
+              </button>
+              <span style={{ ...mono, marginLeft: "auto", fontSize: 9, color: "var(--t7)" }}>
+                {noteText.length.toLocaleString()} / 20,000
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* test the corpus */}
@@ -355,36 +460,49 @@ export default function SimWorkspace({
           </div>
         )}
 
+        <div style={answers.length > 1 ? { maxHeight: 480, overflowY: "auto", marginTop: 4, paddingRight: 6 } : undefined}>
         {answers.map((a, i) => (
           <div key={i} style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid var(--ln2)", animation: "fadeUp .35s ease both" }}>
             <div style={{ ...mono, fontSize: 10.5, letterSpacing: ".05em", color: "var(--t5)" }}>Q · {a.question}</div>
+            {/* render as ONE markdown block — citations segment the text and
+                would otherwise shatter tables/lists at cited-span boundaries */}
             <div style={{ fontSize: 13.5, lineHeight: 1.65, color: "var(--t2)", marginTop: 10 }}>
-              {a.segments.map((s, j) => (
-                <span key={j}>
-                  <Markdown text={s.text} />
-                  {s.cites.map((c, k) => (
+              <Markdown text={a.segments.map((s) => s.text).join("")} />
+            </div>
+            {(() => {
+              const seen = new Set<string>();
+              const cites = a.segments.flatMap((s) => s.cites).filter((c) => {
+                const k = `${c.title}|${c.pageStart ?? ""}|${c.quote.slice(0, 40)}`;
+                if (seen.has(k)) return false;
+                seen.add(k);
+                return true;
+              });
+              return cites.length > 0 ? (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
+                  <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>CITED ·</span>
+                  {cites.map((c, k) => (
                     <span
                       key={k}
                       title={c.quote}
                       style={{
                         ...mono, fontSize: 9, letterSpacing: ".04em", color: "var(--acc)",
                         border: "1px solid var(--acc)", background: "var(--acc-dim)",
-                        borderRadius: 100, padding: "2px 8px", margin: "0 4px", whiteSpace: "nowrap",
-                        verticalAlign: "2px", cursor: "help",
+                        borderRadius: 100, padding: "2px 8px", whiteSpace: "nowrap", cursor: "help",
                       }}
                     >
                       {c.title.toUpperCase().slice(0, 28)}{c.pageStart ? ` · P.${c.pageStart}${c.pageEnd && c.pageEnd > c.pageStart ? `–${c.pageEnd}` : ""}` : ""}
                     </span>
                   ))}
-                </span>
-              ))}
-            </div>
+                </div>
+              ) : null;
+            })()}
             <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)", marginTop: 12 }}>
               GROUNDED IN {a.groundedIn} DOC{a.groundedIn > 1 ? "S" : ""} · IN {fmtTokens(a.usage.input + a.usage.cacheRead + a.usage.cacheWrite)}
               {a.usage.cacheRead > 0 && ` (${fmtTokens(a.usage.cacheRead)} CACHED)`} · OUT {fmtTokens(a.usage.output)} · {a.model.toUpperCase()}
             </div>
           </div>
         ))}
+        </div>
       </div>
 
       {/* the population — Casting Director */}

@@ -7,6 +7,7 @@ import {
   CastPlan, CastSeat, FrozenSpec, MAX_SEATS, SIM_MODES,
   CASTING_MODEL, castingGenerateSystem, castingPlanSystem, overlapScore, seatKey,
 } from "@/lib/casting";
+import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 
 export const maxDuration = 180; // plan + generation calls for a full panel
 
@@ -82,19 +83,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     async start(controller) {
       const emit = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
       try {
-        // ---- 1 · the plan ----
-        const t0 = Date.now();
-        const planRes = await anthropic.messages.create({
-          model: CASTING_MODEL,
-          max_tokens: 2000,
-          system: castingPlanSystem(),
-          messages: [{ role: "user", content: briefText }],
-        });
-        await logCall("casting.plan", CASTING_MODEL, planRes.usage, t0);
-        const planText = planRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-        const planMatch = planText.match(/\{[\s\S]*\}/);
-        if (!planMatch) throw new Error("Casting pass returned no plan");
-        const raw = JSON.parse(planMatch[0]);
+        // ---- 1 · the plan (salvage truncation; one silent retry) ----
+        let raw: Record<string, unknown> & { seats?: unknown; scale?: { experts?: unknown; residents?: unknown }; composition?: unknown; mode?: unknown } = {};
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const t0 = Date.now();
+          const planRes = await anthropic.messages.create({
+            model: CASTING_MODEL,
+            max_tokens: 3500, // 12 verbose seats + rationales cannot truncate at this cap
+            system: castingPlanSystem(),
+            messages: [{ role: "user", content: briefText }],
+          });
+          await logCall("casting.plan", CASTING_MODEL, planRes.usage, t0);
+          const planText = planRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+          const parsed = parseLooseObject(planText);
+          if (parsed && Array.isArray(parsed.seats) && parsed.seats.length) {
+            raw = parsed as typeof raw;
+            break;
+          }
+          if (attempt === 1) throw new Error(`Casting pass returned no usable plan (stop: ${planRes.stop_reason})`);
+        }
 
         const seats: CastSeat[] = (Array.isArray(raw.seats) ? raw.seats : []).slice(0, MAX_SEATS)
           .map((s: { role?: string; kind?: string; discipline?: string; why?: string; query?: string }, i: number): CastSeat => ({
@@ -114,23 +121,39 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), n - 40))}…`;
         };
         const plan: CastPlan = {
-          composition: ["experts", "consumers", "mixed"].includes(raw.composition) ? raw.composition : "mixed",
+          composition: (["experts", "consumers", "mixed"] as const).find((c) => c === raw.composition) ?? "mixed",
           rationale: clip(raw.rationale, 300),
           scale: {
             experts: Math.min(Math.max(Number(raw.scale?.experts) || seats.length, 4), 500),
             residents: Math.min(Math.max(Number(raw.scale?.residents) || 0, 0), 1000),
           },
-          mode: SIM_MODES.includes(raw.mode) ? raw.mode : "Agora",
+          mode: SIM_MODES.find((m) => m === raw.mode) ?? "Agora",
           modeRationale: clip(raw.mode_rationale, 300),
           seats,
         };
         emit({ type: "plan", ...plan });
 
+        // frozen spec = persona + seat metadata (+ adversarial mandate) — built
+        // up-front so live seat events render exactly what gets persisted
+        const freeze = (seat: CastSeat, spec: PersonaSpec, provenance: "yours" | "library" | "generated"): FrozenSpec => {
+          const frozen: FrozenSpec = {
+            ...spec,
+            seat: { role: seat.role, why: seat.why, discipline: seat.discipline, adversarial: seat.kind === "adversarial", provenance },
+          };
+          if (seat.kind === "adversarial") {
+            frozen.stances = [
+              ...(spec.stances ?? []),
+              "ADVERSARIAL MANDATE: your job on this panel is to attack the thesis — find the failure modes, stress the assumptions, and refuse easy consensus.",
+            ];
+          }
+          return frozen;
+        };
+
         // ---- 2 · match: org custom personas first, then the global library ----
         const { data: customRows } = await supabase.from("personas")
           .select("id, kind, spec").eq("org_id", orgId).limit(200);
         const usedPersonaIds = new Set<string>();
-        const resolved: { seat: CastSeat; personaId: string; spec: PersonaSpec; provenance: "yours" | "library" }[] = [];
+        const resolved: { seat: CastSeat; personaId: string; spec: FrozenSpec; provenance: "yours" | "library" }[] = [];
         const gaps: CastSeat[] = [];
 
         for (const seat of seats) {
@@ -145,8 +168,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           }
           if (best && bestScore >= 2) {
             usedPersonaIds.add(best.id);
-            resolved.push({ seat, personaId: best.id, spec: best.spec, provenance: "yours" });
-            emit({ type: "seat", key: seat.key, provenance: "yours", spec: best.spec });
+            const frozenYours = freeze(seat, best.spec, "yours");
+            resolved.push({ seat, personaId: best.id, spec: frozenYours, provenance: "yours" });
+            emit({ type: "seat", key: seat.key, provenance: "yours", spec: frozenYours });
             continue;
           }
           // 2b — the global library (FTS; residents/consumers match their own kinds)
@@ -165,15 +189,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           }
           if (hit) {
             usedPersonaIds.add(hit.id);
-            resolved.push({ seat, personaId: hit.id, spec: hit.spec, provenance: "library" });
-            emit({ type: "seat", key: seat.key, provenance: "library", spec: hit.spec });
+            const frozenLib = freeze(seat, hit.spec, "library");
+            resolved.push({ seat, personaId: hit.id, spec: frozenLib, provenance: "library" });
+            emit({ type: "seat", key: seat.key, provenance: "library", spec: frozenLib });
           } else {
             gaps.push(seat);
           }
         }
 
         // ---- 3 · generate the true gaps, save them back to the org library ----
-        const generated: { seat: CastSeat; personaId: string; spec: PersonaSpec }[] = [];
+        const generated: { seat: CastSeat; personaId: string; spec: FrozenSpec }[] = [];
         if (gaps.length) {
           const avoid = [...(customRows ?? []).map((r) => (r.spec as PersonaSpec).name), ...resolved.map((r) => r.spec.name)]
             .filter(Boolean).slice(0, 60);
@@ -191,8 +216,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           });
           await logCall("casting.generate", CASTING_MODEL, genRes.usage, t1);
           const genText = genRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-          const arrMatch = genText.match(/\[[\s\S]*\]/);
-          const specs: (PersonaSpec & { seat_key?: string })[] = arrMatch ? JSON.parse(arrMatch[0]) : [];
+          const specs = (parseLooseArray(genText) ?? []) as (PersonaSpec & { seat_key?: string })[];
           for (const seat of gaps) {
             const genSpec = specs.find((s) => s.seat_key === seat.key) ?? specs[gaps.indexOf(seat)];
             if (!genSpec?.name) { emit({ type: "seat", key: seat.key, provenance: "failed" }); continue; }
@@ -213,8 +237,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
               .insert({ org_id: orgId, kind: spec.kind, spec, source: "auto", author_org: orgId })
               .select("id").single();
             if (insErr || !inserted) { emit({ type: "seat", key: seat.key, provenance: "failed" }); continue; }
-            generated.push({ seat, personaId: inserted.id, spec });
-            emit({ type: "seat", key: seat.key, provenance: "generated", spec });
+            const frozenGen = freeze(seat, spec, "generated");
+            generated.push({ seat, personaId: inserted.id, spec: frozenGen });
+            emit({ type: "seat", key: seat.key, provenance: "generated", spec: frozenGen });
           }
         }
 
@@ -224,19 +249,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           ...resolved.map((r) => ({ ...r, provenance: r.provenance as "yours" | "library" | "generated" })),
           ...generated.map((g) => ({ ...g, provenance: "generated" as const })),
         ];
-        const rows = all.map(({ seat, personaId, spec, provenance }) => {
-          const frozen: FrozenSpec = {
-            ...spec,
-            seat: { role: seat.role, why: seat.why, discipline: seat.discipline, adversarial: seat.kind === "adversarial", provenance },
-          };
-          if (seat.kind === "adversarial") {
-            frozen.stances = [
-              ...(spec.stances ?? []),
-              "ADVERSARIAL MANDATE: your job on this panel is to attack the thesis — find the failure modes, stress the assumptions, and refuse easy consensus.",
-            ];
-          }
-          return { sim_id: id, persona_id: personaId, agent_key: seat.key, spec_frozen: frozen };
-        });
+        const rows = all.map(({ seat, personaId, spec }) => (
+          { sim_id: id, persona_id: personaId, agent_key: seat.key, spec_frozen: spec }
+        ));
         if (rows.length === 0) throw new Error("No seats could be cast");
         const { error: agentErr } = await supabase.from("sim_agents").insert(rows);
         if (agentErr) throw new Error(agentErr.message);
