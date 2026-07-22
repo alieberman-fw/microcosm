@@ -16,7 +16,7 @@ export default async function Dashboard() {
     .limit(24);
   const sims = (data ?? []) as {
     id: string; status: string; created_at: string;
-    brief: { problem?: string; question?: string; template?: string; questions?: string[] } | null;
+    brief: { problem?: string; question?: string; template?: string; questions?: unknown[] } | null;
     documents: { count: number }[];
   }[];
 
@@ -51,9 +51,10 @@ export default async function Dashboard() {
                 {s.brief?.problem ?? s.brief?.question ?? "Untitled simulation"}
               </h3>
               <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)", marginTop: 14 }}>
-                {(s.brief?.template ?? "CUSTOM").toUpperCase()}
-                {s.brief?.questions?.length ? ` · ${s.brief.questions.length} QUESTIONS` : ""}
-                {docCount ? ` · ${docCount} DOC${docCount > 1 ? "S" : ""}` : ""}
+                {[
+                  s.brief?.questions?.length ? `${s.brief.questions.length} QUESTIONS` : null,
+                  docCount ? `${docCount} DOC${docCount > 1 ? "S" : ""}` : null,
+                ].filter(Boolean).join(" · ") || "BRIEF ONLY"}
               </div>
             </Link>
           );

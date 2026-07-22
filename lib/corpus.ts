@@ -79,8 +79,16 @@ export function chunkText(text: string, target = 4200, overlap = 300): string[] 
   return chunks.filter(Boolean);
 }
 
-export const DECISION_TEMPLATES = [
+/**
+ * Decision shapes — a purely INTERNAL classification. The suggest pass
+ * stores one in brief.template; nothing in the UI asks the user to pick or
+ * confirm it. Downstream it seeds the report's lead visual (verdict chip vs
+ * price band vs approval odds) and casting defaults; report *sections*
+ * always come from the questions-to-resolve + success criteria.
+ */
+export const DECISION_SHAPES = [
   "Site go/no-go",
+  "Land & parcel valuation",
   "Product & floor-plan mix",
   "Pricing & absorption",
   "Lease-up & amenity test",
@@ -89,3 +97,60 @@ export const DECISION_TEMPLATES = [
   "Investment memo",
   "Custom",
 ] as const;
+
+/** A question-to-resolve: the chip label plus an optional one-line framing.
+ * Each question becomes a required section of the final report. `ai` marks
+ * suggest-pass chips so a re-suggest replaces them without touching the
+ * user's own additions. */
+export interface BriefQuestion {
+  label: string;
+  detail?: string;
+  ai?: boolean;
+}
+
+/** Accepts legacy string[] chips and loose LLM output alike. */
+export function normalizeQuestions(raw: unknown): BriefQuestion[] {
+  if (!Array.isArray(raw)) return [];
+  const out: BriefQuestion[] = [];
+  for (const item of raw) {
+    if (typeof item === "string" && item.trim()) {
+      out.push({ label: item.trim().toUpperCase().slice(0, 40) });
+    } else if (item && typeof item === "object" && typeof (item as { label?: unknown }).label === "string") {
+      const o = item as { label: string; detail?: unknown; ai?: unknown };
+      const label = o.label.trim().toUpperCase().slice(0, 40);
+      if (!label) continue;
+      const detail = typeof o.detail === "string" ? o.detail.trim().slice(0, 140) : "";
+      const q: BriefQuestion = { label };
+      if (detail) q.detail = detail;
+      if (o.ai === true) q.ai = true;
+      out.push(q);
+    }
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+/** Success criteria — a bulleted list. Accepts the legacy free-text string
+ * (split on newlines / leading bullet glyphs) and loose arrays alike. */
+export function normalizeSuccess(raw: unknown): string[] {
+  const items: string[] = [];
+  const push = (s: unknown) => {
+    if (typeof s !== "string") return;
+    const clean = s.replace(/^[\s•\-–—*✓◆]+/, "").trim().slice(0, 200);
+    if (clean && !items.includes(clean)) items.push(clean);
+  };
+  if (typeof raw === "string") raw.split(/\n+/).forEach(push);
+  else if (Array.isArray(raw)) raw.forEach(push);
+  return items.slice(0, 8);
+}
+
+/**
+ * Embeddings (dormant until chunk retrieval activates — verifier pass and
+ * corpora past DIRECT_CONTEXT_BUDGET): served by the Vercel AI Gateway's
+ * OpenAI-compatible endpoint, billed through the existing Vercel account.
+ * Auth: AI_GATEWAY_API_KEY (create in the Vercel dashboard → AI Gateway;
+ * deployed functions can also use VERCEL_OIDC_TOKEN). The default model's
+ * 1536 dims match doc_chunks.embedding / personas.embedding exactly.
+ */
+export const EMBEDDINGS_URL = "https://ai-gateway.vercel.sh/v1/embeddings";
+export const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL ?? "openai/text-embedding-3-small";

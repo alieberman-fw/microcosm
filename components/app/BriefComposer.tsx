@@ -2,22 +2,26 @@
 
 /**
  * Stage 1 — the brief composer (CLAUDE.md §2, demo.html Stage 01 reference).
- * One clear problem statement, questions-to-resolve chips (AI-suggested,
- * fully editable), a decision template, and success criteria. Used full-page
- * on /sim/new (create) and inline on /sim/[id] (edit).
+ * One clear problem statement, questions-to-resolve (AI-suggested chip +
+ * one-line framing; each becomes a required report section), and success
+ * criteria as a bulleted list. The decision shape is classified SILENTLY by
+ * the suggest pass (stored in brief.template for the report engine) — there
+ * is deliberately no template/shape control in the UI. Re-suggesting after
+ * editing the problem replaces prior AI chips but never the user's own.
+ * Used full-page on /sim/new (create) and inline on /sim/[id] (edit).
  */
 
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { DECISION_TEMPLATES } from "@/lib/corpus";
+import { BriefQuestion } from "@/lib/corpus";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
 export interface Brief {
   problem: string;
-  questions: string[];
-  template: string;
-  success: string;
+  questions: BriefQuestion[];
+  template: string; // internal decision shape — set by the suggest pass, never a UI control
+  success: string[];
 }
 
 export default function BriefComposer({
@@ -35,10 +39,11 @@ export default function BriefComposer({
 }) {
   const router = useRouter();
   const [problem, setProblem] = useState(initial?.problem ?? "");
-  const [questions, setQuestions] = useState<string[]>(initial?.questions ?? []);
-  const [template, setTemplate] = useState(initial?.template ?? "Custom");
-  const [success, setSuccess] = useState(initial?.success ?? "");
+  const [questions, setQuestions] = useState<BriefQuestion[]>(initial?.questions ?? []);
+  const [shape, setShape] = useState(initial?.template ?? "Custom");
+  const [success, setSuccess] = useState<string[]>(initial?.success ?? []);
   const [qDraft, setQDraft] = useState("");
+  const [sDraft, setSDraft] = useState("");
   const [suggesting, setSuggesting] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -54,9 +59,15 @@ export default function BriefComposer({
   useEffect(autosize, [problem]);
 
   const addQuestion = (raw: string) => {
-    const q = raw.trim().toUpperCase().slice(0, 40);
-    if (!q || questions.includes(q) || questions.length >= 12) return;
-    setQuestions((prev) => [...prev, q]);
+    const label = raw.trim().toUpperCase().slice(0, 40);
+    if (!label || questions.some((q) => q.label === label) || questions.length >= 12) return;
+    setQuestions((prev) => [...prev, { label }]);
+  };
+
+  const addCriterion = (raw: string) => {
+    const item = raw.replace(/^[\s•\-–—*✓◆]+/, "").trim().slice(0, 200);
+    if (!item || success.includes(item) || success.length >= 8) return;
+    setSuccess((prev) => [...prev, item]);
   };
 
   const suggest = async () => {
@@ -71,12 +82,18 @@ export default function BriefComposer({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Suggestion failed");
+      // fresh AI chips replace the previous AI chips; hand-added ones stay
       setQuestions((prev) => {
-        const merged = [...prev];
-        for (const q of data.questions ?? []) if (!merged.includes(q) && merged.length < 12) merged.push(q);
+        const manual = prev.filter((q) => !q.ai);
+        const merged = [...manual];
+        for (const q of (data.questions ?? []) as BriefQuestion[]) {
+          if (!merged.some((m) => m.label === q.label) && merged.length < 12) {
+            merged.push({ ...q, ai: true });
+          }
+        }
         return merged;
       });
-      if (data.template && template === "Custom") setTemplate(data.template);
+      if (data.template) setShape(data.template); // silent classification
       if (data.composition) {
         const label = data.composition === "experts" ? "EXPERTS ONLY" : data.composition === "consumers" ? "CONSUMERS / RESIDENTS" : "MIXED PANEL";
         setHint(`CASTING HINT · ${label}${data.rationale ? ` — ${data.rationale}` : ""}`);
@@ -93,7 +110,10 @@ export default function BriefComposer({
     if (!p || saving) return;
     setSaving(true);
     setError(null);
-    const brief: Brief = { problem: p, questions, template, success: success.trim() };
+    // a criterion typed but not yet Entered still counts
+    const draft = sDraft.replace(/^[\s•\-–—*✓◆]+/, "").trim().slice(0, 200);
+    const criteria = draft && !success.includes(draft) ? [...success, draft].slice(0, 8) : success;
+    const brief: Brief = { problem: p, questions, template: shape, success: criteria };
     try {
       if (mode === "create") {
         const res = await fetch("/api/simulations", {
@@ -149,29 +169,7 @@ export default function BriefComposer({
       />
 
       <div className="card" style={{ padding: "24px 28px", marginTop: 18 }}>
-        <div style={label}>DECISION TEMPLATE</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-          {DECISION_TEMPLATES.map((t) => {
-            const on = template === t;
-            return (
-              <button
-                key={t}
-                onClick={() => setTemplate(t)}
-                style={{
-                  ...mono, fontSize: 10.5, letterSpacing: ".04em", padding: "7px 14px", borderRadius: 100,
-                  cursor: "pointer", transition: "all .15s",
-                  background: on ? "var(--acc-dim)" : "transparent",
-                  border: `1px solid ${on ? "var(--acc)" : "var(--ln5)"}`,
-                  color: on ? "var(--acc)" : "var(--t5)",
-                }}
-              >
-                {t}
-              </button>
-            );
-          })}
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 26 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <div style={label}>QUESTIONS TO RESOLVE</div>
           <button
             onClick={suggest}
@@ -184,29 +182,38 @@ export default function BriefComposer({
           >
             {suggesting ? "SUGGESTING…" : "✦ SUGGEST WITH AI"}
           </button>
+          <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".05em", color: "var(--t7)" }}>
+            EACH BECOMES A REQUIRED SECTION OF YOUR REPORT
+          </span>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 13, alignItems: "center" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 13 }}>
           {questions.map((q) => (
-            <span
-              key={q}
-              style={{
-                ...mono, fontSize: 11, padding: "7px 12px 7px 14px", borderRadius: 100,
-                background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)",
-                display: "inline-flex", alignItems: "center", gap: 8, animation: "fadeUp .3s ease both",
-              }}
-            >
-              {q}
+            <div key={q.label} style={{ display: "flex", alignItems: "center", gap: 12, animation: "fadeUp .3s ease both" }}>
+              <span
+                style={{
+                  ...mono, fontSize: 11, padding: "6px 14px", borderRadius: 100, flex: "none",
+                  background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)",
+                }}
+              >
+                {q.label}
+              </span>
+              <span style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--t5)", minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {q.detail ?? ""}
+              </span>
               <button
-                onClick={() => setQuestions((prev) => prev.filter((x) => x !== q))}
-                aria-label={`Remove ${q}`}
-                style={{ background: "none", border: "none", color: "var(--acc)", cursor: "pointer", padding: 0, fontSize: 12, lineHeight: 1, opacity: 0.75 }}
+                onClick={() => setQuestions((prev) => prev.filter((x) => x.label !== q.label))}
+                aria-label={`Remove ${q.label}`}
+                style={{ background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1, flex: "none" }}
               >
                 ×
               </button>
-            </span>
+            </div>
           ))}
           {suggesting && [0, 1, 2].map((i) => (
-            <span key={i} style={{ width: 110, height: 29, borderRadius: 100, background: "var(--sf2)", animation: "shim 1.2s ease infinite" }} />
+            <div key={i} style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <span style={{ width: 120, height: 27, borderRadius: 100, background: "var(--sf2)", animation: "shim 1.2s ease infinite", flex: "none" }} />
+              <span style={{ height: 10, borderRadius: 100, background: "var(--sf2)", animation: "shim 1.2s ease infinite", width: `${60 - i * 12}%` }} />
+            </div>
           ))}
           <input
             value={qDraft}
@@ -218,7 +225,7 @@ export default function BriefComposer({
             style={{
               ...mono, fontSize: 11, letterSpacing: ".04em", padding: "7px 14px", borderRadius: 100,
               background: "transparent", border: "1px dashed var(--ln5)", color: "var(--t3)",
-              outline: "none", width: 150,
+              outline: "none", width: 150, alignSelf: "flex-start",
             }}
           />
         </div>
@@ -228,20 +235,50 @@ export default function BriefComposer({
           </div>
         )}
 
-        <div style={{ ...label, marginTop: 26 }}>SUCCESS CRITERIA · WHAT A DECISION-GRADE ANSWER LOOKS LIKE</div>
-        <textarea
-          value={success}
-          onChange={(e) => setSuccess(e.target.value)}
-          placeholder="A go/no-go with conditions, a defensible price band, and the three risks that would kill the deal."
-          rows={2}
-          maxLength={2000}
-          style={{
-            width: "100%", boxSizing: "border-box", marginTop: 12, padding: "12px 14px",
-            background: "var(--sf2)", border: "1px solid var(--ln3)", borderRadius: 10,
-            fontFamily: "var(--font-sans), sans-serif", fontSize: 13.5, lineHeight: 1.6,
-            color: "var(--t2)", outline: "none", resize: "vertical",
-          }}
-        />
+        <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginTop: 26, flexWrap: "wrap" }}>
+          <div style={label}>SUCCESS CRITERIA</div>
+          <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".05em", color: "var(--t7)" }}>
+            WHAT A DECISION-GRADE ANSWER MUST DELIVER — THE REPORT IS HELD TO THIS
+          </span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", marginTop: 10 }}>
+          {success.map((s) => (
+            <div
+              key={s}
+              style={{
+                display: "flex", alignItems: "center", gap: 12, padding: "9px 2px",
+                borderBottom: "1px solid var(--ln2)", animation: "fadeUp .3s ease both",
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: 1.5, background: "var(--acc)", transform: "rotate(45deg)", flex: "none" }} />
+              <span style={{ fontSize: 13.5, lineHeight: 1.55, color: "var(--t2)", minWidth: 0, flex: 1 }}>{s}</span>
+              <button
+                onClick={() => setSuccess((prev) => prev.filter((x) => x !== s))}
+                aria-label="Remove criterion"
+                style={{ background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1, flex: "none" }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 2px" }}>
+            <span style={{ width: 6, height: 6, borderRadius: 1.5, border: "1px solid var(--ln7)", transform: "rotate(45deg)", flex: "none", boxSizing: "border-box" }} />
+            <input
+              value={sDraft}
+              onChange={(e) => setSDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); addCriterion(sDraft); setSDraft(""); }
+              }}
+              placeholder={success.length ? "Add another criterion and press Enter" : "A go/no-go with conditions… press Enter to add each criterion"}
+              maxLength={200}
+              style={{
+                flex: 1, background: "transparent", border: "none", outline: "none",
+                fontFamily: "var(--font-sans), sans-serif", fontSize: 13.5, color: "var(--t2)",
+                caretColor: "var(--acc)", padding: 0,
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {error && (
