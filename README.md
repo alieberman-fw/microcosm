@@ -152,7 +152,8 @@ Model ids live in config only ([lib/chat-models.ts](lib/chat-models.ts), `CLAUDE
 - [x] **Streaming group replies + Home**: when a message addresses the whole group ("each of you"), everyone answers — no more silent third voice; replies stream in as each persona finishes with iMessage-style "X & Y are typing…" indicators; dynamic pages skip the client router cache so fresh conversations never vanish on back-navigation; new **Home** tab (house icon, default landing) with a getting-started checklist computed from real activity (clearable, re-enabled in Settings via `users.prefs`) that matures into a recent-activity dashboard
 - [x] **"Build the room" participant browser** (`/conversations/new`): full-page browse over all personas with the same smart search + filter rail + pagination as the library, multi-select cards, and a sticky launch bar (selections persist across searches/pages, up to 20); linked from the picker ("BROWSE ALL WITH FILTERS →") and the empty state; also fixed the picker's crushed result rows (overflow-hidden grid items auto-min to zero — `gridAutoRows: max-content`)
 - [x] Brief composer + corpus — `/sim/new` (problem statement, AI-suggested question chips, decision templates, success criteria) → `/sim/[id]` workspace; upload → Supabase Storage + Anthropic Files API + local parse/chunk (FTS substrate); "Test the corpus" answers with native citations + cached corpus prefix. **Architecture decision: whole documents in context (Files API + citations + prompt caching) for v1 — no embeddings; chunk retrieval activates for swarm-scale runs and the verifier**
-- [ ] Corpus depth: DOCX/XLSX parsing, per-doc viewer with citation deep-links, retrieval mode past the context budget
+- [x] Brief refinements: decision **shape** is inferred by the suggest pass and shown as an editable "READS AS · …" hint (template pills removed — report sections always come from questions + success criteria; the shape only picks the lead visual); question chips carry a one-line framing ("POWER TIMELINE — can 300MW interconnect inside 36 months?"); embeddings provider decided: **Vercel AI Gateway** (`AI_GATEWAY_API_KEY`, `openai/text-embedding-3-small` = 1536 dims matching the existing pgvector columns)
+- [ ] Corpus depth: DOCX/XLSX parsing, per-doc viewer with citation deep-links, retrieval mode past the context budget (pgvector hybrid via the Vercel AI Gateway)
 - [ ] **⟶ NEXT: Casting Director** — auto-population from brief + corpus, library matching, editable persona cards (demo Stage 02)
 - [ ] ACS PUMS demographic seeding (Arizona first — the demo's ZIPs)
 - [ ] Agora engine: swarms `GroupChat` in `engine/`, events over Supabase Realtime into the live run screen
@@ -162,7 +163,9 @@ Model ids live in config only ([lib/chat-models.ts](lib/chat-models.ts), `CLAUDE
 
 ### Phase 2 — Seeding depth
 - [ ] Multi-metro PUMS pipeline + seeding corpus tier 2 (AHS, GSS/Pew, NAR, migration, licensure)
-- [ ] Persona editor + persona sets; embeddings-based library matching (Voyage key)
+- [ ] Persona editor + persona sets; embeddings-based library matching (Vercel AI Gateway)
+- [ ] **Land & parcel valuation use case** (flagship decision shape): valuation seats (appraiser, land broker, developer, adversarial skeptic), method triangulation (sales comps · residual land value · income cap · highest-and-best-use), comp-package grounding with verifier-audited numbers, defended price *range* + tripwires in the report; calibrate against actual trades via `outcomes`
+- [ ] **Agent tools & data expansion** (smartest agents for every real-estate question): Phase 2 free tools — county parcel/assessor (Regrid-class), Census/ACS, FRED/BLS, HUD FMR, FEMA flood, OSM/GTFS; Phase 3 commercial — ATTOM/CoreLogic comps, CoStar-class CRE, AcreValue-class farmland, third-party AVM outputs as panel *inputs to argue with*, permits, foot traffic
 - [ ] Cohort sentiment polling between rounds; convergence detection
 - [ ] Scenario forks + report diffs (`simulations.parent_id`)
 - [ ] Take the Floor: user posts into live runs; Ask-the-panel follow-ups on reports

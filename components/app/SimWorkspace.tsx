@@ -182,8 +182,12 @@ export default function SimWorkspace({
           {brief.questions?.length > 0 && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
               {brief.questions.map((q) => (
-                <span key={q} style={{ ...mono, fontSize: 11, padding: "7px 14px", borderRadius: 100, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)" }}>
-                  {q}
+                <span
+                  key={q.label}
+                  title={q.detail}
+                  style={{ ...mono, fontSize: 11, padding: "7px 14px", borderRadius: 100, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)", cursor: q.detail ? "help" : "default" }}
+                >
+                  {q.label}
                 </span>
               ))}
             </div>

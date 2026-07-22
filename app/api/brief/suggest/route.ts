@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { BRIEF_SUGGEST_MODEL, DECISION_TEMPLATES } from "@/lib/corpus";
+import { BRIEF_SUGGEST_MODEL, DECISION_SHAPES, normalizeQuestions } from "@/lib/corpus";
 
 /**
  * Brief composer assist (CLAUDE.md §2 Stage 1): one lightweight pass over the
@@ -39,9 +39,9 @@ export async function POST(request: Request) {
       max_tokens: 500,
       system:
         `You prepare real-estate research briefs for an agent-swarm simulation. Given a problem statement, reply with ONLY a JSON object:\n` +
-        `{"questions": ["..."], "template": "...", "composition": "experts|consumers|mixed", "rationale": "..."}\n` +
-        `- questions: 4-7 short UPPERCASE question chips (2-4 words each, e.g. "POWER TIMELINE", "WATER STRATEGY") — the sub-questions a decision-grade answer must resolve.\n` +
-        `- template: the closest of: ${DECISION_TEMPLATES.join(" · ")}.\n` +
+        `{"questions": [{"label": "...", "detail": "..."}], "template": "...", "composition": "experts|consumers|mixed", "rationale": "..."}\n` +
+        `- questions: 4-7 items — the sub-questions a decision-grade answer must resolve; each becomes a required report section. label: short UPPERCASE chip, 2-4 words (e.g. "POWER TIMELINE"). detail: one sharp sentence framing what must be answered (e.g. "Can 300MW be interconnected inside 36 months?").\n` +
+        `- template: the decision shape — the closest of: ${DECISION_SHAPES.join(" · ")}.\n` +
         `- composition: experts for feasibility/underwriting/legal questions; consumers for demand/pricing/sentiment; mixed when there is a community or political surface or a big capital decision.\n` +
         `- rationale: one sentence explaining the composition call.`,
       messages: [{ role: "user", content: problem }],
@@ -49,10 +49,8 @@ export async function POST(request: Request) {
     const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
     const match = text.match(/\{[\s\S]*\}/);
     const parsed = match ? JSON.parse(match[0]) : {};
-    const questions: string[] = Array.isArray(parsed.questions)
-      ? parsed.questions.map((q: unknown) => String(q).toUpperCase().slice(0, 40)).slice(0, 7)
-      : [];
-    const template = DECISION_TEMPLATES.includes(parsed.template) ? parsed.template : "Custom";
+    const questions = normalizeQuestions(parsed.questions).slice(0, 7);
+    const template = DECISION_SHAPES.includes(parsed.template) ? parsed.template : "Custom";
     const composition = ["experts", "consumers", "mixed"].includes(parsed.composition) ? parsed.composition : "mixed";
 
     if (orgId) {
