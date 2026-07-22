@@ -371,7 +371,13 @@ export function MiniSwarm({ label }: { label: string }) {
  * at run time (leads deliberate; the crowd is sampled/polled per §5), so this
  * is the honest preview of scale, not 500 live cards.
  */
-export function CrowdBand({ experts, residents }: { experts: number; residents: number }) {
+export function CrowdBand({ experts, residents, litExperts, litResidents }: {
+  experts: number;
+  residents: number;
+  /** materialized counts — lit dots are real members, dim dots are still to come */
+  litExperts?: number;
+  litResidents?: number;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -396,14 +402,17 @@ export function CrowdBand({ experts, residents }: { experts: number; residents: 
     ctx.clearRect(0, 0, W, H);
     const total = Math.max(experts + residents, 1);
     const expertShare = experts / total;
-    // one dot ≈ 2 people, capped so the band stays readable
-    const drawGroup = (count: number, x0: number, x1: number, color: string, salt: number, r: number) => {
+    // one dot ≈ 2 people, capped so the band stays readable; when lit counts
+    // are given, the first lit dots render solid (real members) and the rest
+    // stay faint outlines (not yet materialized)
+    const drawGroup = (count: number, lit: number | undefined, x0: number, x1: number, color: string, salt: number, r: number) => {
       const dots = Math.min(Math.ceil(count / 2), 450);
+      const litDots = lit === undefined ? dots : Math.min(Math.ceil(lit / 2), dots);
       ctx.fillStyle = color;
       for (let i = 0; i < dots; i++) {
         const x = x0 + rand(i, salt) * (x1 - x0);
         const y = 10 + rand(i, salt + 7) * (H - 20);
-        ctx.globalAlpha = 0.35 + rand(i, salt + 13) * 0.55;
+        ctx.globalAlpha = i < litDots ? 0.35 + rand(i, salt + 13) * 0.55 : 0.1;
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
         ctx.fill();
@@ -411,8 +420,8 @@ export function CrowdBand({ experts, residents }: { experts: number; residents: 
       ctx.globalAlpha = 1;
     };
     const split = residents > 0 ? Math.max(W * Math.max(expertShare, 0.15), 90) : W;
-    drawGroup(experts, 8, split - 14, acc, 1, 1.7);
-    if (residents > 0) drawGroup(residents, split + 14, W - 8, dim, 31, 1.3);
+    drawGroup(experts, litExperts, 8, split - 14, acc, 1, 1.7);
+    if (residents > 0) drawGroup(residents, litResidents, split + 14, W - 8, dim, 31, 1.3);
     if (residents > 0) {
       ctx.strokeStyle = cssVar("--ln4", "rgba(255,255,255,.12)");
       ctx.setLineDash([2, 4]);
@@ -422,7 +431,7 @@ export function CrowdBand({ experts, residents }: { experts: number; residents: 
       ctx.stroke();
       ctx.setLineDash([]);
     }
-  }, [experts, residents]);
+  }, [experts, residents, litExperts, litResidents]);
 
   return <canvas ref={ref} style={{ width: "100%", height: 72, display: "block" }} />;
 }
