@@ -10,7 +10,7 @@ export default async function Monitoring() {
 
   const { data } = await supabase!
     .from("agent_interactions")
-    .select("id, surface, agent_name, model, input_tokens, output_tokens, latency_ms, status, error, created_at, conversation_id")
+    .select("id, surface, agent_name, model, input_tokens, output_tokens, latency_ms, status, error, created_at, conversation_id, sim_id, detail")
     .order("id", { ascending: false })
     .limit(500);
   const rows = (data ?? []) as InteractionRow[];
