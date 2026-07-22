@@ -130,16 +130,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       cacheWrite: res.usage.cache_creation_input_tokens ?? 0,
     };
     await supabase.from("agent_interactions").insert({
-      org_id: orgId, user_id: user.id, surface: "corpus.qa", model,
+      org_id: orgId, user_id: user.id, surface: "corpus.qa", model, sim_id: id,
       input_tokens: usage.input + usage.cacheRead + usage.cacheWrite,
       output_tokens: usage.output, latency_ms: Date.now() - t0, status: "ok",
+      detail: { question: question.slice(0, 200), docs: docs.length, cache_read: usage.cacheRead },
     });
     return NextResponse.json({ segments, model, usage, groundedIn: docs.length });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "corpus answer failed";
     await supabase.from("agent_interactions").insert({
-      org_id: orgId, user_id: user.id, surface: "corpus.qa", model,
+      org_id: orgId, user_id: user.id, surface: "corpus.qa", model, sim_id: id,
       latency_ms: Date.now() - t0, status: "error", error: msg,
+      detail: { question: question.slice(0, 200) },
     });
     return NextResponse.json({ error: msg }, { status: 502 });
   }

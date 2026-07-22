@@ -2,20 +2,20 @@
 
 /**
  * Stage 3 — Population (CLAUDE.md §3.2A, demo Stage 02 reference).
- * "Cast the population" streams the Casting Director: a plan (composition ·
- * scale · recommended mode) followed by seat cards resolving one by one —
- * matched from the org's own personas first, then the global library, with
- * true gaps generated fresh and saved back to the org's custom library.
- * Cards open the full persona profile; any seat can be removed; a guidance
- * line re-casts the panel ("more first-time buyers; add a school-board voice").
+ * Auto-cast streams the Casting Director (theater → plan → resolving cards);
+ * hand-pick assembles seats with zero model calls. The guidance line runs in
+ * two modes — RE-CAST ALL (replace the panel) or ADD MORE ("add more pool
+ * engineering experts" appends without touching existing seats). The panel
+ * is reviewable by kind and provenance filter pills, and the grid caps at
+ * ~3 rows with its own scroll so big panels never stretch the page.
  */
 
-import { CSSProperties, useState } from "react";
+import { CSSProperties, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import CastingTheater from "@/components/app/CastingTheater";
 import SeatPicker from "@/components/app/SeatPicker";
-import { FrozenSpec, MAX_SEATS } from "@/lib/casting";
+import { FrozenSpec, MAX_SEATS, PANEL_SIZES } from "@/lib/casting";
 import { PersonaSpec } from "@/lib/personas";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -42,6 +42,28 @@ const PROVENANCE_LABEL: Record<string, string> = {
   generated: "GENERATED · SAVED TO YOUR LIBRARY",
 };
 
+const KIND_FILTERS = [
+  { key: "all", label: "ALL" },
+  { key: "expert", label: "EXPERTS" },
+  { key: "consumer", label: "CONSUMERS · RESIDENTS" },
+  { key: "stakeholder", label: "STAKEHOLDERS" },
+  { key: "adversarial", label: "ADVERSARIAL" },
+] as const;
+
+const SOURCE_FILTERS = [
+  { key: "all", label: "ALL SOURCES" },
+  { key: "yours", label: "YOUR LIBRARY" },
+  { key: "library", label: "LIBRARY" },
+  { key: "generated", label: "NEW · GENERATED" },
+] as const;
+
+function seatKindGroup(s: WorkspaceSeat): string {
+  if (s.spec.seat?.adversarial || s.spec.kind === "adversarial") return "adversarial";
+  if (s.spec.kind === "consumer" || s.spec.kind === "resident") return "consumer";
+  if (s.spec.kind === "stakeholder") return "stakeholder";
+  return "expert";
+}
+
 export default function PopulationStage({
   simId,
   initialSeats,
@@ -60,26 +82,30 @@ export default function PopulationStage({
   const [casting, setCasting] = useState(false);
   const [planReady, setPlanReady] = useState(false); // plan arrived → theater gives way to cards
   const [guidance, setGuidance] = useState("");
+  const [guidanceMode, setGuidanceMode] = useState<"recast" | "add">("recast");
+  const [panelSize, setPanelSize] = useState<number>(10);
+  const [kindFilter, setKindFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<WorkspaceSeat | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const setCount = (list: WorkspaceSeat[]) => onCountChange?.(list.length);
+  useEffect(() => { onCountChange?.(seats.length); }, [seats.length, onCountChange]);
 
-  const cast = async () => {
+  const cast = async (mode: "recast" | "add" = "recast") => {
     if (casting) return;
-    setCasting(true);
-    setPlanReady(false);
-    setError(null);
-    setSeats([]);
-    setCount([]);
-    setPending([]);
     const g = guidance.trim();
+    if (mode === "add" && !g) { setError("Describe who to add — e.g. “more pool engineering experts”"); return; }
+    setCasting(true);
+    setPlanReady(mode === "add"); // adding keeps the grid visible; recast opens the theater
+    setError(null);
+    setPending([]);
+    if (mode === "recast") setSeats([]);
     try {
       const res = await fetch(`/api/simulations/${simId}/cast`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(g ? { guidance: g } : {}),
+        body: JSON.stringify({ ...(g ? { guidance: g } : {}), mode, seats: panelSize }),
       });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
@@ -88,13 +114,14 @@ export default function PopulationStage({
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      const resolvedSeats: WorkspaceSeat[] = [];
       const handle = (evt: Record<string, unknown>) => {
         if (evt.type === "plan") {
-          const p = evt as unknown as CastingInfo & { seats: PendingSeat[] };
-          setCastingInfo({ composition: p.composition, rationale: p.rationale, scale: p.scale, mode: p.mode, modeRationale: p.modeRationale });
+          const p = evt as unknown as CastingInfo & { seats: PendingSeat[]; add?: boolean };
+          if (!p.add) {
+            setCastingInfo({ composition: p.composition, rationale: p.rationale, scale: p.scale, mode: p.mode, modeRationale: p.modeRationale });
+          }
           setPending((p.seats ?? []).map((s) => ({ key: s.key, role: s.role, discipline: s.discipline, kind: s.kind })));
-          setPlanReady(true); // swap the theater for the resolving card grid
+          setPlanReady(true);
         } else if (evt.type === "seat") {
           const key = String(evt.key);
           if (evt.provenance === "failed" || !evt.spec) {
@@ -102,13 +129,11 @@ export default function PopulationStage({
             return;
           }
           const seat: WorkspaceSeat = { key, provenance: evt.provenance as WorkspaceSeat["provenance"], spec: evt.spec as FrozenSpec };
-          resolvedSeats.push(seat);
           setSeats((prev) => [...prev, seat]);
           setPending((prev) => prev.filter((s) => s.key !== key));
         } else if (evt.type === "error") {
           setError(String(evt.error ?? "Casting failed"));
         } else if (evt.type === "done") {
-          setCount(resolvedSeats);
           setGuidance("");
           router.refresh();
         }
@@ -132,20 +157,12 @@ export default function PopulationStage({
   };
 
   const removeSeat = async (key: string) => {
-    setSeats((prev) => {
-      const next = prev.filter((s) => s.key !== key);
-      setCount(next);
-      return next;
-    });
+    setSeats((prev) => prev.filter((s) => s.key !== key));
     await fetch(`/api/simulations/${simId}/agents/${encodeURIComponent(key)}`, { method: "DELETE" });
   };
 
   const onAdded = (added: { key: string; provenance: "yours" | "library"; spec: PersonaSpec & { seat?: unknown } }[]) => {
-    setSeats((prev) => {
-      const next = [...prev, ...added.map((a) => ({ key: a.key, provenance: a.provenance, spec: a.spec as FrozenSpec }))];
-      setCount(next);
-      return next;
-    });
+    setSeats((prev) => [...prev, ...added.map((a) => ({ key: a.key, provenance: a.provenance, spec: a.spec as FrozenSpec }))]);
     router.refresh();
   };
 
@@ -153,6 +170,32 @@ export default function PopulationStage({
   const hasCast = seats.length > 0 || pending.length > 0;
   const showTheater = casting && !planReady;
   const remaining = Math.max(0, MAX_SEATS - seats.length);
+
+  const kindCounts = new Map<string, number>();
+  const sourceCounts = new Map<string, number>();
+  for (const s of seats) {
+    kindCounts.set(seatKindGroup(s), (kindCounts.get(seatKindGroup(s)) ?? 0) + 1);
+    sourceCounts.set(s.provenance, (sourceCounts.get(s.provenance) ?? 0) + 1);
+  }
+  const visibleSeats = seats.filter((s) =>
+    (kindFilter === "all" || seatKindGroup(s) === kindFilter) &&
+    (sourceFilter === "all" || s.provenance === sourceFilter)
+  );
+
+  const FilterPill = ({ on, count, children, onClick }: { on: boolean; count?: number; children: React.ReactNode; onClick: () => void }) => (
+    <button
+      onClick={onClick}
+      style={{
+        ...mono, fontSize: 9, letterSpacing: ".05em", padding: "5px 11px", borderRadius: 100,
+        cursor: "pointer", transition: "all .15s",
+        background: on ? "var(--acc-dim)" : "transparent",
+        border: `1px solid ${on ? "var(--acc)" : "var(--ln4)"}`,
+        color: on ? "var(--acc)" : "var(--t6)",
+      }}
+    >
+      {children}{typeof count === "number" ? ` ${count}` : ""}
+    </button>
+  );
 
   return (
     <div id="stage-population" className="card" style={{ padding: "26px 30px", marginTop: 20, scrollMarginTop: 20 }}>
@@ -189,10 +232,32 @@ export default function PopulationStage({
               fills them from your personas and the 1,800-strong library, generates only the true gaps,
               and seeds a skeptic. Editable after.
             </p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 14, alignItems: "center" }}>
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>PANEL SIZE ·</span>
+              {PANEL_SIZES.map((p) => (
+                <button
+                  key={p.seats}
+                  onClick={() => setPanelSize(p.seats)}
+                  title={p.desc}
+                  style={{
+                    ...mono, fontSize: 9, letterSpacing: ".05em", padding: "4px 10px", borderRadius: 100,
+                    cursor: "pointer",
+                    background: panelSize === p.seats ? "var(--acc)" : "transparent",
+                    border: `1px solid ${panelSize === p.seats ? "var(--acc)" : "var(--ln5)"}`,
+                    color: panelSize === p.seats ? "var(--acc-c)" : "var(--t5)",
+                  }}
+                >
+                  {p.label} {p.seats}
+                </button>
+              ))}
+            </div>
+            <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)", marginTop: 8 }}>
+              LEADS ONLY — THE FULL-RUN CROWD (UP TO 500 EXPERTS · 1,000 RESIDENTS) IS SET AT RUN CONFIG
+            </div>
             <button
-              onClick={() => void cast()}
+              onClick={() => void cast("recast")}
               style={{
-                marginTop: 16, background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600,
+                marginTop: 14, background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600,
                 fontSize: 14, padding: "12px 24px", borderRadius: 100, border: "none", cursor: "pointer",
                 fontFamily: "var(--font-sans), sans-serif",
               }}
@@ -222,9 +287,40 @@ export default function PopulationStage({
 
       {showTheater && <CastingTheater />}
 
+      {/* review filters — by kind and by where each seat came from */}
+      {seats.length > 3 && !showTheater && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 18 }}>
+          {KIND_FILTERS.map((f) => {
+            const count = f.key === "all" ? seats.length : kindCounts.get(f.key) ?? 0;
+            if (f.key !== "all" && count === 0) return null;
+            return (
+              <FilterPill key={f.key} on={kindFilter === f.key} count={count} onClick={() => setKindFilter(f.key)}>
+                {f.label}
+              </FilterPill>
+            );
+          })}
+          <span style={{ width: 1, height: 16, background: "var(--ln4)", margin: "0 4px" }} />
+          {SOURCE_FILTERS.map((f) => {
+            const count = f.key === "all" ? seats.length : sourceCounts.get(f.key) ?? 0;
+            if (f.key !== "all" && count === 0) return null;
+            return (
+              <FilterPill key={f.key} on={sourceFilter === f.key} count={count} onClick={() => setSourceFilter(f.key)}>
+                {f.label}
+              </FilterPill>
+            );
+          })}
+        </div>
+      )}
+
       {(hasCast || (casting && planReady)) && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))", gap: 14, marginTop: 20 }}>
-          {seats.map((s) => {
+        <div
+          style={{
+            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))", gap: 14, marginTop: 16,
+            // big panels scroll inside the card instead of stretching the page
+            ...(seats.length + pending.length > 12 ? { maxHeight: 560, overflowY: "auto", paddingRight: 6 } : {}),
+          }}
+        >
+          {visibleSeats.map((s) => {
             const adversarial = s.spec.seat?.adversarial || s.spec.kind === "adversarial";
             return (
               <div
@@ -278,6 +374,11 @@ export default function PopulationStage({
               </div>
             </div>
           ))}
+          {visibleSeats.length === 0 && pending.length === 0 && seats.length > 0 && (
+            <div style={{ ...mono, fontSize: 10, letterSpacing: ".06em", color: "var(--t6)", padding: "18px 4px" }}>
+              NO SEATS MATCH THESE FILTERS
+            </div>
+          )}
         </div>
       )}
 
@@ -285,26 +386,46 @@ export default function PopulationStage({
 
       {hasCast && !casting && (
         <div style={{ display: "flex", gap: 10, marginTop: 20, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", border: "1px solid var(--ln4)", borderRadius: 100, overflow: "hidden", flex: "none" }}>
+            {(["recast", "add"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setGuidanceMode(m)}
+                style={{
+                  ...mono, fontSize: 9, letterSpacing: ".06em", padding: "9px 13px", border: "none", cursor: "pointer",
+                  background: guidanceMode === m ? "var(--acc-dim)" : "transparent",
+                  color: guidanceMode === m ? "var(--acc)" : "var(--t6)",
+                }}
+              >
+                {m === "recast" ? "RE-CAST ALL" : "ADD MORE"}
+              </button>
+            ))}
+          </div>
           <input
             value={guidance}
             onChange={(e) => setGuidance(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void cast(); }}
-            placeholder="Re-cast with guidance — “more first-time buyers; add a school-board voice”"
+            onKeyDown={(e) => { if (e.key === "Enter") void cast(guidanceMode); }}
+            placeholder={guidanceMode === "add"
+              ? "Who else? — “add more pool engineering experts”, “a school-board voice”"
+              : "Re-cast the whole panel — “more first-time buyers; heavier on capital”"}
             maxLength={500}
             style={{
-              flex: 1, minWidth: 220, padding: "11px 16px", background: "var(--sf2)",
+              flex: 1, minWidth: 200, padding: "11px 16px", background: "var(--sf2)",
               border: "1px solid var(--ln3)", borderRadius: 100,
               fontFamily: "var(--font-sans), sans-serif", fontSize: 13, color: "var(--t1)", outline: "none",
             }}
           />
           <button
-            onClick={() => void cast()}
+            onClick={() => void cast(guidanceMode)}
+            disabled={guidanceMode === "add" && (!guidance.trim() || remaining === 0)}
             style={{
               ...mono, fontSize: 10.5, letterSpacing: ".06em", padding: "11px 20px", borderRadius: 100,
-              background: "transparent", border: "1px solid var(--ln7)", color: "var(--t3)", cursor: "pointer",
+              background: "transparent", border: "1px solid var(--ln7)",
+              color: guidanceMode === "add" && (!guidance.trim() || remaining === 0) ? "var(--t7)" : "var(--t3)",
+              cursor: guidanceMode === "add" && (!guidance.trim() || remaining === 0) ? "default" : "pointer",
             }}
           >
-            RE-CAST
+            {guidanceMode === "recast" ? "RE-CAST" : `ADD (${remaining} SEATS LEFT)`}
           </button>
           <button
             onClick={() => setPickerOpen(true)}

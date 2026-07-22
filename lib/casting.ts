@@ -13,7 +13,16 @@ import { PersonaSpec } from "@/lib/personas";
 /** never below Sonnet (§6.4) — env-overridable, e.g. claude-opus-4-8 */
 export const CASTING_MODEL = process.env.CASTING_MODEL ?? "claude-sonnet-5";
 
-export const MAX_SEATS = 12;
+export const MAX_SEATS = 20;
+
+/** pre-cast panel-size presets (deliberation LEADS — the full-run population
+ * of hundreds/thousands is the recommended scale, unlocked with PUMS + engine) */
+export const PANEL_SIZES = [
+  { seats: 6, label: "FOCUSED", desc: "a tight expert huddle" },
+  { seats: 10, label: "STANDARD", desc: "the default panel" },
+  { seats: 15, label: "DEEP", desc: "wide coverage, sub-debates" },
+  { seats: 20, label: "MAX", desc: "every discipline seated" },
+] as const;
 
 export const SIM_MODES = ["Agora", "Roundtable", "Tribunal", "Chamber", "Jury", "Desk", "Expedition"] as const;
 
@@ -35,7 +44,10 @@ export interface CastPlan {
   seats: CastSeat[];
 }
 
-export function castingPlanSystem(): string {
+export function castingPlanSystem(targetSeats?: number): string {
+  const seatCount = targetSeats
+    ? `EXACTLY ${Math.min(Math.max(targetSeats, 4), MAX_SEATS)} seats (the user chose this panel size — hit it).`
+    : `6-${MAX_SEATS} seats.`;
   return (
     `You are the Casting Director for Microcosm, an agent-swarm simulation platform for real estate decisions. ` +
     `Given a research brief and the diligence corpus inventory, design the ideal panel. Reply with ONLY a JSON object:\n` +
@@ -48,13 +60,27 @@ export function castingPlanSystem(): string {
     `- Demand / preference / pricing / sentiment questions → consumers-residents, plus a thin expert bench.\n` +
     `- Community or political surface, or a big capital decision → mixed, ALWAYS with resident seats.\n` +
     `Seat rules (non-negotiable):\n` +
-    `- 6-${MAX_SEATS} seats. Every question-to-resolve must have at least one expert seat that owns it (name the mapping in "why").\n` +
+    `- ${seatCount} Every question-to-resolve must have at least one expert seat that owns it (name the mapping in "why").\n` +
     `- EXACTLY ONE seat with kind "adversarial": a credible skeptic instructed to attack the thesis (organized-opposition voice when there is a community surface).\n` +
     `- Seats are the deliberation LEADS. "scale" is the recommended full-run population (experts 4-500, residents 0-1000; residents 0 unless composition includes consumers/residents).\n` +
     `- discipline: short UPPERCASE cluster label (POWER, WATER, CAPITAL, ZONING, COMMUNITY, MARKET...).\n` +
     `- query: 2-4 lowercase keywords to find this person in a persona library (e.g. "grid interconnection utility").\n` +
     `Mode guide: Agora = open deliberation (default); Roundtable = equals, every voice each round; Tribunal = genuinely two-sided dispute; ` +
     `Chamber = independent takes then blind peer review; Jury = independent scored verdicts; Desk = research memo; Expedition = deep background research.`
+  );
+}
+
+/** add-more mode: extend the existing panel instead of replacing it */
+export function castingAddSystem(existingRoles: string[], maxNew: number): string {
+  return (
+    `You are the Casting Director for Microcosm, extending an EXISTING simulation panel. ` +
+    `The panel already seats:\n${existingRoles.map((r) => `- ${r}`).join("\n")}\n\n` +
+    `Given the brief and the user's request, propose ONLY the ADDITIONAL seats (1-${maxNew}) — never duplicate or rework existing seats. ` +
+    `Reply with ONLY a JSON object:\n` +
+    `{"seats": [{"role": "...", "kind": "expert|consumer|resident|stakeholder|adversarial", "discipline": "...", "why": "...", "query": "..."}]}\n` +
+    `- Follow the user's request precisely ("add more pool engineering experts" → pool/aquatics engineering seats).\n` +
+    `- kind "adversarial" only if the user explicitly asks for another skeptic (the panel already has one).\n` +
+    `- discipline: short UPPERCASE cluster label. query: 2-4 lowercase library-search keywords.`
   );
 }
 
