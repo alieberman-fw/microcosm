@@ -11,6 +11,7 @@ import { CSSProperties, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BriefComposer, { Brief } from "@/components/app/BriefComposer";
 import Markdown from "@/components/app/Markdown";
+import PopulationStage, { CastingInfo, WorkspaceSeat } from "@/components/app/PopulationStage";
 import { DIRECT_CONTEXT_BUDGET, MAX_DOC_BYTES } from "@/lib/corpus";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -53,13 +54,18 @@ const STAGES = ["BRIEF", "CORPUS", "POPULATION", "RUN", "REPORT"] as const;
 export default function SimWorkspace({
   sim,
   initialDocs,
+  initialSeats,
+  initialCasting,
 }: {
   sim: { id: string; status: string; brief: Brief; created_at: string };
   initialDocs: DocRow[];
+  initialSeats: WorkspaceSeat[];
+  initialCasting: CastingInfo | null;
 }) {
   const router = useRouter();
   const [brief, setBrief] = useState<Brief>(sim.brief);
   const [editing, setEditing] = useState(false);
+  const [populationCount, setPopulationCount] = useState(initialSeats.length);
   const [docs, setDocs] = useState<DocRow[]>(initialDocs);
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -71,7 +77,7 @@ export default function SimWorkspace({
 
   const parsedDocs = docs.filter((d) => d.parse_status === "parsed");
   const totalTokens = parsedDocs.reduce((s, d) => s + (d.token_estimate ?? 0), 0);
-  const stageDone = [true, parsedDocs.length > 0, false, false, false];
+  const stageDone = [true, parsedDocs.length > 0, populationCount > 0, false, false];
 
   const uploadFiles = async (files: FileList | File[]) => {
     for (const file of Array.from(files)) {
@@ -140,12 +146,12 @@ export default function SimWorkspace({
             <span
               style={{
                 ...mono, fontSize: 10, letterSpacing: ".1em",
-                color: stageDone[i] ? "var(--acc)" : i <= 1 ? "var(--t4)" : "var(--t7)",
+                color: stageDone[i] ? "var(--acc)" : i <= 2 ? "var(--t4)" : "var(--t7)",
               }}
             >
               {String(i + 1).padStart(2, "0")} {s}
               {stageDone[i] && " ✓"}
-              {i > 1 && <span style={{ marginLeft: 6, border: "1px solid var(--ln4)", borderRadius: 100, padding: "1px 6px", fontSize: 8, color: "var(--t7)" }}>SOON</span>}
+              {i > 2 && <span style={{ marginLeft: 6, border: "1px solid var(--ln4)", borderRadius: 100, padding: "1px 6px", fontSize: 8, color: "var(--t7)" }}>SOON</span>}
             </span>
             {i < STAGES.length - 1 && <span style={{ width: 18, height: 1, background: "var(--ln4)" }} />}
           </span>
@@ -381,6 +387,14 @@ export default function SimWorkspace({
         ))}
       </div>
 
+      {/* the population — Casting Director */}
+      <PopulationStage
+        simId={sim.id}
+        initialSeats={initialSeats}
+        initialCasting={initialCasting}
+        onCountChange={setPopulationCount}
+      />
+
       {/* next stage */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 30 }}>
         <button
@@ -391,10 +405,10 @@ export default function SimWorkspace({
             fontFamily: "var(--font-sans), sans-serif",
           }}
         >
-          Cast the population →
+          Configure the run →
         </button>
         <span style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--t7)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "3px 9px" }}>
-          NEXT BUILD · CASTING DIRECTOR
+          NEXT BUILD · RUN CONFIG + AGORA ENGINE
         </span>
       </div>
     </div>
