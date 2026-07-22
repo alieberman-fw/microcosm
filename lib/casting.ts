@@ -13,6 +13,16 @@ import { PersonaSpec } from "@/lib/personas";
 /** never below Sonnet (§6.4) — env-overridable, e.g. claude-opus-4-8 */
 export const CASTING_MODEL = process.env.CASTING_MODEL ?? "claude-sonnet-5";
 
+/** crowd members are high-count compact personas → Haiku tier (§6.4) */
+export const CROWD_MODEL = process.env.CROWD_MODEL ?? "claude-haiku-4-5";
+
+/** crowd members generated per model call */
+export const CROWD_BATCH = 25;
+
+/** pre-run materialization cap: crowds beyond this get a representative
+ * sample now (browsable/editable) and reach full scale at run time */
+export const CROWD_SAMPLE_CAP = 300;
+
 export const MAX_SEATS = 20;
 
 /** pre-cast panel-size presets (deliberation LEADS — the full-run population
@@ -44,11 +54,15 @@ export interface CastPlan {
   seats: CastSeat[];
 }
 
-export function castingPlanSystem(targetSeats?: number): string {
+export function castingPlanSystem(targetSeats?: number, composition?: "experts" | "consumers" | "mixed"): string {
   const seatCount = targetSeats
     ? `EXACTLY ${Math.min(Math.max(targetSeats, 4), MAX_SEATS)} seats (the user chose this panel size — hit it).`
     : `6-${MAX_SEATS} seats.`;
+  const compLine = composition
+    ? `THE USER REQUIRES composition "${composition}" — set composition to exactly this value and choose seat kinds accordingly. This overrides the composition rules below.\n`
+    : "";
   return (
+    compLine +
     `You are the Casting Director for Microcosm, an agent-swarm simulation platform for real estate decisions. ` +
     `Given a research brief and the diligence corpus inventory, design the ideal panel. Reply with ONLY a JSON object:\n` +
     `{"composition": "experts|consumers|mixed", "rationale": "...", ` +
@@ -100,6 +114,29 @@ export function castingGenerateSystem(): string {
   );
 }
 
+/** crowd materialization: compact personas in Haiku-sized batches. The crowd
+ * is the population BEHIND the leads — realistic spread, no celebrities, no
+ * long backstories. Residents are narrative-seeded until ACS PUMS lands. */
+export function crowdGenerateSystem(group: "experts" | "residents", leadRoles: string[], disciplines: string[]): string {
+  const groupRules = group === "experts"
+    ? `These are the EXPERT crowd behind a deliberation panel whose expert leads are:\n${leadRoles.map((r) => `- ${r}`).join("\n")}\n` +
+      `Every member is a working PROFESSIONAL (analyst, engineer, broker, lender, planner, operator...) — never a renter, buyer, or neighbor. ` +
+      `Distribute roles across these disciplines: ${disciplines.join(", ") || "the panel's fields"}. ` +
+      `Vary seniority (analysts to principals), employer type (firms, agencies, utilities, independents), and viewpoint. kind is "expert".`
+    : `These are RESIDENT / CONSUMER crowd members from the market in the brief — the people whose behavior is being predicted. ` +
+      `Ground each in the brief's geography. Spread age, income band, tenure (owner/renter mix), household shape, and occupation like a real place ` +
+      `(this cohort gets census-grounded later; make the spread plausible, not uniform). kind is "resident" or "consumer".`;
+  return (
+    `You create COMPACT synthetic crowd personas for Microcosm's real-estate simulations. ${groupRules}\n` +
+    `Reply with ONLY a JSON array, one object per member:\n` +
+    `[{"name": "First Last", "initials": "FL", "role": "...", "kind": "...", "discipline": "...", ` +
+    `"tagline": "one sharp line", "backstory": "ONE sentence", "stances": ["...", "..."], ` +
+    `"demographics": {"age": N, "metro": "City", "state": "ST", "occupation": "...", "income_band": "$X–YK", "tenure": "owner|renter", "household": "..."}}]\n` +
+    `Rules: every persona is a synthetic composite — never a real person. Full names distinct from each other and the avoid-list. ` +
+    `Keep each member SHORT — these are crowd members, not leads. discipline: short UPPERCASE label.`
+  );
+}
+
 /** seat → agent_key slug ("grid-interconnection-planner-2") */
 export function seatKey(role: string, index: number): string {
   const slug = role.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
@@ -113,6 +150,9 @@ export interface SeatMeta {
   discipline: string;
   adversarial: boolean;
   provenance: "yours" | "library" | "generated";
+  /** leads deliberate in the forum; crowd members are the §4.1 full-run
+   * population — sampled as interjectors and polled for sentiment (§5) */
+  tier?: "lead" | "crowd";
 }
 
 export type FrozenSpec = PersonaSpec & { seat: SeatMeta };
