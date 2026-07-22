@@ -156,9 +156,10 @@ Model ids live in config only ([lib/chat-models.ts](lib/chat-models.ts), `CLAUDE
 - [x] Brief polish: decision shape is now **fully silent** (classified into `brief.template`, zero UI — reports compose from questions + success criteria); re-suggest replaces prior AI chips instead of stacking (hand-added ones survive); success criteria became a styled bulleted list (type + Enter, accent markers, legacy free-text auto-migrates)
 - [ ] Corpus depth: DOCX/XLSX parsing, per-doc viewer with citation deep-links, retrieval mode past the context budget (pgvector hybrid via the Vercel AI Gateway)
 - [ ] Mode picker with animated per-mode explainer diagrams + per-mode live run visual grammar (CLAUDE.md §5 table: Agora network, Roundtable ring, Tribunal opposing benches + verdict scale, Chamber blind-review phases, Jury tally lanes, Desk org-tree, Expedition route) — ships with run-config + engine
-- [ ] **⟶ NEXT: Casting Director** — auto-population from brief + corpus, library matching, editable persona cards (demo Stage 02)
-- [ ] ACS PUMS demographic seeding (Arizona first — the demo's ZIPs)
-- [ ] Agora engine: swarms `GroupChat` in `engine/`, events over Supabase Realtime into the live run screen
+- [x] **Casting Director** (demo Stage 02): one Sonnet-tier pass over brief + corpus → composition, recommended scale, recommended mode, 6–12 lead seats with exactly one adversarial seed; seats stream onto the card grid as they resolve — org custom personas matched first, then the 1,800-library (FTS), true gaps generated and saved back to your library; provenance tags, profile click-through, per-seat remove, re-cast with guidance; cast frozen into `sim_agents.spec_frozen` + `config.casting`
+- [ ] Population editor depth: add-from-library picker, per-seat regenerate/swap, count controls, persona sets
+- [ ] **⟶ NEXT: Run config + Agora engine** — run parameters + mode picker, swarms `GroupChat` in `engine/`, events over Supabase Realtime into the live run screen (canvas + feed against the 46-event replay fixture first)
+- [ ] ACS PUMS demographic seeding (Arizona first — the demo's ZIPs; unlocks resident cohorts at the recommended scale)
 - [ ] Verifier pass: claims checked against the corpus, contradictions flagged
 - [ ] Report engine: Desk-mode synthesis — verdict, dimension scores, cited findings, risk register, preserved dissents
 - [ ] **Phase 1 exit:** Site 47-A reproduced live, unscripted, <15 min wall-clock, <$25/run, by a signed-in user whose run persists
