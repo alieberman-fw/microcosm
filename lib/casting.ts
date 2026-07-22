@@ -44,11 +44,15 @@ export interface CastPlan {
   seats: CastSeat[];
 }
 
-export function castingPlanSystem(targetSeats?: number): string {
+export function castingPlanSystem(targetSeats?: number, composition?: "experts" | "consumers" | "mixed"): string {
   const seatCount = targetSeats
     ? `EXACTLY ${Math.min(Math.max(targetSeats, 4), MAX_SEATS)} seats (the user chose this panel size — hit it).`
     : `6-${MAX_SEATS} seats.`;
+  const compLine = composition
+    ? `THE USER REQUIRES composition "${composition}" — set composition to exactly this value and choose seat kinds accordingly. This overrides the composition rules below.\n`
+    : "";
   return (
+    compLine +
     `You are the Casting Director for Microcosm, an agent-swarm simulation platform for real estate decisions. ` +
     `Given a research brief and the diligence corpus inventory, design the ideal panel. Reply with ONLY a JSON object:\n` +
     `{"composition": "experts|consumers|mixed", "rationale": "...", ` +

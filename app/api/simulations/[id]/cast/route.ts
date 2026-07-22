@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
   }
 
-  let body: { guidance?: string; mode?: string; seats?: number };
+  let body: { guidance?: string; mode?: string; seats?: number; composition?: string };
   try {
     body = await request.json();
   } catch {
@@ -39,6 +39,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const guidance = (body.guidance ?? "").trim().slice(0, 500);
   const addMode = body.mode === "add";
   const targetSeats = typeof body.seats === "number" ? Math.min(Math.max(Math.round(body.seats), 4), MAX_SEATS) : undefined;
+  const compOverride = (["experts", "consumers", "mixed"] as const).find((c) => c === body.composition);
   if (addMode && !guidance) return NextResponse.json({ error: "Describe who to add" }, { status: 400 });
 
   const { data: userRow } = await supabase.from("users").select("org_id").eq("id", user.id).single();
@@ -106,12 +107,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           const planRes = await anthropic.messages.create({
             model: CASTING_MODEL,
             max_tokens: 3500, // 20 verbose seats + rationales cannot truncate at this cap
-            system: addMode ? castingAddSystem(existingRoles, maxNew) : castingPlanSystem(targetSeats),
+            system: addMode ? castingAddSystem(existingRoles, maxNew) : castingPlanSystem(targetSeats, compOverride),
             messages: [{ role: "user", content: briefText }],
           });
           await logCall("casting.plan", CASTING_MODEL, planRes.usage, t0, undefined, {
             problem: (brief.problem ?? "").slice(0, 160), mode: addMode ? "add" : "recast",
-            guidance: guidance || null, target_seats: targetSeats ?? null,
+            guidance: guidance || null, target_seats: targetSeats ?? null, composition: compOverride ?? null,
           });
           const planText = planRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
           const parsed = parseLooseObject(planText);
@@ -141,7 +142,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), n - 40))}…`;
         };
         const plan: CastPlan = {
-          composition: (["experts", "consumers", "mixed"] as const).find((c) => c === raw.composition) ?? "mixed",
+          composition: compOverride ?? (["experts", "consumers", "mixed"] as const).find((c) => c === raw.composition) ?? "mixed",
           rationale: clip(raw.rationale, 300),
           scale: {
             experts: Math.min(Math.max(Number(raw.scale?.experts) || seats.length, 4), 500),
