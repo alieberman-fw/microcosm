@@ -16,7 +16,7 @@ export default async function Dashboard() {
     .limit(24);
   const sims = (data ?? []) as {
     id: string; status: string; created_at: string;
-    brief: { problem?: string; question?: string; template?: string; questions?: string[] } | null;
+    brief: { problem?: string; question?: string; template?: string; questions?: unknown[] } | null;
     documents: { count: number }[];
   }[];
 
