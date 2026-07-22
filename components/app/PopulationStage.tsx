@@ -16,8 +16,9 @@ import { CSSProperties, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import CastingTheater, { CrowdBand, MiniSwarm } from "@/components/app/CastingTheater";
+import CrowdRoster from "@/components/app/CrowdRoster";
 import SeatPicker from "@/components/app/SeatPicker";
-import { FrozenSpec, MAX_SEATS, PANEL_SIZES, SIM_MODES } from "@/lib/casting";
+import { CROWD_SAMPLE_CAP, FrozenSpec, MAX_SEATS, PANEL_SIZES, SIM_MODES } from "@/lib/casting";
 import { PersonaSpec } from "@/lib/personas";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -35,6 +36,7 @@ export interface CastingInfo {
   mode: string;
   modeRationale: string;
   user_set?: { mode?: boolean; scale?: boolean };
+  crowd?: { generated: number; sampled_of: number };
 }
 
 type Composition = "experts" | "consumers" | "mixed";
@@ -78,16 +80,22 @@ function seatKindGroup(s: WorkspaceSeat): string {
 export default function PopulationStage({
   simId,
   initialSeats,
+  initialCrowd = [],
   initialCasting,
   onCountChange,
 }: {
   simId: string;
   initialSeats: WorkspaceSeat[];
+  initialCrowd?: WorkspaceSeat[];
   initialCasting: CastingInfo | null;
   onCountChange?: (n: number) => void;
 }) {
   const router = useRouter();
   const [seats, setSeats] = useState<WorkspaceSeat[]>(initialSeats);
+  const [crowd, setCrowd] = useState<WorkspaceSeat[]>(initialCrowd);
+  const [crowdGen, setCrowdGen] = useState(false);
+  const [crowdSample, setCrowdSample] = useState<number | null>(null); // target of the in-flight generation
+  const [rosterOpen, setRosterOpen] = useState(false);
   const [pending, setPending] = useState<PendingSeat[]>([]);
   const [castingInfo, setCastingInfo] = useState<CastingInfo | null>(initialCasting);
   const [casting, setCasting] = useState(false);
@@ -120,7 +128,7 @@ export default function PopulationStage({
     setError(null);
     setPending([]);
     setPendingComp(null);
-    if (mode === "recast") setSeats([]);
+    if (mode === "recast") { setSeats([]); setCrowd([]); } // re-cast clears the whole population
     try {
       const res = await fetch(`/api/simulations/${simId}/cast`, {
         method: "POST",
@@ -219,6 +227,57 @@ export default function PopulationStage({
     await fetch(`/api/simulations/${simId}/agents/${encodeURIComponent(key)}`, { method: "DELETE" });
   };
 
+  const removeCrowdMember = async (key: string) => {
+    setCrowd((prev) => prev.filter((s) => s.key !== key));
+    await fetch(`/api/simulations/${simId}/agents/${encodeURIComponent(key)}`, { method: "DELETE" });
+  };
+
+  // materialize the crowd: Haiku-batched compact personas streamed in as they land
+  const generateCrowd = async () => {
+    if (crowdGen || casting) return;
+    setCrowdGen(true);
+    setCrowd([]);
+    setError(null);
+    try {
+      const res = await fetch(`/api/simulations/${simId}/crowd`, { method: "POST" });
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Crowd generation failed");
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const handle = (evt: Record<string, unknown>) => {
+        if (evt.type === "start") {
+          setCrowdSample(Number(evt.sample) || null);
+        } else if (evt.type === "members") {
+          const members = (evt.members as { key: string; spec: FrozenSpec }[] | undefined) ?? [];
+          setCrowd((prev) => [...prev, ...members.map((m) => ({ key: m.key, provenance: "generated" as const, spec: m.spec }))]);
+        } else if (evt.type === "error") {
+          setError(String(evt.error ?? "Crowd generation failed"));
+        } else if (evt.type === "done") {
+          setCastingInfo((prev) => prev ? { ...prev, crowd: { generated: Number(evt.generated) || 0, sampled_of: Number(evt.target) || 0 } } : prev);
+          router.refresh();
+        }
+      };
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.trim()) handle(JSON.parse(line));
+        }
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Crowd generation failed");
+    } finally {
+      setCrowdGen(false);
+      setCrowdSample(null);
+    }
+  };
+
   const onAdded = (added: { key: string; provenance: "yours" | "library"; spec: PersonaSpec & { seat?: unknown } }[]) => {
     setSeats((prev) => [...prev, ...added.map((a) => ({ key: a.key, provenance: a.provenance, spec: a.spec as FrozenSpec }))]);
     router.refresh();
@@ -228,6 +287,17 @@ export default function PopulationStage({
   const hasCast = seats.length > 0 || pending.length > 0;
   const showTheater = casting && !planReady;
   const remaining = Math.max(0, MAX_SEATS - seats.length);
+
+  // the crowd is the population BEHIND the leads: scale minus who's already seated
+  const residentLeads = seats.filter((s) => s.spec.kind === "consumer" || s.spec.kind === "resident").length;
+  const expertLeads = seats.length - residentLeads;
+  const crowdExpertsTarget = castingInfo ? Math.max(castingInfo.scale.experts - expertLeads, 0) : 0;
+  const crowdResidentsTarget = castingInfo ? Math.max(castingInfo.scale.residents - residentLeads, 0) : 0;
+  const crowdTarget = crowdExpertsTarget + crowdResidentsTarget;
+  const crowdExpertsLit = crowd.filter((s) => s.spec.kind !== "consumer" && s.spec.kind !== "resident").length;
+  const crowdResidentsLit = crowd.length - crowdExpertsLit;
+  // counts edited after materialization → the sample no longer matches
+  const crowdStale = crowd.length > 0 && !crowdGen && !!castingInfo?.crowd && castingInfo.crowd.sampled_of !== crowdTarget;
 
   const kindCounts = new Map<string, number>();
   const sourceCounts = new Map<string, number>();
@@ -260,8 +330,7 @@ export default function PopulationStage({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
         <div style={label}>
           THE POPULATION{seats.length > 0 && ` · ${seats.length} LEAD${seats.length > 1 ? "S" : ""}`}
-          {castingInfo && castingInfo.scale.experts + castingInfo.scale.residents > seats.length &&
-            ` + ${(castingInfo.scale.experts + castingInfo.scale.residents).toLocaleString()} CROWD`}
+          {crowdTarget > 0 && ` + ${crowdTarget.toLocaleString()} CROWD`}
         </div>
         {castingInfo && (
           <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)", textAlign: "right", lineHeight: 1.9 }}>
@@ -329,6 +398,7 @@ export default function PopulationStage({
                 onChange={(e) => setExpertsDraft(e.target.value)}
                 onBlur={commitScale}
                 onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                onWheel={(e) => (e.target as HTMLInputElement).blur()} // page scroll must never nudge the count
                 style={{ ...mono, width: 62, padding: "5px 8px", fontSize: 10.5, background: "var(--sf)", border: "1px solid var(--ln4)", borderRadius: 8, color: "var(--t1)", outline: "none" }}
               />
             </label>
@@ -341,12 +411,13 @@ export default function PopulationStage({
                   onChange={(e) => setResidentsDraft(e.target.value)}
                   onBlur={commitScale}
                   onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  onWheel={(e) => (e.target as HTMLInputElement).blur()} // page scroll must never nudge the count
                   style={{ ...mono, width: 62, padding: "5px 8px", fontSize: 10.5, background: "var(--sf)", border: "1px solid var(--ln4)", borderRadius: 8, color: "var(--t1)", outline: "none" }}
                 />
               </label>
             )}
             <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
-              {castingInfo.user_set?.scale ? "YOURS" : "RECOMMENDED"} · EXPERTS 4–500 · RESIDENTS 0–1,000 · INSTANTIATED AT RUN
+              {castingInfo.user_set?.scale ? "YOURS" : "RECOMMENDED"} · EXPERTS 4–500 · RESIDENTS 0–1,000 · GENERATE THEM IN THE CROWD PANEL BELOW
             </span>
           </div>
         </div>
@@ -537,15 +608,76 @@ export default function PopulationStage({
         </div>
       )}
 
-      {/* the full-run crowd, visible in the population space */}
-      {castingInfo && hasCast && !showTheater && (
-        <div style={{ marginTop: 16, border: "1px solid var(--ln2)", borderRadius: 12, padding: "12px 16px 6px" }}>
+      {/* the full-run crowd — real members, generated + browsable right here */}
+      {castingInfo && hasCast && !showTheater && crowdTarget > 0 && (
+        <div style={{ marginTop: 16, border: "1px solid var(--ln2)", borderRadius: 12, padding: "12px 16px 12px" }}>
           <div style={{ ...mono, fontSize: 9, letterSpacing: ".07em", color: "var(--t6)" }}>
-            THE CROWD · <span style={{ color: "var(--acc)" }}>{castingInfo.scale.experts}</span> EXPERTS
-            {castingInfo.scale.residents > 0 && <> · <span style={{ color: "var(--acc)" }}>{castingInfo.scale.residents}</span> RESIDENTS <span style={{ color: "var(--t7)" }}>(ACS PUMS)</span></>}
-            <span style={{ color: "var(--t7)" }}> — LEADS DELIBERATE; THE CROWD IS SAMPLED & POLLED AT RUN (SOON)</span>
+            THE CROWD · <span style={{ color: "var(--acc)" }}>{crowdExpertsTarget.toLocaleString()}</span> EXPERTS
+            {crowdResidentsTarget > 0 && <> · <span style={{ color: "var(--acc)" }}>{crowdResidentsTarget.toLocaleString()}</span> RESIDENTS <span style={{ color: "var(--t7)" }}>(NARRATIVE · ACS PUMS SOON)</span></>}
+            <span style={{ color: "var(--t7)" }}> — THE POPULATION BEHIND THE LEADS; SAMPLED & POLLED AT RUN</span>
           </div>
-          <CrowdBand experts={castingInfo.scale.experts} residents={castingInfo.scale.residents} />
+          <CrowdBand
+            experts={crowdExpertsTarget}
+            residents={crowdResidentsTarget}
+            litExperts={crowdExpertsLit}
+            litResidents={crowdResidentsLit}
+          />
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 4 }}>
+            {crowdGen ? (
+              <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)", display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.1s ease infinite" }} />
+                MATERIALIZING · {crowd.length}/{crowdSample ?? "…"} · HAIKU SWARM ×3
+              </span>
+            ) : crowd.length === 0 ? (
+              <>
+                <button
+                  onClick={() => void generateCrowd()}
+                  style={{
+                    ...mono, fontSize: 9.5, letterSpacing: ".06em", padding: "8px 16px", borderRadius: 100,
+                    background: "var(--acc)", color: "var(--acc-c)", border: "none", cursor: "pointer",
+                  }}
+                >
+                  {crowdTarget > CROWD_SAMPLE_CAP
+                    ? `GENERATE A ${CROWD_SAMPLE_CAP}-MEMBER SAMPLE OF ${crowdTarget.toLocaleString()} →`
+                    : `GENERATE THE CROWD · ${crowdTarget.toLocaleString()} MEMBERS →`}
+                </button>
+                <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
+                  COMPACT PERSONAS · HAIKU TIER · BROWSE & EDIT EVERY MEMBER AFTER
+                </span>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setRosterOpen(true)}
+                  style={{
+                    ...mono, fontSize: 9.5, letterSpacing: ".06em", padding: "8px 16px", borderRadius: 100,
+                    background: "var(--acc-dim)", color: "var(--acc)", border: "1px solid var(--acc)", cursor: "pointer",
+                  }}
+                >
+                  BROWSE THE CROWD ({crowd.length.toLocaleString()}) →
+                </button>
+                <button
+                  onClick={() => void generateCrowd()}
+                  style={{
+                    ...mono, fontSize: 9.5, letterSpacing: ".06em", padding: "8px 16px", borderRadius: 100,
+                    background: "transparent", color: "var(--t5)", border: "1px solid var(--ln5)", cursor: "pointer",
+                  }}
+                >
+                  REGENERATE
+                </button>
+                {crowdStale && (
+                  <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--warn)" }}>
+                    COUNTS CHANGED — REGENERATE TO MATCH
+                  </span>
+                )}
+                {!crowdStale && castingInfo.crowd && castingInfo.crowd.sampled_of > crowd.length && (
+                  <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
+                    REPRESENTATIVE SAMPLE OF {castingInfo.crowd.sampled_of.toLocaleString()} — FULL SCALE AT RUN
+                  </span>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -606,6 +738,16 @@ export default function PopulationStage({
             + ADD FROM LIBRARY
           </button>
         </div>
+      )}
+
+      {rosterOpen && (
+        <CrowdRoster
+          members={crowd}
+          sampledOf={castingInfo?.crowd?.sampled_of ?? crowdTarget}
+          onRemove={(key) => void removeCrowdMember(key)}
+          onProfile={(m) => setProfile(m)}
+          onClose={() => setRosterOpen(false)}
+        />
       )}
 
       {pickerOpen && (

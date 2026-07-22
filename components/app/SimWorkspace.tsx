@@ -55,11 +55,13 @@ export default function SimWorkspace({
   sim,
   initialDocs,
   initialSeats,
+  initialCrowd = [],
   initialCasting,
 }: {
   sim: { id: string; status: string; brief: Brief; created_at: string };
   initialDocs: DocRow[];
   initialSeats: WorkspaceSeat[];
+  initialCrowd?: WorkspaceSeat[];
   initialCasting: CastingInfo | null;
 }) {
   const router = useRouter();
@@ -509,6 +511,7 @@ export default function SimWorkspace({
       <PopulationStage
         simId={sim.id}
         initialSeats={initialSeats}
+        initialCrowd={initialCrowd}
         initialCasting={initialCasting}
         onCountChange={setPopulationCount}
       />
