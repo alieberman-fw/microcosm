@@ -33,33 +33,62 @@ export async function POST(request: Request) {
 
   const anthropic = new Anthropic();
   const t0 = Date.now();
-  try {
-    const res = await anthropic.messages.create({
-      model: BRIEF_SUGGEST_MODEL,
-      max_tokens: 500,
-      system:
-        `You prepare real-estate research briefs for an agent-swarm simulation. Given a problem statement, reply with ONLY a JSON object:\n` +
-        `{"questions": [{"label": "...", "detail": "..."}], "template": "...", "composition": "experts|consumers|mixed", "rationale": "..."}\n` +
-        `- questions: 4-7 items — the sub-questions a decision-grade answer must resolve; each becomes a required report section. label: short UPPERCASE chip, 2-4 words (e.g. "POWER TIMELINE"). detail: one sharp sentence framing what must be answered (e.g. "Can 300MW be interconnected inside 36 months?").\n` +
-        `- template: the decision shape — the closest of: ${DECISION_SHAPES.join(" · ")}.\n` +
-        `- composition: experts for feasibility/underwriting/legal questions; consumers for demand/pricing/sentiment; mixed when there is a community or political surface or a big capital decision.\n` +
-        `- rationale: one sentence explaining the composition call.`,
-      messages: [{ role: "user", content: problem }],
-    });
-    const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-    const match = text.match(/\{[\s\S]*\}/);
-    const parsed = match ? JSON.parse(match[0]) : {};
-    const questions = normalizeQuestions(parsed.questions).slice(0, 7);
-    const template = DECISION_SHAPES.includes(parsed.template) ? parsed.template : "Custom";
-    const composition = ["experts", "consumers", "mixed"].includes(parsed.composition) ? parsed.composition : "mixed";
 
-    if (orgId) {
-      await supabase.from("agent_interactions").insert({
-        org_id: orgId, user_id: user.id, surface: "brief.suggest", model: BRIEF_SUGGEST_MODEL,
-        input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens,
-        latency_ms: Date.now() - t0, status: "ok",
-      });
+  /** truncated-output salvage: close the questions array at the last complete
+   * object and re-parse, so an over-long response degrades to fewer chips
+   * instead of a failure */
+  const parseLoose = (raw: string): Record<string, unknown> | null => {
+    const start = raw.indexOf("{");
+    if (start === -1) return null;
+    const body = raw.slice(start, raw.lastIndexOf("}") + 1 || undefined);
+    try {
+      return JSON.parse(body);
+    } catch {
+      const lastComplete = body.lastIndexOf("},");
+      if (lastComplete === -1) return null;
+      try {
+        return JSON.parse(`${body.slice(0, lastComplete + 1)}]}`);
+      } catch {
+        return null;
+      }
     }
+  };
+
+  try {
+    // one retry: a rare malformed/truncated response shouldn't surface to the user
+    let parsed: Record<string, unknown> = {};
+    let attempts = 0;
+    for (; attempts < 2; attempts++) {
+      const res = await anthropic.messages.create({
+        model: BRIEF_SUGGEST_MODEL,
+        max_tokens: 1200, // 7 question objects + rationale never truncates at this cap
+        system:
+          `You prepare real-estate research briefs for an agent-swarm simulation. Given a problem statement, reply with ONLY a JSON object:\n` +
+          `{"questions": [{"label": "...", "detail": "..."}], "template": "...", "composition": "experts|consumers|mixed", "rationale": "..."}\n` +
+          `- questions: 4-7 items — the sub-questions a decision-grade answer must resolve; each becomes a required report section. label: short UPPERCASE chip, 2-4 words (e.g. "POWER TIMELINE"). detail: one sharp sentence framing what must be answered (e.g. "Can 300MW be interconnected inside 36 months?").\n` +
+          `- template: the decision shape — the closest of: ${DECISION_SHAPES.join(" · ")}.\n` +
+          `- composition: experts for feasibility/underwriting/legal questions; consumers for demand/pricing/sentiment; mixed when there is a community or political surface or a big capital decision.\n` +
+          `- rationale: one sentence explaining the composition call.`,
+        messages: [{ role: "user", content: problem }],
+      });
+      if (orgId) {
+        await supabase.from("agent_interactions").insert({
+          org_id: orgId, user_id: user.id, surface: "brief.suggest", model: BRIEF_SUGGEST_MODEL,
+          input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens,
+          latency_ms: Date.now() - t0, status: "ok",
+        });
+      }
+      const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+      const attempt = parseLoose(text);
+      if (attempt && Array.isArray(attempt.questions) && attempt.questions.length) {
+        parsed = attempt;
+        break;
+      }
+      if (attempts === 1) throw new Error(`unparseable suggestion after retry (stop: ${res.stop_reason})`);
+    }
+    const questions = normalizeQuestions(parsed.questions).slice(0, 7);
+    const template = (DECISION_SHAPES as readonly string[]).includes(String(parsed.template)) ? String(parsed.template) : "Custom";
+    const composition = ["experts", "consumers", "mixed"].includes(String(parsed.composition)) ? String(parsed.composition) : "mixed";
     return NextResponse.json({ questions, template, composition, rationale: String(parsed.rationale ?? "").slice(0, 300) });
   } catch (e) {
     if (orgId) {
