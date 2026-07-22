@@ -13,7 +13,7 @@
 import { CSSProperties, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PersonaProfile from "@/components/app/PersonaProfile";
-import CastingTheater from "@/components/app/CastingTheater";
+import CastingTheater, { MiniSwarm } from "@/components/app/CastingTheater";
 import SeatPicker from "@/components/app/SeatPicker";
 import { FrozenSpec, MAX_SEATS, PANEL_SIZES } from "@/lib/casting";
 import { PersonaSpec } from "@/lib/personas";
@@ -81,6 +81,8 @@ export default function PopulationStage({
   const [castingInfo, setCastingInfo] = useState<CastingInfo | null>(initialCasting);
   const [casting, setCasting] = useState(false);
   const [planReady, setPlanReady] = useState(false); // plan arrived → theater gives way to cards
+  const [castMode, setCastMode] = useState<"recast" | "add">("recast");
+  const [scouting, setScouting] = useState(false); // add-plan in flight, seat count unknown
   const [guidance, setGuidance] = useState("");
   const [guidanceMode, setGuidanceMode] = useState<"recast" | "add">("recast");
   const [panelSize, setPanelSize] = useState<number>(10);
@@ -97,7 +99,9 @@ export default function PopulationStage({
     const g = guidance.trim();
     if (mode === "add" && !g) { setError("Describe who to add — e.g. “more pool engineering experts”"); return; }
     setCasting(true);
+    setCastMode(mode);
     setPlanReady(mode === "add"); // adding keeps the grid visible; recast opens the theater
+    setScouting(mode === "add"); // scouting card until the add-plan names the seats
     setError(null);
     setPending([]);
     if (mode === "recast") setSeats([]);
@@ -122,6 +126,7 @@ export default function PopulationStage({
           }
           setPending((p.seats ?? []).map((s) => ({ key: s.key, role: s.role, discipline: s.discipline, kind: s.kind })));
           setPlanReady(true);
+          setScouting(false);
         } else if (evt.type === "seat") {
           const key = String(evt.key);
           if (evt.provenance === "failed" || !evt.spec) {
@@ -152,6 +157,7 @@ export default function PopulationStage({
       setError(e instanceof Error ? e.message : "Casting failed");
     } finally {
       setPending([]);
+      setScouting(false);
       setCasting(false);
     }
   };
@@ -207,11 +213,14 @@ export default function PopulationStage({
           <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)", textAlign: "right", lineHeight: 1.9 }}>
             <div>
               <span style={{ color: "var(--acc)" }}>{castingInfo.composition.toUpperCase()}</span>
-              {" · RECOMMENDED SCALE "}
-              <span style={{ color: "var(--acc)" }}>{castingInfo.scale.experts}</span> EXPERTS
-              {castingInfo.scale.residents > 0 && <> · <span style={{ color: "var(--acc)" }}>{castingInfo.scale.residents}</span> RESIDENTS <span style={{ color: "var(--t7)" }}>(PUMS SOON)</span></>}
+              {" · MODE "}
+              <span style={{ color: "var(--acc)" }}>{castingInfo.mode.toUpperCase()}</span> (RECOMMENDED)
             </div>
-            <div>MODE · <span style={{ color: "var(--acc)" }}>{castingInfo.mode.toUpperCase()}</span> (RECOMMENDED)</div>
+            <div title="The cards below are the deliberation leads (up to 20). The full-run crowd is instantiated at run config — experts up to 500, residents up to 1,000 via census seeding.">
+              FULL-RUN CROWD · <span style={{ color: "var(--acc)" }}>{castingInfo.scale.experts}</span> EXPERTS
+              {castingInfo.scale.residents > 0 && <> · <span style={{ color: "var(--acc)" }}>{castingInfo.scale.residents}</span> RESIDENTS</>}
+              {" "}<span style={{ color: "var(--t7)" }}>— SET AT RUN CONFIG (SOON)</span>
+            </div>
           </div>
         )}
       </div>
@@ -359,7 +368,13 @@ export default function PopulationStage({
               </div>
             );
           })}
+          {scouting && (
+            <MiniSwarm label={`SCOUTING ADDITIONS${guidance.trim() ? ` · ${guidance.trim().slice(0, 34).toUpperCase()}` : ""}…`} />
+          )}
           {pending.map((p) => (
+            castMode === "add" ? (
+              <MiniSwarm key={p.key} label={`INCOMING · ${p.role.slice(0, 30).toUpperCase()}`} />
+            ) : (
             <div key={p.key} style={{ border: "1px solid var(--ln3)", borderRadius: 14, padding: "20px 20px", background: "var(--sf)", minHeight: 148, boxSizing: "border-box" }}>
               <div style={{ animation: "shim 1.2s ease infinite" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -373,6 +388,7 @@ export default function PopulationStage({
                 </div>
               </div>
             </div>
+            )
           ))}
           {visibleSeats.length === 0 && pending.length === 0 && seats.length > 0 && (
             <div style={{ ...mono, fontSize: 10, letterSpacing: ".06em", color: "var(--t6)", padding: "18px 4px" }}>
@@ -425,7 +441,7 @@ export default function PopulationStage({
               cursor: guidanceMode === "add" && (!guidance.trim() || remaining === 0) ? "default" : "pointer",
             }}
           >
-            {guidanceMode === "recast" ? "RE-CAST" : `ADD (${remaining} SEATS LEFT)`}
+            {casting && castMode === "add" ? "ADDING…" : guidanceMode === "recast" ? "RE-CAST" : `ADD (${remaining} SEATS LEFT)`}
           </button>
           <button
             onClick={() => setPickerOpen(true)}

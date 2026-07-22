@@ -288,3 +288,78 @@ export default function CastingTheater({ label }: { label?: string }) {
     </div>
   );
 }
+
+/**
+ * Compact swarm used as the ADD MORE loading state — one card-sized flock
+ * per incoming persona so the grid shows exactly what's being scouted.
+ */
+export function MiniSwarm({ label }: { label: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = canvas.clientWidth || 180;
+    const H = 84;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.scale(dpr, dpr);
+    const acc = cssVar("--acc", "#37d98a");
+
+    const N = 9;
+    const dots = Array.from({ length: N }, (_, i) => ({
+      x: W / 2 + Math.cos((i / N) * Math.PI * 2) * 18,
+      y: H / 2 + Math.sin((i / N) * Math.PI * 2) * 12,
+      vx: 0, vy: 0,
+    }));
+    let raf = 0;
+    const t0 = performance.now();
+    const draw = (now: number) => {
+      const t = (now - t0) / 1000;
+      ctx.clearRect(0, 0, W, H);
+      const ax = W / 2 + W * 0.28 * Math.sin(t * 1.4);
+      const ay = H / 2 + H * 0.26 * Math.sin(t * 2.1 + 0.8);
+      for (let i = 0; i < N; i++) {
+        const p = dots[i];
+        p.vx += (ax - p.x) * 0.02;
+        p.vy += (ay - p.y) * 0.02;
+        for (let j = 0; j < N; j++) {
+          if (j === i) continue;
+          const dx = p.x - dots[j].x, dy = p.y - dots[j].y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > 1 && d2 < 220) { p.vx += (dx / d2) * 2.4; p.vy += (dy / d2) * 2.4; }
+        }
+        p.vx *= 0.94; p.vy *= 0.94;
+        p.x += p.vx; p.y += p.vy;
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = acc;
+        ctx.beginPath();
+        ctx.moveTo(p.x - p.vx * 3, p.y - p.vy * 3);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = acc;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (!reduced) raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    if (reduced) draw(t0 + 1500);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  return (
+    <div style={{ border: "1px dashed var(--ln5)", borderRadius: 14, padding: "16px 16px", background: "var(--sf)", minHeight: 148, boxSizing: "border-box", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+      <canvas ref={ref} style={{ width: "100%", height: 84, display: "block" }} />
+      <div style={{ ...mono, fontSize: 9, letterSpacing: ".07em", color: "var(--t6)", textAlign: "center", marginTop: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {label}
+      </div>
+    </div>
+  );
+}

@@ -55,9 +55,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .select("id, name, token_estimate, page_count").eq("sim_id", id).eq("parse_status", "parsed");
   const docLines: string[] = [];
   for (const d of docs ?? []) {
-    const { data: chunk } = await supabase.from("doc_chunks")
-      .select("content").eq("document_id", d.id).order("seq").limit(1).maybeSingle();
-    const excerpt = chunk?.content ? ` — opens: "${chunk.content.slice(0, 350).replace(/\s+/g, " ")}…"` : "";
+    const { data: chunks } = await supabase.from("doc_chunks")
+      .select("content").eq("document_id", d.id).order("seq").limit(2);
+    const opening = (chunks ?? []).map((c) => c.content).join(" ").replace(/\s+/g, " ").slice(0, 700);
+    const excerpt = opening ? ` — opens: "${opening}…"` : "";
     docLines.push(`- ${d.name} (${d.page_count ? `${d.page_count}p, ` : ""}~${d.token_estimate ?? "?"} tokens)${excerpt}`);
   }
 
