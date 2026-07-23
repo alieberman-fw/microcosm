@@ -36,7 +36,7 @@ export interface CastingInfo {
   mode: string;
   modeRationale: string;
   user_set?: { mode?: boolean; scale?: boolean };
-  crowd?: { generated: number; sampled_of: number };
+  crowd?: { generated: number; sample?: number; sampled_of: number };
 }
 
 type Composition = "experts" | "consumers" | "mixed";
@@ -675,10 +675,14 @@ export default function PopulationStage({
       {/* the full-run crowd — real members, generated + browsable right here */}
       {castingInfo && hasCast && !showTheater && crowdTarget > 0 && (
         <div style={{ marginTop: 16, border: "1px solid var(--ln2)", borderRadius: 12, padding: "12px 16px 12px" }}>
-          <div style={{ ...mono, fontSize: 9, letterSpacing: ".07em", color: "var(--t6)" }}>
+          <div style={{ ...mono, fontSize: 9, letterSpacing: ".07em", color: "var(--t6)", lineHeight: 1.9 }}>
             THE CROWD · <span style={{ color: "var(--acc)" }}>{crowdExpertsTarget.toLocaleString()}</span> EXPERTS
-            {crowdResidentsTarget > 0 && <> · <span style={{ color: "var(--acc)" }}>{crowdResidentsTarget.toLocaleString()}</span> RESIDENTS <span style={{ color: "var(--t7)" }}>(NARRATIVE · ACS PUMS SOON)</span></>}
-            <span style={{ color: "var(--t7)" }}> — THE POPULATION BEHIND THE LEADS; SAMPLED & POLLED AT RUN</span>
+            <span style={{ color: "var(--t7)" }}> ({castingInfo.scale.experts} TOTAL − {expertLeads} EXPERT-SIDE LEAD{expertLeads === 1 ? "" : "S"})</span>
+            {crowdResidentsTarget > 0 && <>
+              {" · "}<span style={{ color: "var(--acc)" }}>{crowdResidentsTarget.toLocaleString()}</span> RESIDENTS
+              <span style={{ color: "var(--t7)" }}> ({castingInfo.scale.residents} TOTAL − {residentLeads} RESIDENT-SIDE LEAD{residentLeads === 1 ? "" : "S"} · NARRATIVE, ACS PUMS SOON)</span>
+            </>}
+            <span style={{ color: "var(--t7)" }}> — SAMPLED & POLLED AT RUN</span>
           </div>
           <CrowdBand
             experts={crowdExpertsTarget}
@@ -734,9 +738,14 @@ export default function PopulationStage({
                     COUNTS CHANGED — REGENERATE TO MATCH
                   </span>
                 )}
-                {!crowdStale && castingInfo.crowd && castingInfo.crowd.sampled_of > crowd.length && (
+                {!crowdStale && castingInfo.crowd && castingInfo.crowd.sampled_of > (castingInfo.crowd.sample ?? castingInfo.crowd.sampled_of) && (
                   <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
-                    REPRESENTATIVE SAMPLE OF {castingInfo.crowd.sampled_of.toLocaleString()} — FULL SCALE AT RUN
+                    {(castingInfo.crowd.sample ?? 0).toLocaleString()}-MEMBER SAMPLE OF {castingInfo.crowd.sampled_of.toLocaleString()} — FULL SCALE AT RUN
+                  </span>
+                )}
+                {!crowdStale && castingInfo.crowd && crowd.length < (castingInfo.crowd.sample ?? castingInfo.crowd.sampled_of) && (
+                  <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
+                    {crowd.length} OF {(castingInfo.crowd.sample ?? castingInfo.crowd.sampled_of).toLocaleString()} — A FEW DUPLICATES DROPPED; REGENERATE TO TOP UP
                   </span>
                 )}
               </>
@@ -807,7 +816,13 @@ export default function PopulationStage({
       {rosterOpen && (
         <CrowdRoster
           members={crowd}
-          sampledOf={castingInfo?.crowd?.sampled_of ?? crowdTarget}
+          note={
+            castingInfo?.crowd && castingInfo.crowd.sampled_of > (castingInfo.crowd.sample ?? castingInfo.crowd.sampled_of)
+              ? `SAMPLE OF ${castingInfo.crowd.sampled_of.toLocaleString()} — FULL SCALE AT RUN`
+              : castingInfo?.crowd && crowd.length < (castingInfo.crowd.sample ?? castingInfo.crowd.sampled_of)
+              ? `${crowd.length} OF ${(castingInfo.crowd.sample ?? castingInfo.crowd.sampled_of).toLocaleString()} — DUPLICATES DROPPED`
+              : undefined
+          }
           onRemove={(key) => void removeCrowdMember(key)}
           onProfile={(m) => setProfile(m)}
           onClose={() => setRosterOpen(false)}

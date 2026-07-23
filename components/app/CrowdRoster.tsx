@@ -24,13 +24,13 @@ function isResident(s: WorkspaceSeat): boolean {
 
 export default function CrowdRoster({
   members,
-  sampledOf,
+  note,
   onRemove,
   onProfile,
   onClose,
 }: {
   members: WorkspaceSeat[];
-  sampledOf: number; // full-run target the sample represents
+  note?: string; // sample-cap or shortfall context, computed by the caller
   onRemove: (key: string) => void;
   onProfile: (seat: WorkspaceSeat) => void;
   onClose: () => void;
@@ -66,9 +66,7 @@ export default function CrowdRoster({
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ ...mono, fontSize: 11, letterSpacing: ".1em", color: "var(--t6)" }}>
               THE CROWD · {members.length.toLocaleString()} MEMBERS
-              {sampledOf > members.length && (
-                <span style={{ color: "var(--t7)" }}> · REPRESENTATIVE SAMPLE OF {sampledOf.toLocaleString()} — FULL SCALE AT RUN</span>
-              )}
+              {note && <span style={{ color: "var(--t7)" }}> · {note}</span>}
             </div>
             <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "var(--t5)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
           </div>
