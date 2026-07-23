@@ -548,6 +548,7 @@ Theme: `html[data-theme]`, persisted in `localStorage("mc-theme")`, sun/moon tog
 - Never run `npm run build` while `next dev` is running — they share `.next/` and the build corrupts the dev server's module graph (broken hydration, phantom module errors). Stop dev, build, `rm -rf .next`, restart dev.
 - Never hardcode model names in business logic — model tier config only (§6.4).
 - Every persona-prompt or report-prompt change needs a before/after example in the PR description.
+- **In-app docs stay current:** `/docs` (registry in `components/app/docs/content.tsx`) is the user-facing explanation of the product — what it is, core concepts (kind vs tier, leads vs crowd), the seven modes (animated via `ModeDiagram`, which the run-config mode picker reuses), casting/population controls, and getting-started guides. Every feature PR that changes user-facing behavior updates the relevant docs page in the same PR.
 - `README.md` carries the **living build checklist** (mirrors §11 phases). Every feature PR checks items off, adds newly-scoped ones, and keeps the "⟶ NEXT" marker honest — the README must always answer "what exists, what's next" at a glance. Keep its architecture section in sync when frameworks/models change.
 - Test the live-stream path with a scripted fake run (replay the demo's 46 events) before touching real LLM runs — the demo's `events` array in `demo.html` is the golden fixture.
 - Verify UI work in the browser against both themes; screenshot the run screen and report for every PR that touches them.

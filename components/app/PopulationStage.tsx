@@ -12,7 +12,7 @@
  * as RE-CAST ALL or ADD MORE; filters review the panel by kind and source.
  */
 
-import { CSSProperties, useEffect, useState } from "react";
+import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import CastingTheater, { CrowdBand, MiniSwarm } from "@/components/app/CastingTheater";
@@ -232,12 +232,20 @@ export default function PopulationStage({
     await fetch(`/api/simulations/${simId}/agents/${encodeURIComponent(key)}`, { method: "DELETE" });
   };
 
-  // materialize the crowd: Haiku-batched compact personas streamed in as they land
+  // materialize the crowd: Haiku-batched compact personas streamed in as they
+  // land. Batches arrive ~25 at a time; a drain queue reveals them one-by-one
+  // so the counter ticks and the band dots light member-by-member.
+  const arrivalQueue = useRef<WorkspaceSeat[]>([]);
   const generateCrowd = async () => {
     if (crowdGen || casting) return;
     setCrowdGen(true);
     setCrowd([]);
     setError(null);
+    arrivalQueue.current = [];
+    const drain = setInterval(() => {
+      const next = arrivalQueue.current.shift();
+      if (next) setCrowd((prev) => [...prev, next]);
+    }, 55);
     try {
       const res = await fetch(`/api/simulations/${simId}/crowd`, { method: "POST" });
       if (!res.ok || !res.body) {
@@ -247,17 +255,17 @@ export default function PopulationStage({
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let doneEvt: { generated: number; sampled_of: number } | null = null;
       const handle = (evt: Record<string, unknown>) => {
         if (evt.type === "start") {
           setCrowdSample(Number(evt.sample) || null);
         } else if (evt.type === "members") {
           const members = (evt.members as { key: string; spec: FrozenSpec }[] | undefined) ?? [];
-          setCrowd((prev) => [...prev, ...members.map((m) => ({ key: m.key, provenance: "generated" as const, spec: m.spec }))]);
+          arrivalQueue.current.push(...members.map((m) => ({ key: m.key, provenance: "generated" as const, spec: m.spec })));
         } else if (evt.type === "error") {
           setError(String(evt.error ?? "Crowd generation failed"));
         } else if (evt.type === "done") {
-          setCastingInfo((prev) => prev ? { ...prev, crowd: { generated: Number(evt.generated) || 0, sampled_of: Number(evt.target) || 0 } } : prev);
-          router.refresh();
+          doneEvt = { generated: Number(evt.generated) || 0, sampled_of: Number(evt.target) || 0 };
         }
       };
       for (;;) {
@@ -270,9 +278,20 @@ export default function PopulationStage({
           if (line.trim()) handle(JSON.parse(line));
         }
       }
+      // let the reveal finish before flipping out of the materializing state
+      while (arrivalQueue.current.length > 0) {
+        await new Promise((r) => setTimeout(r, 80));
+      }
+      if (doneEvt) {
+        const crowdMeta = doneEvt;
+        setCastingInfo((prev) => prev ? { ...prev, crowd: crowdMeta } : prev);
+        router.refresh();
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Crowd generation failed");
     } finally {
+      clearInterval(drain);
+      setCrowd((prev) => arrivalQueue.current.length ? [...prev, ...arrivalQueue.current.splice(0)] : prev);
       setCrowdGen(false);
       setCrowdSample(null);
     }
@@ -506,9 +525,21 @@ export default function PopulationStage({
 
       {showTheater && <CastingTheater />}
 
+      {/* the leads: who they are (kind) is separate from how they participate (tier) */}
+      {hasCast && !showTheater && (
+        <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", marginTop: 18 }}>
+          <span style={{ ...mono, fontSize: 10, letterSpacing: ".09em", color: "var(--acc)" }}>
+            THE LEADS · {seats.length} OF {MAX_SEATS}
+          </span>
+          <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
+            THE VOICES THAT SPEAK IN THE FORUM — EXPERTS, RESIDENTS, OR BOTH · CLICK A CARD FOR THE FULL PROFILE
+          </span>
+        </div>
+      )}
+
       {/* review filters — by kind and by where each seat came from */}
       {seats.length > 3 && !showTheater && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 16 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
           {KIND_FILTERS.map((f) => {
             const count = f.key === "all" ? seats.length : kindCounts.get(f.key) ?? 0;
             if (f.key !== "all" && count === 0) return null;
@@ -626,7 +657,7 @@ export default function PopulationStage({
             {crowdGen ? (
               <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)", display: "inline-flex", alignItems: "center", gap: 8 }}>
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.1s ease infinite" }} />
-                MATERIALIZING · {crowd.length}/{crowdSample ?? "…"} · HAIKU SWARM ×3
+                MATERIALIZING · {crowd.length}/{crowdSample ?? "…"}{crowd.length === 0 ? " · FIRST BATCH DRAFTING…" : " · HAIKU SWARM ×3"}
               </span>
             ) : crowd.length === 0 ? (
               <>
@@ -696,7 +727,7 @@ export default function PopulationStage({
                   color: guidanceMode === m ? "var(--acc)" : "var(--t6)",
                 }}
               >
-                {m === "recast" ? "RE-CAST ALL" : "ADD MORE"}
+                {m === "recast" ? "RE-CAST ALL" : "ADD LEADS"}
               </button>
             ))}
           </div>
@@ -724,7 +755,7 @@ export default function PopulationStage({
               cursor: guidanceMode === "add" && (!guidance.trim() || remaining === 0) ? "default" : "pointer",
             }}
           >
-            {casting && castMode === "add" ? "ADDING…" : guidanceMode === "recast" ? "RE-CAST" : `ADD (${remaining} SEATS LEFT)`}
+            {casting && castMode === "add" ? "ADDING…" : guidanceMode === "recast" ? "RE-CAST" : `ADD (${remaining} LEAD SEATS LEFT)`}
           </button>
           <button
             onClick={() => setPickerOpen(true)}
