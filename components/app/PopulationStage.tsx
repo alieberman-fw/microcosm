@@ -109,6 +109,7 @@ export default function PopulationStage({
   const [pendingComp, setPendingComp] = useState<Composition | null>(null);
   const [expertsDraft, setExpertsDraft] = useState<string | null>(null);
   const [residentsDraft, setResidentsDraft] = useState<string | null>(null);
+  const [scaleSaved, setScaleSaved] = useState(false); // brief SAVED ✓ flash after a commit
   const [kindFilter, setKindFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [error, setError] = useState<string | null>(null);
@@ -219,6 +220,8 @@ export default function PopulationStage({
     setResidentsDraft(null);
     if (experts !== castingInfo.scale.experts || residents !== castingInfo.scale.residents) {
       void patchConfig({ scale: { experts, residents } });
+      setScaleSaved(true);
+      setTimeout(() => setScaleSaved(false), 2200);
     }
   };
 
@@ -318,6 +321,16 @@ export default function PopulationStage({
   // counts edited after materialization → the sample no longer matches
   const crowdStale = crowd.length > 0 && !crowdGen && !!castingInfo?.crowd && castingInfo.crowd.sampled_of !== crowdTarget;
 
+  // live math for the POPULATION row: what the drafts mean BEFORE they're applied
+  const draftExperts = Math.min(Math.max(parseInt(expertsDraft ?? String(castingInfo?.scale.experts ?? 0), 10) || 0, 0), 500);
+  const draftResidents = castingInfo?.composition === "experts"
+    ? 0
+    : Math.min(Math.max(parseInt(residentsDraft ?? String(castingInfo?.scale.residents ?? 0), 10) || 0, 0), 1000);
+  const draftCrowd = Math.max(draftExperts - expertLeads, 0) + Math.max(draftResidents - residentLeads, 0);
+  const scaleDirty =
+    (expertsDraft !== null && draftExperts !== (castingInfo?.scale.experts ?? 0)) ||
+    (residentsDraft !== null && draftResidents !== (castingInfo?.scale.residents ?? 0));
+
   const kindCounts = new Map<string, number>();
   const sourceCounts = new Map<string, number>();
   for (const s of seats) {
@@ -407,37 +420,57 @@ export default function PopulationStage({
               </FilterPill>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)", width: 92, flex: "none" }}>CROWD</span>
-            <label style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--t5)", display: "inline-flex", alignItems: "center", gap: 6 }}>
-              EXPERTS
-              <input
-                type="number" min={4} max={500}
-                value={expertsDraft ?? String(castingInfo.scale.experts)}
-                onChange={(e) => setExpertsDraft(e.target.value)}
-                onBlur={commitScale}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                onWheel={(e) => (e.target as HTMLInputElement).blur()} // page scroll must never nudge the count
-                style={{ ...mono, width: 62, padding: "5px 8px", fontSize: 10.5, background: "var(--sf)", border: "1px solid var(--ln4)", borderRadius: 8, color: "var(--t1)", outline: "none" }}
-              />
-            </label>
-            {castingInfo.composition !== "experts" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)", width: 92, flex: "none" }}>POPULATION</span>
               <label style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--t5)", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                RESIDENTS
+                TOTAL EXPERTS
                 <input
-                  type="number" min={0} max={1000}
-                  value={residentsDraft ?? String(castingInfo.scale.residents)}
-                  onChange={(e) => setResidentsDraft(e.target.value)}
-                  onBlur={commitScale}
-                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  type="number" min={4} max={500}
+                  value={expertsDraft ?? String(castingInfo.scale.experts)}
+                  onChange={(e) => setExpertsDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") commitScale(); }}
                   onWheel={(e) => (e.target as HTMLInputElement).blur()} // page scroll must never nudge the count
-                  style={{ ...mono, width: 62, padding: "5px 8px", fontSize: 10.5, background: "var(--sf)", border: "1px solid var(--ln4)", borderRadius: 8, color: "var(--t1)", outline: "none" }}
+                  style={{ ...mono, width: 62, padding: "5px 8px", fontSize: 10.5, background: "var(--sf)", border: `1px solid ${scaleDirty ? "var(--acc)" : "var(--ln4)"}`, borderRadius: 8, color: "var(--t1)", outline: "none" }}
                 />
               </label>
-            )}
-            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
-              {castingInfo.user_set?.scale ? "YOURS" : "RECOMMENDED"} · EXPERTS 4–500 · RESIDENTS 0–1,000 · GENERATE THEM IN THE CROWD PANEL BELOW
-            </span>
+              {castingInfo.composition !== "experts" && (
+                <label style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--t5)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  TOTAL RESIDENTS
+                  <input
+                    type="number" min={0} max={1000}
+                    value={residentsDraft ?? String(castingInfo.scale.residents)}
+                    onChange={(e) => setResidentsDraft(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") commitScale(); }}
+                    onWheel={(e) => (e.target as HTMLInputElement).blur()} // page scroll must never nudge the count
+                    style={{ ...mono, width: 62, padding: "5px 8px", fontSize: 10.5, background: "var(--sf)", border: `1px solid ${scaleDirty ? "var(--acc)" : "var(--ln4)"}`, borderRadius: 8, color: "var(--t1)", outline: "none" }}
+                  />
+                </label>
+              )}
+              {/* the same math everywhere: totals include the leads; the rest is the crowd */}
+              <span style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: scaleDirty ? "var(--t3)" : "var(--t6)" }}>
+                = {seats.length} LEAD{seats.length === 1 ? "" : "S"} + {draftCrowd.toLocaleString()} CROWD
+              </span>
+              {scaleDirty && (
+                <button
+                  onClick={commitScale}
+                  style={{
+                    ...mono, fontSize: 9, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100,
+                    background: "var(--acc)", color: "var(--acc-c)", border: "none", cursor: "pointer",
+                  }}
+                >
+                  APPLY
+                </button>
+              )}
+              {scaleSaved && !scaleDirty && (
+                <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--acc)", animation: "fadeUp .2s ease both" }}>
+                  SAVED ✓
+                </span>
+              )}
+            </div>
+            <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)", paddingLeft: 102 }}>
+              {castingInfo.user_set?.scale ? "SET BY YOU" : "RECOMMENDED"} · TOTALS INCLUDE THE LEADS ABOVE — THE REST IS THE CROWD, GENERATED IN THE PANEL BELOW · EXPERTS 4–500 · RESIDENTS 0–1,000
+            </div>
           </div>
         </div>
       )}

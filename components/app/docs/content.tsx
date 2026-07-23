@@ -175,6 +175,128 @@ function ModeGallery() {
   );
 }
 
+/* ----------------- vignettes: the app's own screens, in miniature ----------------- */
+
+function Vignette({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ border: "1px solid var(--ln3)", borderRadius: 14, background: "var(--sf)", margin: "18px 0", maxWidth: 720, overflow: "hidden" }}>
+      <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t7)", padding: "10px 16px", borderBottom: "1px solid var(--ln2)" }}>
+        {label} — AS IT LOOKS IN THE APP
+      </div>
+      <div style={{ padding: "16px 18px" }}>{children}</div>
+    </div>
+  );
+}
+
+function ChatVignette() {
+  const bubble: CSSProperties = { borderRadius: 14, padding: "10px 14px", fontSize: 13, lineHeight: 1.55, maxWidth: 440 };
+  const who = (initials: string, name: string, role: string, tier: string) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+      <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--sf2)", border: "1px solid var(--ln5)", display: "inline-flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: 8, color: "var(--t3)" }}>{initials}</span>
+      <span style={{ fontSize: 12, fontWeight: 600 }}>{name}</span>
+      <span style={{ ...mono, fontSize: 8, letterSpacing: ".05em", color: "var(--t6)" }}>{role.toUpperCase()}</span>
+      <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: "var(--t7)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "1px 6px" }}>{tier}</span>
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ alignSelf: "flex-end", ...bubble, background: "var(--acc-dim)", border: "1px solid var(--acc)" }}>
+        <span style={{ color: "var(--acc)", fontWeight: 600 }}>@Priya Desai</span> — will the $180/mo pool premium actually hold?
+        Everyone else, weigh in after her.
+      </div>
+      <div>
+        {who("PD", "Priya Desai", "BTR market analyst", "SONNET 5")}
+        <div style={{ ...bubble, background: "var(--sf2)" }}>
+          At your rent band it holds for the amenity-seeker segment but compresses to ~$120 for families —
+          the comps in your <span style={{ color: "var(--acc)" }}>offering memo (p. 14)</span> already show that split.
+        </div>
+      </div>
+      <div>
+        {who("MC", "Marcus Chen", "Competing developer · skeptic", "HAIKU 4.5")}
+        <div style={{ ...bubble, background: "var(--sf2)" }}>
+          I'd underwrite $0 premium, honestly. Two competitors deliver pools within 3 miles in 2027.
+        </div>
+      </div>
+      <div style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t6)", display: "flex", alignItems: "center", gap: 7 }}>
+        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.1s ease infinite" }} />
+        DELORES V. IS TYPING…
+      </div>
+    </div>
+  );
+}
+
+function PersonaCardVignette() {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 }}>
+      <div style={{ border: "1px solid var(--ln3)", borderRadius: 14, padding: "18px 18px", background: "var(--sf)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--sf2)", border: "1px solid var(--ln5)", display: "inline-flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: 10, color: "var(--t3)" }}>RM</span>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>Rosa Menendez</span>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 12.5, fontWeight: 600, color: "var(--t3)" }}>Grid interconnection planner</div>
+        <div style={{ marginTop: 5, fontSize: 12, lineHeight: 1.5, color: "var(--t5)" }}>22 yrs utility transmission · skeptical of broker timelines</div>
+        <div style={{ marginTop: 11, ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t6)" }}>LIBRARY PERSONA · SYNTHETIC COMPOSITE</div>
+      </div>
+      <div style={{ border: "1px solid var(--ln3)", borderRadius: 14, padding: "18px 18px", background: "var(--sf)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--sf2)", border: "1px solid var(--acc)", display: "inline-flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: 10, color: "var(--acc)" }}>JP</span>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>Jordan Pike</span>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 12.5, fontWeight: 600, color: "var(--t3)" }}>Texas construction lender</div>
+        <div style={{ marginTop: 5, fontSize: 12, lineHeight: 1.5, color: "var(--t5)" }}>Your remix — tighter covenants, Sun Belt focus</div>
+        <div style={{ marginTop: 11, ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--acc)" }}>⑂ REMIX · DELORES V. → JORDAN P.</div>
+      </div>
+    </div>
+  );
+}
+
+function MonitoringVignette() {
+  const rows = [
+    { surface: "casting.plan", model: "claude-sonnet-5", tokens: "2.4K → 3.1K", ms: "18.2s", est: "$0.054" },
+    { surface: "crowd.generate", model: "claude-haiku-4-5", tokens: "0.4K → 4.5K", ms: "35.7s", est: "$0.023" },
+    { surface: "conversation.reply", model: "claude-haiku-4-5", tokens: "1.1K → 0.6K", ms: "4.1s", est: "$0.004" },
+    { surface: "corpus.ask", model: "claude-haiku-4-5", tokens: "37K → 0.9K", ms: "9.8s", est: "$0.041" },
+  ];
+  const th: CSSProperties = { ...mono, fontSize: 8, letterSpacing: ".08em", color: "var(--t6)", textAlign: "left", padding: "6px 10px", borderBottom: "1px solid var(--ln3)" };
+  const td: CSSProperties = { fontSize: 11.5, padding: "8px 10px", borderBottom: "1px solid var(--ln1)", color: "var(--t4)" };
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead><tr>
+          <th style={th}>SURFACE</th><th style={th}>MODEL</th><th style={th}>TOKENS IN → OUT</th><th style={th}>LATENCY</th><th style={th}>EST. SPEND</th>
+        </tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.surface}>
+              <td style={{ ...td, ...mono, fontSize: 10, color: "var(--t2)" }}>{r.surface}</td>
+              <td style={{ ...td, ...mono, fontSize: 10 }}>{r.model}</td>
+              <td style={td}>{r.tokens}</td>
+              <td style={td}>{r.ms}</td>
+              <td style={{ ...td, color: "var(--acc)" }}>{r.est}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PopulationMathVignette() {
+  const box = (n: string, l: string, accent?: boolean): ReactNode => (
+    <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 3, border: `1px solid ${accent ? "var(--acc)" : "var(--ln4)"}`, borderRadius: 10, padding: "10px 16px", background: accent ? "var(--acc-dim)" : "var(--sf2)" }}>
+      <span style={{ ...mono, fontSize: 16, color: accent ? "var(--acc)" : "var(--t1)" }}>{n}</span>
+      <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".07em", color: "var(--t6)" }}>{l}</span>
+    </span>
+  );
+  const op = (s: string) => <span style={{ ...mono, fontSize: 14, color: "var(--t6)" }}>{s}</span>;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "center", padding: "6px 0" }}>
+      {box("30", "TOTAL EXPERTS", true)}{op("+")}{box("60", "TOTAL RESIDENTS", true)}{op("=")}
+      {box("6", "LEADS · SPEAK")}{op("+")}{box("84", "CROWD · POLLED")}
+    </div>
+  );
+}
+
 /* -------------------------------- pages -------------------------------- */
 
 function WhatIsMicrocosm() {
@@ -239,6 +361,67 @@ function CoreConcepts() {
   );
 }
 
+function AgentsAndLibrary() {
+  return (
+    <>
+      <P>An <B>agent</B> (we also say <B>persona</B>) is a synthetic person: a name, a career story, standing positions, personality traits, and demographics, compiled into instructions that lock an AI model into that perspective. Rosa the grid planner doesn't just "know about power" — she distrusts broker timelines, prioritizes reliability, and argues like someone with 22 years at a utility. <B>No persona is ever a real person</B> — every one is a composite, and demographic cohorts are grounded in public statistics, never in anyone's actual records.</P>
+      <PersonaCardVignette />
+      <H>Where agents come from</H>
+      <Term term="The built-in library">~1,800 personas covering the built world: capital and lenders, developers, engineers, construction trades, brokers, appraisers, power/water/zoning officials, attorneys, community voices — plus homeowners and renters across life stages and wealth tiers. Search it in plain English: “under-40 homeowner in Phoenix”, “grid interconnection engineer, skeptical”.</Term>
+      <Term term="Your custom agents">Anything you create, plus every persona the Casting Director generates to fill a gap in your panel — those are saved to your library automatically, so your catalog grows with every simulation.</Term>
+      <Term term="Remixes">Any persona can be forked and edited — every field, from backstory to trait sliders. Remixes carry a ⑂ lineage chain (“Delores V. → Jordan P.”) so you always know what a persona descends from.</Term>
+      <H>What's inside a persona</H>
+      <Term term="Identity">Name, role, tagline, discipline — what shows on cards and in the forum.</Term>
+      <Term term="Backstory & stances">The career story and standing positions that shape how they argue. The skeptic's stances genuinely attack; the lender's stances price risk.</Term>
+      <Term term="Traits">Sliders like risk tolerance, agreeableness, verbosity — the temperament dial.</Term>
+      <Term term="Demographics">Age, metro, income band, tenure, household — what makes crowds look like real markets.</Term>
+      <Term term="Model tier">Which AI model powers them in a chat — Haiku (fast, default), Sonnet (balanced), Opus (deepest) — switchable per participant.</Term>
+      <Callout label="WHY THE LIBRARY MATTERS">
+        When you cast a simulation, the director fills seats from <B>your</B> personas first, then the library, and only generates what's missing. A persona you've refined once — a remixed lender with your covenant standards — shows up in every future panel that needs one, tagged YOUR LIBRARY.
+      </Callout>
+    </>
+  );
+}
+
+function ConversationsPage() {
+  return (
+    <>
+      <P>Conversations is the direct line: instead of watching agents deliberate in a simulation, you <B>talk to them yourself</B> — one persona or a room of up to 20, in a familiar chat thread. It's the fastest way to feel what the agents know, pressure-test a document, or warm up the exact panel you'll later cast into a simulation.</P>
+      <ChatVignette />
+      <H>How a room behaves</H>
+      <Term term="@mention someone">Type @ and pick from the room — the people you tag are the ones who answer. Tag five, get five replies. Ambiguous first names auto-complete to full names so the right person responds.</Term>
+      <Term term="No mention?">A fast router reads your message and picks the most relevant voice(s) to answer — ask a financing question, the lender replies.</Term>
+      <Term term="Ask everyone">Say “each of you” or “everyone” and the whole room answers, one reply per participant. Replies stream in as each person finishes, with typing indicators for whoever is still composing.</Term>
+      <Term term="They hear each other">Repliers see the full thread including each other's answers in the same round — so you get reactions, not five isolated takes. Nobody ever speaks for anyone else.</Term>
+      <Term term="Attachments">Drop images or PDFs onto a message (up to 8) — experts genuinely read and analyze the file, not just its name. Click a chip to view.</Term>
+      <Term term="Model tiers">The MODELS strip shows one chip per participant — click to switch anyone between Haiku (default), Sonnet, and Opus. Choices stick per conversation.</Term>
+      <Term term="Threads & memory">Every conversation is saved and searchable in history. Memory is per-thread by design: start a fresh thread with the same people and you get a clean slate.</Term>
+      <H>When to use it vs a simulation</H>
+      <P>Use a <B>conversation</B> when you want answers on demand and you're steering — an interview, a document review, a quick gut-check. Use a <B>simulation</B> when you want the panel to argue <B>autonomously</B> around a decision and produce a report. Same personas, two different rooms.</P>
+    </>
+  );
+}
+
+function MonitoringPage() {
+  return (
+    <>
+      <P>Monitoring is the meter behind everything. Every time the platform calls an AI model on your behalf — drafting your questions, casting a panel, generating crowd members, answering a corpus question, replying in a chat — one row lands here with exactly what it cost.</P>
+      <Vignette label="MONITORING · INTERACTIONS">
+        <MonitoringVignette />
+      </Vignette>
+      <H>Reading the table</H>
+      <Term term="Surface">Which feature made the call — casting.plan is the Casting Director, crowd.generate is crowd materialization, conversation.reply is a chat answer, corpus.ask is a cited document Q&A.</Term>
+      <Term term="Model">The exact model used. High-volume work (crowds, chats) defaults to the fast tier; judgment work (casting, synthesis) runs stronger models.</Term>
+      <Term term="Tokens in → out">How much context the model read and how much it wrote — the two numbers that drive cost.</Term>
+      <Term term="Est. spend">Estimated from public per-token pricing. Stat tiles up top total it across the org.</Term>
+      <Term term="Expand a row">Click any row for context: which simulation, the guidance you gave, the question you asked, and a deep link to open it.</Term>
+      <Callout label="THE NO-SURPRISE-BILLS RULE">
+        Costs are visible after the fact here, and <B>before</B> the fact where it matters: big operations (full simulation runs) show a price estimate before you commit. That estimator ships with run configuration.
+      </Callout>
+    </>
+  );
+}
+
 function InteractionModes() {
   return (
     <>
@@ -282,6 +465,17 @@ function CastingAndPopulation() {
       <Callout label="HONEST LABEL">
         Resident crowd members are narrative-seeded today (marked “ACS PUMS SOON”). When demographic seeding lands, resident cohorts sample real Census microdata for your geography — ages, incomes, tenures that match the actual market.
       </Callout>
+      <H>The numbers, precisely</H>
+      <P>Every count on the population stage follows one equation. The POPULATION row holds <B>totals</B> — how many experts and residents exist in the whole simulation. Your leads count toward those totals; everyone who isn't a lead is the crowd:</P>
+      <Vignette label="POPULATION MATH">
+        <PopulationMathVignette />
+      </Vignette>
+      <Steps items={[
+        { title: "Edit the totals", body: "Type a new number in TOTAL EXPERTS or TOTAL RESIDENTS. The “= N LEADS + M CROWD” readout updates live so you see exactly what the change means before committing." },
+        { title: "Hit APPLY (or Enter)", body: "Nothing changes until you do — the input border turns green while an edit is pending, and SAVED ✓ confirms the commit." },
+        { title: "Regenerate if needed", body: "If you already generated the crowd, changing totals shows COUNTS CHANGED — REGENERATE TO MATCH. The old members stay browsable until you regenerate." },
+      ]} />
+      <P>Raising TOTAL EXPERTS never adds leads — leads only change via RE-CAST, ADD LEADS, or the library picker. The extra experts become crowd members, generated in the crowd panel.</P>
     </>
   );
 }
@@ -323,7 +517,10 @@ export const DOC_RENDER: Record<string, () => ReactNode> = {
   "what-is-microcosm": WhatIsMicrocosm,
   "simulations-and-swarms": SimulationsAndSwarms,
   "core-concepts": CoreConcepts,
+  "agents-and-the-library": AgentsAndLibrary,
+  "conversations": ConversationsPage,
   "interaction-modes": InteractionModes,
   "casting-and-population": CastingAndPopulation,
+  "monitoring": MonitoringPage,
   "getting-started": GettingStarted,
 };
