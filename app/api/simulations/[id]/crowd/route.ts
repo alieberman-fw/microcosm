@@ -141,6 +141,48 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           return specs;
         };
 
+        // persist a batch's specs (dedupe by name, cap at `limit`); returns how many landed
+        const generatedBy = { experts: 0, residents: 0 };
+        const persist = async (specs: PersonaSpec[], group: "experts" | "residents", limit: number) => {
+          const rows: { sim_id: string; persona_id: null; agent_key: string; spec_frozen: FrozenSpec }[] = [];
+          const members: { key: string; spec: FrozenSpec }[] = [];
+          for (const raw of specs) {
+            if (rows.length >= limit) break;
+            const name = String(raw.name).trim();
+            if (!name || seenNames.has(name)) continue; // duplicate across concurrent batches — drop
+            seenNames.add(name);
+            const kind = group === "experts"
+              ? "expert"
+              : (raw.kind === "consumer" ? "consumer" : "resident");
+            const spec: FrozenSpec = {
+              name,
+              initials: raw.initials || name.split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2),
+              role: raw.role || (group === "experts" ? "Panel expert" : "Resident"),
+              tagline: raw.tagline,
+              discipline: raw.discipline,
+              kind,
+              backstory: raw.backstory ?? "",
+              stances: Array.isArray(raw.stances) ? raw.stances.slice(0, 2) : [],
+              demographics: raw.demographics,
+              seat: {
+                role: raw.role ?? "", why: "", discipline: String(raw.discipline ?? "").toUpperCase().slice(0, 20),
+                adversarial: false, provenance: "generated", tier: "crowd",
+              },
+            };
+            const key = `crowd-${group === "experts" ? "e" : "r"}-${++keySeq}`;
+            rows.push({ sim_id: id, persona_id: null, agent_key: key, spec_frozen: spec });
+            members.push({ key, spec });
+          }
+          if (rows.length) {
+            const { error: insErr } = await supabase.from("sim_agents").insert(rows);
+            if (insErr) throw new Error(insErr.message);
+            generated += rows.length;
+            generatedBy[group] += rows.length;
+            emit({ type: "members", members, generated });
+          }
+          return rows.length;
+        };
+
         // 3-way concurrency; dedupe names as batches resolve, insert per batch
         const CONCURRENCY = 3;
         let cursor = 0;
@@ -150,43 +192,22 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             if (i >= batches.length) return;
             const batch = batches[i];
             const specs = await runBatch(batch);
-            const rows: { sim_id: string; persona_id: null; agent_key: string; spec_frozen: FrozenSpec }[] = [];
-            const members: { key: string; spec: FrozenSpec }[] = [];
-            for (const raw of specs.slice(0, batch.count)) {
-              const name = String(raw.name).trim();
-              if (!name || seenNames.has(name)) continue; // duplicate across concurrent batches — drop
-              seenNames.add(name);
-              const kind = batch.group === "experts"
-                ? "expert"
-                : (raw.kind === "consumer" ? "consumer" : "resident");
-              const spec: FrozenSpec = {
-                name,
-                initials: raw.initials || name.split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2),
-                role: raw.role || (batch.group === "experts" ? "Panel expert" : "Resident"),
-                tagline: raw.tagline,
-                discipline: raw.discipline,
-                kind,
-                backstory: raw.backstory ?? "",
-                stances: Array.isArray(raw.stances) ? raw.stances.slice(0, 2) : [],
-                demographics: raw.demographics,
-                seat: {
-                  role: raw.role ?? "", why: "", discipline: String(raw.discipline ?? "").toUpperCase().slice(0, 20),
-                  adversarial: false, provenance: "generated", tier: "crowd",
-                },
-              };
-              const key = `crowd-${batch.group === "experts" ? "e" : "r"}-${++keySeq}`;
-              rows.push({ sim_id: id, persona_id: null, agent_key: key, spec_frozen: spec });
-              members.push({ key, spec });
-            }
-            if (rows.length) {
-              const { error: insErr } = await supabase.from("sim_agents").insert(rows);
-              if (insErr) throw new Error(insErr.message);
-              generated += rows.length;
-              emit({ type: "members", members, generated });
-            }
+            await persist(specs, batch.group, batch.count);
           }
         };
         await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker));
+
+        // top up the dedupe shortfall: concurrent batches can't see each
+        // other's names, so a few duplicates get dropped — one serial pass
+        // closes the gap so the counts land exactly where the user set them
+        for (const group of ["experts", "residents"] as const) {
+          const want = group === "experts" ? expertsSample : residentsSample;
+          const short = want - generatedBy[group];
+          if (short > 0) {
+            const specs = await runBatch({ group, count: short, index: 900 + (group === "experts" ? 1 : 2) });
+            await persist(specs, group, short);
+          }
+        }
 
         if (generated === 0) throw new Error("Crowd generation produced no members — try again");
 
@@ -195,7 +216,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             ...((sim.config as Record<string, unknown>) ?? {}),
             casting: {
               ...(casting as Record<string, unknown>),
-              crowd: { generated, sampled_of: target, at: new Date().toISOString() },
+              crowd: { generated, sample, sampled_of: target, at: new Date().toISOString() },
             },
           },
         }).eq("id", id);
