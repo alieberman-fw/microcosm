@@ -126,6 +126,12 @@ export default function LiveRun({
   const crowdRef = useRef<Node[]>([]);
   const pulses = useRef<{ a: Node; b: Node; t0: number; dur: number; strong: boolean }[]>([]);
   const speaker = useRef<{ node: Node | null; until: number }>({ node: null, until: 0 });
+  const authorBySeq = useRef<Map<number, string>>(new Map());
+
+  useEffect(() => {
+    for (const it of merged) if (it.kind === "post") authorBySeq.current.set(it.post.seq, it.post.agent_key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const launch = async () => {
     if (status === "running") return;
@@ -155,13 +161,17 @@ export default function LiveRun({
             setItems((prev) => [...prev, { kind: "post", post: p }]);
             setThinking(null);
             // canvas: pulse + speaker
+            authorBySeq.current.set(p.seq, p.agent_key);
             const a = nodesRef.current[p.agent_key] ?? nodesRef.current["__judge"];
             if (a) {
-              const targets = p.reply_to != null
-                ? [Object.values(nodesRef.current).find((n) => n.key !== p.agent_key)].filter(Boolean) as Node[]
-                : Object.values(nodesRef.current).filter((n) => n.key !== p.agent_key).slice(0, 8);
+              // a reply pulses to the ACTUAL author being answered; an open post broadcasts
+              const replyAuthor = p.reply_to != null ? authorBySeq.current.get(p.reply_to) : undefined;
+              const replyNode = replyAuthor ? nodesRef.current[replyAuthor] : undefined;
+              const targets = replyNode && replyNode !== a
+                ? [replyNode]
+                : Object.values(nodesRef.current).filter((n) => n.key !== p.agent_key && n.key !== "__judge").slice(0, 8);
               const now = performance.now();
-              targets.forEach((t, i) => pulses.current.push({ a, b: t, t0: now + i * 90, dur: p.reply_to != null ? 3600 : 2200, strong: p.reply_to != null }));
+              targets.forEach((t, i) => pulses.current.push({ a, b: t, t0: now + i * 90, dur: targets.length === 1 ? 3600 : 2200, strong: targets.length === 1 }));
               speaker.current = { node: a, until: now + 4200 };
             }
           } else if (evt.type === "presence") {
