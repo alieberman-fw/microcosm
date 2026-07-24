@@ -32,9 +32,11 @@ export interface WorkspaceSeat {
 export interface CastingInfo {
   composition: string;
   rationale: string;
+  rationaleSummary?: string;
   scale: { experts: number; residents: number };
   mode: string;
   modeRationale: string;
+  modeSummary?: string;
   user_set?: { mode?: boolean; scale?: boolean };
   crowd?: { generated: number; sample?: number; sampled_of: number };
 }
@@ -110,6 +112,7 @@ export default function PopulationStage({
   const [expertsDraft, setExpertsDraft] = useState<string | null>(null);
   const [residentsDraft, setResidentsDraft] = useState<string | null>(null);
   const [scaleSaved, setScaleSaved] = useState(false); // brief SAVED ✓ flash after a commit
+  const [showReasoning, setShowReasoning] = useState(false); // full casting reasoning dropdown
   const [kindFilter, setKindFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [error, setError] = useState<string | null>(null);
@@ -152,7 +155,7 @@ export default function PopulationStage({
         if (evt.type === "plan") {
           const p = evt as unknown as CastingInfo & { seats: PendingSeat[]; add?: boolean };
           if (!p.add) {
-            setCastingInfo({ composition: p.composition, rationale: p.rationale, scale: p.scale, mode: p.mode, modeRationale: p.modeRationale });
+            setCastingInfo({ composition: p.composition, rationale: p.rationale, rationaleSummary: p.rationaleSummary, scale: p.scale, mode: p.mode, modeRationale: p.modeRationale, modeSummary: p.modeSummary });
             setExpertsDraft(null);
             setResidentsDraft(null);
           }
@@ -389,12 +392,12 @@ export default function PopulationStage({
         <div style={{ margin: "10px 0 0", maxWidth: 860, display: "flex", flexDirection: "column", gap: 7 }}>
           <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.65, color: "var(--t5)" }}>
             <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--acc)" }}>WHY THIS PANEL · </span>
-            {castingInfo.rationale}
+            {castingInfo.rationaleSummary ?? castingInfo.rationale}
           </p>
-          {!castingInfo.user_set?.mode && castingInfo.modeRationale && (
+          {!castingInfo.user_set?.mode && (castingInfo.modeSummary ?? castingInfo.modeRationale) && (
             <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.65, color: "var(--t5)" }}>
               <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--acc)" }}>WHY {castingInfo.mode.toUpperCase()} · </span>
-              {castingInfo.modeRationale}
+              {castingInfo.modeSummary ?? castingInfo.modeRationale}
             </p>
           )}
           {castingInfo.user_set?.mode && (
@@ -402,6 +405,31 @@ export default function PopulationStage({
               <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--acc)" }}>MODE {castingInfo.mode.toUpperCase()} · </span>
               Set by you — the recommendation was based on the brief; change it back any time below.
             </p>
+          )}
+          {/* summaries above are user-facing; the director's full reasoning chain lives behind this toggle */}
+          {(castingInfo.rationaleSummary || castingInfo.modeSummary) && (
+            <div>
+              <button
+                onClick={() => setShowReasoning((v) => !v)}
+                style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+              >
+                {showReasoning ? "HIDE FULL REASONING ▴" : "SHOW FULL REASONING ▾"}
+              </button>
+              {showReasoning && (
+                <div style={{ marginTop: 8, padding: "12px 16px", border: "1px solid var(--ln2)", borderRadius: 10, background: "var(--sf2)", display: "flex", flexDirection: "column", gap: 8, animation: "fadeUp .2s ease both" }}>
+                  <p style={{ margin: 0, fontSize: 12, lineHeight: 1.65, color: "var(--t5)" }}>
+                    <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>PANEL REASONING · </span>
+                    {castingInfo.rationale}
+                  </p>
+                  {castingInfo.modeRationale && (
+                    <p style={{ margin: 0, fontSize: 12, lineHeight: 1.65, color: "var(--t5)" }}>
+                      <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>MODE REASONING · </span>
+                      {castingInfo.modeRationale}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}

@@ -146,13 +146,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         };
         const plan: CastPlan = {
           composition: compOverride ?? (["experts", "consumers", "mixed"] as const).find((c) => c === raw.composition) ?? "mixed",
-          rationale: clip(raw.rationale, 700),
+          rationale: clip(raw.rationale, 1200),
+          rationaleSummary: clip((raw as { rationale_summary?: unknown }).rationale_summary ?? raw.rationale, 260),
           scale: {
             experts: Math.min(Math.max(Number(raw.scale?.experts) || seats.length, 4), 500),
             residents: Math.min(Math.max(Number(raw.scale?.residents) || 0, 0), 1000),
           },
           mode: SIM_MODES.find((m) => m === raw.mode) ?? "Agora",
-          modeRationale: clip(raw.mode_rationale, 550),
+          modeRationale: clip(raw.mode_rationale, 900),
+          modeSummary: clip((raw as { mode_summary?: unknown }).mode_summary ?? raw.mode_rationale, 260),
           seats,
         };
         emit({ type: "plan", ...plan, add: addMode });
@@ -291,8 +293,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             casting: addMode && prevCasting
               ? { ...prevCasting, last_addition: guidance, cast_at: new Date().toISOString() }
               : {
-                  composition: plan.composition, rationale: plan.rationale, scale: plan.scale,
-                  mode: plan.mode, modeRationale: plan.modeRationale,
+                  composition: plan.composition, rationale: plan.rationale, rationaleSummary: plan.rationaleSummary, scale: plan.scale,
+                  mode: plan.mode, modeRationale: plan.modeRationale, modeSummary: plan.modeSummary,
                   guidance: guidance || null, cast_at: new Date().toISOString(),
                 },
           },
