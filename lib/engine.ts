@@ -115,7 +115,7 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
     try {
       const res = await ctx.anthropic.beta.messages.create({
         model,
-        max_tokens: opts.maxTokens ?? 450,
+        max_tokens: opts.maxTokens ?? 1200,
         system,
         messages: [{ role: "user", content: userContent }],
         betas: ["files-api-2025-04-14"],
@@ -130,6 +130,9 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
         }
       }
       await ctx.logCall("engine.turn", model, res.usage as { input_tokens: number; output_tokens: number }, ta);
+      // a successful call with no prose = the model spent the budget thinking
+      // (Sonnet 5 adaptive thinking) or refused — record why and retry bigger
+      if (!text) lastErr = `empty response (stop_reason: ${res.stop_reason})`;
     } catch (e) {
       lastErr = e instanceof Error ? e.message : "turn failed";
       await ctx.logCall("engine.turn", model, null, ta, lastErr);
@@ -248,21 +251,35 @@ export async function runMode(ctx: EngineContext): Promise<{ posts: number; conv
       if (ctx.cfg.convergence === "stability" && round >= 2 && await stabilityCheck(ctx, windowOf(posts, 24))) { converged = true; break; }
     }
   } else if (ctx.mode === "Tribunal") {
-    const residentSide = ctx.leads.filter((l) => l.spec.kind === "consumer" || l.spec.kind === "resident" || l.spec.seat?.adversarial);
-    const proSide = ctx.leads.filter((l) => !residentSide.includes(l));
+    // benches by kind first, then AUTO-BALANCE: a 7-v-1 cast still gets a
+    // real contest — the skeptic plus the nearest leads move to the thin side
+    const con = ctx.leads.filter((l) => l.spec.kind === "consumer" || l.spec.kind === "resident" || l.spec.seat?.adversarial);
+    const pro = ctx.leads.filter((l) => !con.includes(l));
+    if (ctx.leads.length >= 4) {
+      while (con.length < 2 && pro.length > 2) con.push(pro.pop()!);
+      while (pro.length < 2 && con.length > 2) pro.push(con.pop()!);
+    }
+    const residentSide = con;
+    const proSide = pro;
+    // rotate a 3-seat window each round so EVERY lead argues across the run
+    const bench = <T,>(arr: T[], round: number, size = 3): T[] => {
+      if (arr.length <= size) return arr;
+      const start = ((round - 1) * size) % arr.length;
+      return [...arr.slice(start), ...arr.slice(0, start)].slice(0, size);
+    };
     const judgeLead = proSide[0] ?? ctx.leads[0]; // strongest available voice chairs
     const judge: EngineLead = { key: `${judgeLead.key}-judge`, spec: { ...judgeLead.spec, name: "The Judge", initials: "JD", role: "Presiding judge", seat: { ...(judgeLead.spec.seat ?? { role: "", why: "", discipline: "", adversarial: false, provenance: "generated" as const }), role: "Presiding judge" } } };
     for (let round = 1; round <= ctx.cfg.rounds && budget(); round++) {
-      for (const lead of proSide.slice(0, 3)) {
+      for (const lead of bench(proSide, round)) {
         if (!budget()) break;
         await turn(lead, { round, thread: "TRIBUNAL", tag: "ARGUMENT", side: "pro", instruction: `Round ${round}: argue FOR the thesis with your strongest specific evidence. ${q}` });
       }
-      for (const lead of residentSide.slice(0, 3)) {
+      for (const lead of bench(residentSide, round)) {
         if (!budget()) break;
         await turn(lead, { round, thread: "TRIBUNAL", tag: "REBUTTAL", side: "con", instruction: `Round ${round}: rebut the arguments just made — attack the weakest link with specifics.` });
       }
       seq += 1;
-      const jr = await speak(ctx, judge, { seq, round, thread: "TRIBUNAL", tag: "JUDGE'S NOTE", instruction: `As presiding judge, weigh THIS round only: who carried it and on what evidence? End with the scale: "Round to <side>, <x>–<y>".`, transcript: windowOf(posts), maxTokens: 350 });
+      const jr = await speak(ctx, judge, { seq, round, thread: "TRIBUNAL", tag: "JUDGE'S NOTE", instruction: `As presiding judge, weigh THIS round only: who carried it and on what evidence? End with the scale: "Round to <side>, <x>–<y>".`, transcript: windowOf(posts), maxTokens: 800 });
       record(judge, "JUDGE'S NOTE", jr.text);
       await pollCrowd(ctx, round, ctx.problem);
     }
@@ -283,7 +300,7 @@ export async function runMode(ctx: EngineContext): Promise<{ posts: number; conv
     }
     const chair = ctx.leads[0];
     seq += 1;
-    const r = await speak(ctx, chair, { seq, round: 3, thread: "CHAMBER", tag: "CHAIR SYNTHESIS", phase: "synthesis", instruction: `As chair, synthesize the takes and reviews into the panel's position: points of consensus, live disagreements, and the recommendation.`, transcript: windowOf(posts, 24), maxTokens: 600 });
+    const r = await speak(ctx, chair, { seq, round: 3, thread: "CHAMBER", tag: "CHAIR SYNTHESIS", phase: "synthesis", instruction: `As chair, synthesize the takes and reviews into the panel's position: points of consensus, live disagreements, and the recommendation.`, transcript: windowOf(posts, 24), maxTokens: 1400 });
     record(chair, "CHAIR SYNTHESIS", r.text);
     converged = true;
   } else if (ctx.mode === "Jury") {
@@ -307,7 +324,7 @@ export async function runMode(ctx: EngineContext): Promise<{ posts: number; conv
       record(w, "SECTION DRAFT", r.text);
     }
     seq += 1;
-    const merge = await speak(ctx, director, { seq, round: 3, thread: "DESK", tag: "DIRECTOR'S MEMO", phase: "merge", instruction: `Merge the sections into the memo's executive summary: verdict, the three numbers that matter, and open risks.`, transcript: windowOf(posts, 20), maxTokens: 600 });
+    const merge = await speak(ctx, director, { seq, round: 3, thread: "DESK", tag: "DIRECTOR'S MEMO", phase: "merge", instruction: `Merge the sections into the memo's executive summary: verdict, the three numbers that matter, and open risks.`, transcript: windowOf(posts, 20), maxTokens: 1400 });
     record(director, "DIRECTOR'S MEMO", merge.text);
     converged = true;
   } else if (ctx.mode === "Expedition") {
@@ -320,7 +337,9 @@ export async function runMode(ctx: EngineContext): Promise<{ posts: number; conv
     ];
     for (let pi = 0; pi < phases.length && budget(); pi++) {
       const ph = phases[pi];
-      const scouts = ctx.leads.slice(0, Math.min(3, ctx.leads.length));
+      const start = (pi * 3) % ctx.leads.length;
+      const rotated = [...ctx.leads.slice(start), ...ctx.leads.slice(0, start)];
+      const scouts = rotated.slice(0, Math.min(3, ctx.leads.length));
       for (const s of scouts) {
         if (!budget()) break;
         seq += 1;

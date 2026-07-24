@@ -119,6 +119,7 @@ export default function LiveRun({
   const [status, setStatus] = useState<string>(initialStatus === "complete" && initialPosts.length ? "done" : "idle");
   const [thinking, setThinking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const feedEl = useRef<HTMLDivElement>(null);
   const canvasEl = useRef<HTMLCanvasElement>(null);
@@ -179,6 +180,7 @@ export default function LiveRun({
           } else if (evt.type === "sentiment") {
             setItems((prev) => [...prev, { kind: "sentiment", s: evt as unknown as LiveSentiment }]);
           } else if (evt.type === "stage") {
+            if (evt.value === "running" && evt.detail) setNote(String(evt.detail));
             if (evt.value === "converged" || evt.value === "done") setStatus("done");
             if (evt.value === "error") { setStatus("idle"); setError(String(evt.detail ?? "Run failed")); }
           } else if (evt.type === "error") {
@@ -297,6 +299,7 @@ export default function LiveRun({
         </span>
       </div>
       <div style={{ marginTop: 8, fontSize: 13, color: "var(--t5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{problem}</div>
+      {note && <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t6)", marginTop: 6 }}>ⓘ {note.toUpperCase()}</div>}
       <div style={{ height: 4, borderRadius: 100, background: "var(--sf2)", marginTop: 12, overflow: "hidden" }}>
         <div style={{ width: `${status === "done" ? 100 : Math.min(96, (currentRound / Math.max(maxRounds, 1)) * 100)}%`, height: "100%", background: "var(--acc)", transition: "width .4s ease" }} />
       </div>

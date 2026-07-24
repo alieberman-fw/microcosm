@@ -216,30 +216,37 @@ export default function RunConfigStage({
         </div>
       </div>
 
-      {/* cost estimate + CTAs */}
-      <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginTop: 16 }}>
-        <div style={{ border: "1px solid var(--ln3)", borderRadius: 12, padding: "12px 18px", background: "var(--sf)" }}>
-          <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>ESTIMATED COST · BEFORE YOU COMMIT</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 4 }}>
-            <span style={{ ...mono, fontSize: 20, color: "var(--acc)" }}>
+      {/* footer: the estimate and the launch path, one card */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, flexWrap: "wrap", marginTop: 16, padding: "18px 22px", border: "1px solid var(--ln3)", borderRadius: 14, background: "var(--sf)" }}>
+        <div>
+          <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>ESTIMATED COST · SHOWN BEFORE YOU COMMIT</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 5 }}>
+            <span style={{ ...mono, fontSize: 22, color: "var(--acc)" }}>
               ${est.low.toFixed(2)}–{est.high.toFixed(2)}
             </span>
             <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
-              ~{est.posts.toLocaleString()} POSTS{est.polls > 0 ? ` · ${est.polls.toLocaleString()} SENTIMENT POLLS` : ""} · {cfg.tier.toUpperCase()} TIER
+              ~{est.posts.toLocaleString()} POSTS{est.polls > 0 ? ` · ${est.polls.toLocaleString()} POLLS` : ""} · {cfg.tier.toUpperCase()}
             </span>
           </div>
         </div>
-        <Link href={`/sim/${simId}/run`} style={{ textDecoration: "none" }}>
-          <span style={{ display: "inline-block", background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 14, padding: "12px 24px", borderRadius: 100, fontFamily: "var(--font-sans), sans-serif", cursor: "pointer" }}>
-            Go to the run screen — launch there →
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 7 }}>
+          <Link href={`/sim/${simId}/run`} style={{ textDecoration: "none" }}>
+            <span
+              className="runCta"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 10,
+                background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 15,
+                padding: "13px 30px", borderRadius: 100, fontFamily: "var(--font-sans), sans-serif", cursor: "pointer",
+              }}
+            >
+              Proceed to launch
+              <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>→</span>
+            </span>
+          </Link>
+          <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>
+            OPENS THE RUN SCREEN · PRESS ▶ LAUNCH WHEN READY · <Link href={`/sim/${simId}/run?replay=1`} style={{ color: "var(--t6)", textDecoration: "underline" }}>DEMO REPLAY</Link>
           </span>
-        </Link>
-        <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
-          THE RUN SCREEN OPENS WITH ▶ LAUNCH — POSTS STREAM LIVE, EVERYTHING PERSISTS
-        </span>
-        <Link href={`/sim/${simId}/run?replay=1`} style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)", textDecoration: "underline" }}>
-          DEMO REPLAY
-        </Link>
+        </div>
       </div>
     </div>
   );
