@@ -109,7 +109,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           const t0 = Date.now();
           const planRes = await anthropic.messages.create({
             model: CASTING_MODEL,
-            max_tokens: 3500, // 20 verbose seats + rationales cannot truncate at this cap
+            max_tokens: 5200, // 20 seats + reasoning + user-facing summaries — seats come last in the JSON, so truncation must be impossible
             system: addMode ? castingAddSystem(existingRoles, maxNew) : castingPlanSystem(targetSeats, compOverride),
             messages: [{ role: "user", content: briefText }],
           });
@@ -274,7 +274,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
 
         // ---- 4 · freeze the cast ----
-        if (!addMode) await supabase.from("sim_agents").delete().eq("sim_id", id); // re-cast replaces; add-more appends
+        if (!addMode) {
+          // re-cast replaces the population — the old transcript referenced
+          // agents that no longer exist, so run artifacts reset with it
+          // (brief, corpus, and the user's run parameters are kept)
+          await supabase.from("sim_agents").delete().eq("sim_id", id);
+          await supabase.from("posts").delete().eq("sim_id", id);
+          await supabase.from("events").delete().eq("sim_id", id);
+        }
         const all = [
           ...resolved.map((r) => ({ ...r, provenance: r.provenance as "yours" | "library" | "generated" })),
           ...generated.map((g) => ({ ...g, provenance: "generated" as const })),
@@ -287,9 +294,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         if (agentErr) throw new Error(agentErr.message);
 
         const prevCasting = ((sim.config as { casting?: Record<string, unknown> } | null)?.casting) ?? null;
+        const prevConfig = (sim.config as Record<string, unknown>) ?? {};
+        if (!addMode) { delete prevConfig.run_state; delete prevConfig.run_result; }
         await supabase.from("simulations").update({
+          ...(addMode ? {} : { status: "draft" }),
           config: {
-            ...((sim.config as Record<string, unknown>) ?? {}),
+            ...prevConfig,
             casting: addMode && prevCasting
               ? { ...prevCasting, last_addition: guidance, cast_at: new Date().toISOString() }
               : {

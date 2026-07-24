@@ -11,6 +11,7 @@
 
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -120,6 +121,40 @@ export default function LiveRun({
   const [thinking, setThinking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [synthesizing, setSynthesizing] = useState<string | null>(null);
+  const router = useRouter();
+
+  const synthesize = async () => {
+    if (synthesizing) return;
+    setSynthesizing("SYNTHESIZING…");
+    try {
+      const res = await fetch(`/api/simulations/${simId}/report`, { method: "POST" });
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Synthesis failed");
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const evt = JSON.parse(line) as { type: string; note?: string; error?: string };
+          if (evt.type === "stage") setSynthesizing(String(evt.note ?? "SYNTHESIZING…"));
+          else if (evt.type === "done") { router.push(`/sim/${simId}/report`); return; }
+          else if (evt.type === "error") throw new Error(evt.error ?? "Synthesis failed");
+        }
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Synthesis failed");
+      setSynthesizing(null);
+    }
+  };
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const feedEl = useRef<HTMLDivElement>(null);
   const canvasEl = useRef<HTMLCanvasElement>(null);
@@ -352,7 +387,6 @@ export default function LiveRun({
         <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)", border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 100, padding: "3px 10px" }}>
           LIVE · {mode.toUpperCase()} · ENGINE V1
         </span>
-        <Link href={`/sim/${simId}/run?replay=1`} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t7)" }}>VIEW THE DEMO REPLAY →</Link>
         <span style={{ marginLeft: "auto", ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--t6)" }}>
           {currentRound > 0 ? `ROUND ${currentRound} / ${maxRounds} · ` : ""}{posts} POSTS
         </span>
@@ -477,8 +511,27 @@ export default function LiveRun({
             {status === "done" && posts > 0 && (
               <div style={{ margin: "20px 0 6px", padding: "14px 16px", border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 12 }}>
                 <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--acc)" }}>RUN COMPLETE · {posts} POSTS PERSISTED</div>
-                <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--t4)", marginTop: 6 }}>
-                  The transcript is saved — the report engine (next build) synthesizes it into the verdict, scores, and preserved dissents.
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => void synthesize()}
+                    disabled={!!synthesizing}
+                    style={{
+                      background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 13.5,
+                      padding: "10px 22px", borderRadius: 100, border: "none", cursor: synthesizing ? "default" : "pointer",
+                      fontFamily: "var(--font-sans), sans-serif", opacity: synthesizing ? 0.7 : 1,
+                    }}
+                  >
+                    {synthesizing ? "Synthesizing…" : "Synthesize the report →"}
+                  </button>
+                  {synthesizing && (
+                    <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--acc)", display: "inline-flex", alignItems: "center", gap: 7 }}>
+                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.1s ease infinite" }} />
+                      {synthesizing}
+                    </span>
+                  )}
+                  <Link href={`/sim/${simId}/report`} prefetch={false} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t6)" }}>
+                    VIEW LATEST REPORT →
+                  </Link>
                 </div>
               </div>
             )}

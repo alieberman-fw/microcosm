@@ -244,7 +244,7 @@ export default function RunConfigStage({
             </span>
           </Link>
           <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>
-            OPENS THE RUN SCREEN · PRESS ▶ LAUNCH WHEN READY · <Link href={`/sim/${simId}/run?replay=1`} style={{ color: "var(--t6)", textDecoration: "underline" }}>DEMO REPLAY</Link>
+            OPENS THE RUN SCREEN · PRESS ▶ LAUNCH WHEN READY
           </span>
         </div>
       </div>

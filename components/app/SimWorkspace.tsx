@@ -62,6 +62,7 @@ export default function SimWorkspace({
   initialCasting,
   initialAnswers = [],
   initialRun = null,
+  hasReport = false,
 }: {
   sim: { id: string; status: string; brief: Brief; created_at: string };
   initialDocs: DocRow[];
@@ -70,6 +71,7 @@ export default function SimWorkspace({
   initialCasting: CastingInfo | null;
   initialAnswers?: Answer[];
   initialRun?: Partial<RunConfig> | null;
+  hasReport?: boolean;
 }) {
   const router = useRouter();
   const [brief, setBrief] = useState<Brief>(sim.brief);
@@ -105,7 +107,7 @@ export default function SimWorkspace({
 
   const parsedDocs = docs.filter((d) => d.parse_status === "parsed");
   const totalTokens = parsedDocs.reduce((s, d) => s + (d.token_estimate ?? 0), 0);
-  const stageDone = [true, parsedDocs.length > 0, populationCount > 0, !!initialRun, false];
+  const stageDone = [true, parsedDocs.length > 0, populationCount > 0, !!initialRun, hasReport];
 
   const uploadFiles = async (files: FileList | File[]) => {
     for (const file of Array.from(files)) {
@@ -171,20 +173,24 @@ export default function SimWorkspace({
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         {STAGES.map((s, i) => {
           const target = ["stage-brief", "stage-corpus", "stage-population", "stage-run"][i];
+          const reportStage = i === 4;
           return (
             <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
               <button
-                onClick={() => { if (target) document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+                onClick={() => {
+                  if (reportStage && hasReport) { router.push(`/sim/${sim.id}/report`); return; }
+                  if (target) document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
                 style={{
                   ...mono, fontSize: 10, letterSpacing: ".1em", background: "none", border: "none", padding: 0,
-                  cursor: target ? "pointer" : "default",
+                  cursor: (target || (reportStage && hasReport)) ? "pointer" : "default",
                   color: stageDone[i] ? "var(--acc)" : i <= 3 ? "var(--t4)" : "var(--t7)",
                 }}
                 title={target ? `Jump to ${s.toLowerCase()}` : undefined}
               >
                 {String(i + 1).padStart(2, "0")} {s}
                 {stageDone[i] && " ✓"}
-                {i > 3 && <span style={{ marginLeft: 6, border: "1px solid var(--ln4)", borderRadius: 100, padding: "1px 6px", fontSize: 8, color: "var(--t7)" }}>SOON</span>}
+                {i > 3 && !hasReport && <span style={{ marginLeft: 6, border: "1px solid var(--ln4)", borderRadius: 100, padding: "1px 6px", fontSize: 8, color: "var(--t7)" }}>SOON</span>}
               </button>
               {i < STAGES.length - 1 && <span style={{ width: 18, height: 1, background: "var(--ln4)" }} />}
             </span>
@@ -544,6 +550,7 @@ export default function SimWorkspace({
         const crowd = Math.max(scale.experts - expertSide, 0) + Math.max(scale.residents - residentSide, 0);
         return (
           <RunConfigStage
+            key={`${initialCasting?.mode ?? "none"}-${initialSeats.length}`}
             simId={sim.id}
             mode={initialCasting?.mode ?? null}
             leads={initialSeats.length}

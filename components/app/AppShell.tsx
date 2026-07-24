@@ -42,7 +42,7 @@ const NAV: NavItem[] = [
   { href: "/personas", label: "Agent Library", icon: ICONS.personas },
   { href: "/monitoring", label: "Monitoring", icon: ICONS.monitor },
   { href: "/docs", label: "Docs", icon: ICONS.docs },
-  { href: null, label: "Reports", icon: ICONS.reports, soon: true },
+  { href: "/reports", label: "Reports", icon: ICONS.reports },
   { href: null, label: "Marketplace", icon: ICONS.market, soon: true },
 ];
 
