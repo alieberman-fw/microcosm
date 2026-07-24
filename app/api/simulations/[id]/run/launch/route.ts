@@ -87,7 +87,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             thread: e.thread, reply_to: e.reply_to, tag: e.tag, content: e.content,
             cites: { cites: e.cites, name: e.name, role: e.role, initials: e.initials, adversarial: e.adversarial ?? false, round: e.round, phase: e.phase ?? null, side: e.side ?? null },
           });
-        } else {
+        } else if (e.type !== "presence") {
+          // presence is transient UI state — streamed, never persisted
           evSeq += 1;
           await supabase.from("events").insert({ sim_id: id, seq: evSeq, type: e.type, payload: e });
         }

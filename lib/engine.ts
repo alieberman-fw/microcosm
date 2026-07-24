@@ -72,6 +72,7 @@ export function compilePersonaPrompt(spec: FrozenSpec, args: { mode: string; pro
     `You are one voice on a ${args.mode} panel deliberating: "${args.problem}"`,
     `Forum rules: write ONE post in your own voice, 60–140 words, concrete and specific — numbers, names, mechanisms. ` +
     `Reference documents by name when you use them. Address colleagues by first name. ` +
+    `Start directly with your point — never prefix your post with your own name, a greeting, or markdown headers. ` +
     `Never break character, never mention being an AI, never summarize the whole discussion — advance it.`,
     styleBits.join(" "),
     temp,
@@ -82,6 +83,15 @@ const clampWords = (s: string, max = 220) => {
   const w = s.trim().split(/\s+/);
   return w.length <= max ? s.trim() : w.slice(0, max).join(" ") + "…";
 };
+
+/** models love opening with "**Their Name.**" — strip any self-prefix */
+export function stripSelfPrefix(text: string, name: string): string {
+  const first = name.split(/\s+/)[0];
+  return text
+    .replace(new RegExp(`^\\s*\\*{0,2}\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[.:,—-]*\\s*\\*{0,2}\\s*`, "i"), "")
+    .replace(new RegExp(`^\\s*\\*{0,2}\\s*${first.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+[A-Z]\\.?\\s*[.:,—-]*\\s*\\*{0,2}\\s*`, ""), "")
+    .trim();
+}
 
 /** one lead takes a turn: model call → post event (with citations when docs are attached) */
 async function speak(ctx: EngineContext, lead: EngineLead, opts: {
@@ -121,7 +131,7 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
     await ctx.logCall("engine.turn", model, null, t0, e instanceof Error ? e.message : "turn failed");
     text = "";
   }
-  text = clampWords(text || "(no response — turn skipped)");
+  text = clampWords(stripSelfPrefix(text, lead.spec.name) || "(no response — turn skipped)");
   await ctx.emit({
     type: "post", seq: opts.seq, author: "agent", agent_key: lead.key,
     name: lead.spec.name, role: lead.spec.seat?.role ?? lead.spec.role, initials: lead.spec.initials,
