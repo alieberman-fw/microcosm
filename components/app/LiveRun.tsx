@@ -234,6 +234,7 @@ export default function LiveRun({
             }
           } else if (evt.type === "stage") {
             if (evt.value === "running" && evt.detail) setNote(String(evt.detail));
+            if (evt.value === "converged") setNote(`CONVERGED — POSITIONS STABILIZED, STOPPED BEFORE THE ROUND CAP · SET "STOP WHEN: ROUNDS EXHAUSTED" TO FORCE EVERY ROUND`);
             if (evt.value === "converged" || evt.value === "done") setStatus("done");
             if (evt.value === "error") { setStatus("idle"); setError(String(evt.detail ?? "Run failed")); }
           } else if (evt.type === "error") {
@@ -393,6 +394,13 @@ export default function LiveRun({
       </div>
       <div style={{ marginTop: 8, fontSize: 13, color: "var(--t5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{problem}</div>
       {note && <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t6)", marginTop: 6 }}>ⓘ {note.toUpperCase()}</div>}
+      {crowdCount === 0 && (
+        <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--warn)", marginTop: 6 }}>
+          ⚠ LEADS-ONLY RUN — NO CROWD MATERIALIZED, SO SENTIMENT POLLS ARE OFF ·{" "}
+          <Link href={`/sim/${simId}`} style={{ color: "var(--warn)", textDecoration: "underline" }}>GENERATE THE CROWD ON THE POPULATION STAGE</Link>
+          {" "}(RE-CASTS CLEAR IT)
+        </div>
+      )}
       <div style={{ height: 4, borderRadius: 100, background: "var(--sf2)", marginTop: 12, overflow: "hidden" }}>
         <div style={{ width: `${status === "done" ? 100 : Math.min(96, (currentRound / Math.max(maxRounds, 1)) * 100)}%`, height: "100%", background: "var(--acc)", transition: "width .4s ease" }} />
       </div>
