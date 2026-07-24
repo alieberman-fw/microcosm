@@ -15,7 +15,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  let body: { scale?: { experts?: number; residents?: number }; mode?: string };
+  let body: { scale?: { experts?: number; residents?: number }; mode?: string; qa_remove?: string };
   try {
     body = await request.json();
   } catch {
@@ -43,6 +43,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     userSet.mode = true;
   }
   casting.user_set = userSet;
+
+  // remove one persisted corpus Q&A by id
+  if (body.qa_remove && Array.isArray(config.qa)) {
+    config.qa = (config.qa as { id?: string }[]).filter((x) => x.id !== body.qa_remove);
+  }
 
   const { error } = await supabase.from("simulations")
     .update({ config: { ...config, casting } }).eq("id", id);

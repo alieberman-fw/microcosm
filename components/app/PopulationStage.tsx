@@ -239,16 +239,24 @@ export default function PopulationStage({
   // land. Batches arrive ~25 at a time; a drain queue reveals them one-by-one
   // so the counter ticks and the band dots light member-by-member.
   const arrivalQueue = useRef<WorkspaceSeat[]>([]);
+  const revealDelay = useRef(140);
   const generateCrowd = async () => {
     if (crowdGen || casting) return;
     setCrowdGen(true);
     setCrowd([]);
     setError(null);
     arrivalQueue.current = [];
-    const drain = setInterval(() => {
+    // reveal pace scales with crowd size: small crowds tick slowly enough to
+    // watch (1, 2, 3…); big crowds stay brisk so 300 doesn't take minutes
+    let drainStopped = false;
+    const tick = () => {
+      if (drainStopped) return;
       const next = arrivalQueue.current.shift();
       if (next) setCrowd((prev) => [...prev, next]);
-    }, 55);
+      setTimeout(tick, revealDelay.current);
+    };
+    tick();
+    const drain = { stop: () => { drainStopped = true; } };
     try {
       const res = await fetch(`/api/simulations/${simId}/crowd`, { method: "POST" });
       if (!res.ok || !res.body) {
@@ -261,7 +269,9 @@ export default function PopulationStage({
       let doneEvt: { generated: number; sampled_of: number } | null = null;
       const handle = (evt: Record<string, unknown>) => {
         if (evt.type === "start") {
-          setCrowdSample(Number(evt.sample) || null);
+          const s = Number(evt.sample) || 0;
+          setCrowdSample(s || null);
+          revealDelay.current = s <= 40 ? 170 : s <= 120 ? 90 : 45;
         } else if (evt.type === "members") {
           const members = (evt.members as { key: string; spec: FrozenSpec }[] | undefined) ?? [];
           arrivalQueue.current.push(...members.map((m) => ({ key: m.key, provenance: "generated" as const, spec: m.spec })));
@@ -293,7 +303,7 @@ export default function PopulationStage({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Crowd generation failed");
     } finally {
-      clearInterval(drain);
+      drain.stop();
       setCrowd((prev) => arrivalQueue.current.length ? [...prev, ...arrivalQueue.current.splice(0)] : prev);
       setCrowdGen(false);
       setCrowdSample(null);
@@ -376,14 +386,24 @@ export default function PopulationStage({
         )}
       </div>
       {castingInfo?.rationale && (
-        <p style={{ margin: "10px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "var(--t5)", maxWidth: 760 }}>
-          {castingInfo.rationale}
-          {!castingInfo.user_set?.mode && castingInfo.modeRationale
-            ? <span style={{ color: "var(--t6)" }}> {castingInfo.modeRationale}</span>
-            : castingInfo.user_set?.mode
-            ? <span style={{ color: "var(--t6)" }}> Mode set by you — the recommendation was based on the brief; change it back any time below.</span>
-            : null}
-        </p>
+        <div style={{ margin: "10px 0 0", maxWidth: 860, display: "flex", flexDirection: "column", gap: 7 }}>
+          <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.65, color: "var(--t5)" }}>
+            <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--acc)" }}>WHY THIS PANEL · </span>
+            {castingInfo.rationale}
+          </p>
+          {!castingInfo.user_set?.mode && castingInfo.modeRationale && (
+            <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.65, color: "var(--t5)" }}>
+              <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--acc)" }}>WHY {castingInfo.mode.toUpperCase()} · </span>
+              {castingInfo.modeRationale}
+            </p>
+          )}
+          {castingInfo.user_set?.mode && (
+            <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.65, color: "var(--t6)" }}>
+              <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--acc)" }}>MODE {castingInfo.mode.toUpperCase()} · </span>
+              Set by you — the recommendation was based on the brief; change it back any time below.
+            </p>
+          )}
+        </div>
       )}
 
       {/* the §3 composition + mode + crowd controls */}
@@ -562,7 +582,7 @@ export default function PopulationStage({
       {hasCast && !showTheater && (
         <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", marginTop: 18 }}>
           <span style={{ ...mono, fontSize: 10, letterSpacing: ".09em", color: "var(--acc)" }}>
-            THE LEADS · {seats.length} OF {MAX_SEATS}
+            THE LEADS · {seats.length} OF {MAX_SEATS}{castingInfo ? ` — ${expertLeads} EXPERT-SIDE · ${residentLeads} RESIDENT-SIDE` : ""}
           </span>
           <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
             THE VOICES THAT SPEAK IN THE FORUM — EXPERTS, RESIDENTS, OR BOTH · CLICK A CARD FOR THE FULL PROFILE
@@ -689,6 +709,7 @@ export default function PopulationStage({
             residents={crowdResidentsTarget}
             litExperts={crowdExpertsLit}
             litResidents={crowdResidentsLit}
+            active={crowdGen}
           />
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 4 }}>
             {crowdGen ? (
@@ -773,18 +794,23 @@ export default function PopulationStage({
               </button>
             ))}
           </div>
-          <input
+          <textarea
             value={guidance}
-            onChange={(e) => setGuidance(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void cast(guidanceMode); }}
+            rows={1}
+            onChange={(e) => {
+              setGuidance(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`;
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void cast(guidanceMode); } }}
             placeholder={guidanceMode === "add"
-              ? "Who else? — “add more pool engineering experts”, “a school-board voice”"
-              : "Re-cast the whole panel — “more first-time buyers; heavier on capital”"}
+              ? "Add leads — “a school-board voice”"
+              : "Re-cast everyone — “more first-time buyers”"}
             maxLength={500}
             style={{
               flex: 1, minWidth: 200, padding: "11px 16px", background: "var(--sf2)",
-              border: "1px solid var(--ln3)", borderRadius: 100,
-              fontFamily: "var(--font-sans), sans-serif", fontSize: 13, color: "var(--t1)", outline: "none",
+              border: "1px solid var(--ln3)", borderRadius: 16, resize: "none", overflow: "hidden",
+              fontFamily: "var(--font-sans), sans-serif", fontSize: 13, lineHeight: 1.5, color: "var(--t1)", outline: "none",
             }}
           />
           <button
