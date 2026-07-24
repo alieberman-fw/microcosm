@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { SIM_MODES } from "@/lib/casting";
+import { RUN_DEFAULTS, RUN_RANGES, RunConfig } from "@/lib/run";
 
 /**
  * User adjustments to the casting plan (CLAUDE.md §3 Stage 3): the full-run
@@ -15,7 +16,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  let body: { scale?: { experts?: number; residents?: number }; mode?: string; qa_remove?: string };
+  let body: { scale?: { experts?: number; residents?: number }; mode?: string; qa_remove?: string; run?: Partial<RunConfig> };
   try {
     body = await request.json();
   } catch {
@@ -43,6 +44,26 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     userSet.mode = true;
   }
   casting.user_set = userSet;
+
+  // §4.1 run parameters → config.run (clamped to ranges; enums validated)
+  if (body.run) {
+    const prev = { ...RUN_DEFAULTS, ...((config.run as Partial<RunConfig>) ?? {}) };
+    const r = body.run;
+    const num = (v: unknown, lo: number, hi: number, fb: number) =>
+      Math.min(Math.max(Math.round(Number(v ?? fb)) || fb, lo), hi);
+    const pick = <T extends string>(v: unknown, opts: readonly T[], fb: T): T =>
+      (opts as readonly string[]).includes(String(v)) ? (v as T) : fb;
+    config.run = {
+      rounds: num(r.rounds, RUN_RANGES.rounds.min, RUN_RANGES.rounds.max, prev.rounds),
+      max_posts: num(r.max_posts, RUN_RANGES.max_posts.min, RUN_RANGES.max_posts.max, prev.max_posts),
+      duration_days: num(r.duration_days, RUN_RANGES.duration_days.min, RUN_RANGES.duration_days.max, prev.duration_days),
+      speaker: pick(r.speaker ?? prev.speaker, ["priority", "round-robin", "random", "mention-driven"] as const, "priority"),
+      convergence: pick(r.convergence ?? prev.convergence, ["stability", "fixed", "budget"] as const, "stability"),
+      temperature: pick(r.temperature ?? prev.temperature, ["conservative", "balanced", "exploratory"] as const, "balanced"),
+      tier: pick(r.tier ?? prev.tier, ["economy", "standard", "frontier"] as const, "standard"),
+      verifier: typeof r.verifier === "boolean" ? r.verifier : prev.verifier,
+    } satisfies RunConfig;
+  }
 
   // remove one persisted corpus Q&A by id
   if (body.qa_remove && Array.isArray(config.qa)) {

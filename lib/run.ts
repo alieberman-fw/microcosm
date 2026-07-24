@@ -1,0 +1,119 @@
+/**
+ * Run configuration (CLAUDE.md §4.1) — parameter ranges, defaults, the
+ * pre-launch cost estimator, and mode-fit checks. All model rates live HERE
+ * (never in components); update alongside Anthropic pricing changes, same
+ * rule as the Monitoring spend table.
+ */
+
+import { SIM_MODES } from "@/lib/casting";
+
+export type SimMode = (typeof SIM_MODES)[number];
+
+export interface RunConfig {
+  rounds: number;              // max discussion rounds, 1-100
+  max_posts: number;           // hard budget cap, 50-10000
+  duration_days: number;       // narrative clock, 1-30
+  speaker: "priority" | "round-robin" | "random" | "mention-driven"; // Agora only
+  convergence: "stability" | "fixed" | "budget";
+  temperature: "conservative" | "balanced" | "exploratory";
+  tier: "economy" | "standard" | "frontier";
+  verifier: boolean;
+}
+
+export const RUN_DEFAULTS: RunConfig = {
+  rounds: 3,
+  max_posts: 600,
+  duration_days: 14,
+  speaker: "priority",
+  convergence: "stability",
+  temperature: "balanced",
+  tier: "standard",
+  verifier: true,
+};
+
+export const RUN_RANGES = {
+  rounds: { min: 1, max: 100 },
+  max_posts: { min: 50, max: 10_000 },
+  duration_days: { min: 1, max: 30 },
+} as const;
+
+/** $ per MTok — pull from the Anthropic pricing page when it changes */
+const RATES: Record<string, { in: number; out: number }> = {
+  "claude-haiku-4-5": { in: 1, out: 5 },
+  "claude-sonnet-5": { in: 3, out: 15 },
+  "claude-opus-4-8": { in: 5, out: 25 },
+};
+
+/** §6.4 tier map: which model speaks for each population role */
+const TIER_MODELS: Record<RunConfig["tier"], { leads: string; crowd: string; verifier: string; synth: string }> = {
+  economy: { leads: "claude-haiku-4-5", crowd: "claude-haiku-4-5", verifier: "claude-haiku-4-5", synth: "claude-sonnet-5" },
+  standard: { leads: "claude-sonnet-5", crowd: "claude-haiku-4-5", verifier: "claude-sonnet-5", synth: "claude-opus-4-8" },
+  frontier: { leads: "claude-opus-4-8", crowd: "claude-sonnet-5", verifier: "claude-opus-4-8", synth: "claude-opus-4-8" },
+};
+
+/** rough per-call token shapes; prompt caching makes input ~0.15× effective */
+const SHAPE = {
+  post: { in: 6_000, out: 320 },        // lead turn: persona + transcript window + corpus refs
+  poll: { in: 900, out: 90 },           // crowd sentiment poll per member per round
+  verify: { in: 2_500, out: 150 },      // per numeric-claim check
+  synthPerPost: { in: 350, out: 60 },   // report synthesis amortized per transcript post
+  cacheFactor: 0.18,                    // effective input multiplier with a hot corpus prefix
+};
+
+export interface CostEstimate {
+  posts: number;
+  polls: number;
+  low: number;   // dollars
+  high: number;  // dollars
+}
+
+export function estimateRunCost(args: {
+  leads: number;
+  crowd: number;
+  cfg: RunConfig;
+}): CostEstimate {
+  const { leads, crowd, cfg } = args;
+  const m = TIER_MODELS[cfg.tier];
+  const perPost = leads > 0 ? leads : 1;
+  const posts = Math.min(cfg.max_posts, Math.max(perPost * cfg.rounds, 1) + Math.round(perPost * cfg.rounds * 0.6)); // replies ≈ 0.6× posts
+  const polls = crowd > 0 ? crowd * cfg.rounds : 0;
+  const dollars = (model: string, calls: number, shape: { in: number; out: number }, cached = true) => {
+    const r = RATES[model] ?? RATES["claude-sonnet-5"];
+    const inTok = calls * shape.in * (cached ? SHAPE.cacheFactor : 1);
+    const outTok = calls * shape.out;
+    return (inTok / 1_000_000) * r.in + (outTok / 1_000_000) * r.out;
+  };
+  let mid =
+    dollars(m.leads, posts, SHAPE.post) +
+    dollars(m.crowd, polls, SHAPE.poll) +
+    (cfg.verifier ? dollars(m.verifier, Math.round(posts * 0.5), SHAPE.verify) : 0) +
+    dollars(m.synth, posts, SHAPE.synthPerPost);
+  mid = Math.max(mid, 0.05);
+  return { posts, polls, low: mid * 0.7, high: mid * 1.6 };
+}
+
+export interface FitFlag { level: "warn" | "info"; text: string }
+
+/** pre-launch sanity checks: does the cast fit the chosen choreography? */
+export function modeFitFlags(args: { mode: string; leads: number; expertSide: number; residentSide: number; crowd: number }): FitFlag[] {
+  const { mode, leads, expertSide, residentSide, crowd } = args;
+  const flags: FitFlag[] = [];
+  if (mode === "Roundtable" && leads > 12) {
+    flags.push({ level: "warn", text: `ROUNDTABLE WORKS BEST AT 6–12 VOICES — ${leads} leads means long rounds. Consider trimming or switching to Agora.` });
+  }
+  if (mode === "Tribunal") {
+    if (expertSide < 2 || residentSide < 2) {
+      flags.push({ level: "warn", text: `TRIBUNAL NEEDS TWO REAL SIDES — this cast splits ${expertSide} vs ${residentSide}. Add leads to the thin side or switch modes.` });
+    }
+  }
+  if (mode === "Chamber" && leads > 16) {
+    flags.push({ level: "warn", text: `CHAMBER PEER-REVIEW GROWS AS N² — ${leads} leads is slow and expensive. 8–12 is the sweet spot.` });
+  }
+  if (mode === "Jury" && leads < 5) {
+    flags.push({ level: "info", text: `JURY AGGREGATES INDEPENDENT VERDICTS — more jurors, better signal. ${leads} works; 8+ is stronger.` });
+  }
+  if ((mode === "Agora" || mode === "Roundtable") && crowd === 0) {
+    flags.push({ level: "info", text: "NO CROWD SET — the run will be leads-only; sentiment polling needs residents in the totals." });
+  }
+  return flags;
+}
