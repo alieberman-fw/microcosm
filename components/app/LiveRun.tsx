@@ -92,13 +92,14 @@ function layoutLeads(mode: string, leads: LiveLead[], w: number, h: number): Rec
 }
 
 export default function LiveRun({
-  simId, problem, mode, leads, crowdCount, initialPosts, initialSentiments, initialStatus, maxRounds,
+  simId, problem, mode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialStatus, maxRounds,
 }: {
   simId: string;
   problem: string;
   mode: string;
   leads: LiveLead[];
   crowdCount: number;
+  crowdTarget?: number;
   initialPosts: LivePost[];
   initialSentiments: LiveSentiment[];
   initialStatus: string;
@@ -122,6 +123,7 @@ export default function LiveRun({
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [synthesizing, setSynthesizing] = useState<string | null>(null);
+  const [liveCrowd, setLiveCrowd] = useState(crowdCount);
   const router = useRouter();
 
   const synthesize = async () => {
@@ -178,6 +180,31 @@ export default function LiveRun({
     if (!cont) { setItems([]); chunkCount.current = 0; }
     setError(null);
     try {
+      // the run needs its crowd: auto-materialize when the target says there
+      // should be one but nothing exists yet (e.g. after a re-cast)
+      if (!cont && liveCrowd === 0 && crowdTarget > 0) {
+        setNote(`MATERIALIZING THE CROWD FIRST — ${Math.min(crowdTarget, 300)} MEMBERS…`);
+        const cres = await fetch(`/api/simulations/${simId}/crowd`, { method: "POST" });
+        if (cres.ok && cres.body) {
+          const creader = cres.body.getReader();
+          const cdec = new TextDecoder();
+          let cbuf = "";
+          for (;;) {
+            const { done, value } = await creader.read();
+            if (done) break;
+            cbuf += cdec.decode(value, { stream: true });
+            const lines = cbuf.split("\n");
+            cbuf = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              const evt = JSON.parse(line) as { type: string; generated?: number };
+              if (evt.type === "members") setNote(`MATERIALIZING THE CROWD — ${evt.generated ?? "…"} LANDED…`);
+              if (evt.type === "done") setLiveCrowd(Number(evt.generated) || 0);
+            }
+          }
+        }
+        setNote(null);
+      }
       const res = await fetch(`/api/simulations/${simId}/run/launch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -394,11 +421,11 @@ export default function LiveRun({
       </div>
       <div style={{ marginTop: 8, fontSize: 13, color: "var(--t5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{problem}</div>
       {note && <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t6)", marginTop: 6 }}>ⓘ {note.toUpperCase()}</div>}
-      {crowdCount === 0 && (
+      {liveCrowd === 0 && crowdTarget > 0 && status !== "running" && (
         <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--warn)", marginTop: 6 }}>
-          ⚠ LEADS-ONLY RUN — NO CROWD MATERIALIZED, SO SENTIMENT POLLS ARE OFF ·{" "}
-          <Link href={`/sim/${simId}`} style={{ color: "var(--warn)", textDecoration: "underline" }}>GENERATE THE CROWD ON THE POPULATION STAGE</Link>
-          {" "}(RE-CASTS CLEAR IT)
+          ⚠ NO CROWD MATERIALIZED YET — LAUNCH WILL GENERATE IT AUTOMATICALLY, OR{" "}
+          <Link href={`/sim/${simId}`} style={{ color: "var(--warn)", textDecoration: "underline" }}>REVIEW IT ON THE POPULATION STAGE FIRST</Link>
+          {" "}(RE-CASTS CLEAR THE CROWD)
         </div>
       )}
       <div style={{ height: 4, borderRadius: 100, background: "var(--sf2)", marginTop: 12, overflow: "hidden" }}>
@@ -409,7 +436,7 @@ export default function LiveRun({
         <div style={{ flex: 1.15, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, padding: "14px 16px", background: "var(--sf)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>
             <span>AGENT NETWORK · {mode.toUpperCase()} ARRANGEMENT</span>
-            <span>{leads.length} LEADS · {crowdCount} CROWD</span>
+            <span>{leads.length} LEADS · {liveCrowd} CROWD</span>
           </div>
           <canvas ref={canvasEl} style={{ flex: 1, width: "100%", minHeight: 0, marginTop: 10 }} />
         </div>

@@ -34,6 +34,9 @@ export default async function RunPage({ params, searchParams }: {
       };
     });
   const crowdCount = (agents ?? []).length - leads.length;
+  const scale = ((sim.config as { casting?: { scale?: { experts?: number; residents?: number } } } | null)?.casting?.scale) ?? { experts: 0, residents: 0 };
+  const residentLeads = leads.filter((l) => l.residentSide).length;
+  const crowdTarget = Math.max((scale.experts ?? 0) - (leads.length - residentLeads), 0) + Math.max((scale.residents ?? 0) - residentLeads, 0);
 
   // the demo replay stays reachable — and is the default when nothing is cast
   if (replay === "1" || leads.length < 2) {
@@ -66,6 +69,7 @@ export default async function RunPage({ params, searchParams }: {
       mode={mode}
       leads={leads}
       crowdCount={crowdCount}
+      crowdTarget={crowdTarget}
       initialPosts={initialPosts}
       initialSentiments={initialSentiments}
       initialStatus={sim.status as string}
