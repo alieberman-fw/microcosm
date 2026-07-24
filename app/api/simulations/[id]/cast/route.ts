@@ -119,7 +119,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           });
           const planText = planRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
           const parsed = parseLooseObject(planText);
-          if (parsed && Array.isArray(parsed.seats) && parsed.seats.length) {
+          const seatCount = parsed && Array.isArray(parsed.seats) ? parsed.seats.length : 0;
+          // a truncated plan can salvage a PARTIAL seat list (4 of 10) — treat
+          // that as a failure worth retrying, never silently seat a short panel
+          const truncatedShort = planRes.stop_reason === "max_tokens" && targetSeats !== undefined && seatCount < targetSeats;
+          if (parsed && seatCount > 0 && (!truncatedShort || attempt === 1)) {
+            if (truncatedShort) throw new Error(`Casting truncated at ${seatCount}/${targetSeats} seats twice — try a smaller panel or re-cast`);
             raw = parsed as typeof raw;
             break;
           }

@@ -21,6 +21,9 @@ export interface SimCardRow {
   questionCount: number;
   docCount: number;
   seatCount: number;
+  mode?: string | null;
+  runPosts?: number | null;
+  reportCount?: number;
 }
 
 export default function SimCards({ initialSims }: { initialSims: SimCardRow[] }) {
@@ -74,6 +77,20 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
                 {s.problem}
               </h3>
               <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)", marginTop: 14 }}>{meta}</div>
+              {(s.runPosts || (s.reportCount ?? 0) > 0) && (
+                <div style={{ ...mono, fontSize: 9, letterSpacing: ".06em", marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {s.runPosts ? (
+                    <span style={{ color: "var(--acc)", border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 100, padding: "2px 9px" }}>
+                      RAN · {s.mode?.toUpperCase() ?? "AGORA"} · {s.runPosts} POSTS
+                    </span>
+                  ) : null}
+                  {(s.reportCount ?? 0) > 0 && (
+                    <span style={{ color: "var(--t4)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "2px 9px" }}>
+                      {s.reportCount} REPORT{(s.reportCount ?? 0) > 1 ? "S" : ""} · V{s.reportCount}
+                    </span>
+                  )}
+                </div>
+              )}
             </Link>
 
             {/* hover ⋮ */}
@@ -106,6 +123,22 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
                 >
                   Edit brief & setup
                 </Link>
+                {s.runPosts ? (
+                  <Link
+                    href={`/sim/${s.id}/run`}
+                    style={{ display: "block", padding: "9px 12px", fontSize: 12.5, color: "var(--t2)", borderRadius: 8 }}
+                  >
+                    Open the run
+                  </Link>
+                ) : null}
+                {(s.reportCount ?? 0) > 0 && (
+                  <Link
+                    href={`/sim/${s.id}/report`}
+                    style={{ display: "block", padding: "9px 12px", fontSize: 12.5, color: "var(--t2)", borderRadius: 8 }}
+                  >
+                    View report{(s.reportCount ?? 0) > 1 ? "s" : ""}
+                  </Link>
+                )}
                 <button
                   onClick={() => (confirmFor === s.id ? void remove(s.id) : setConfirmFor(s.id))}
                   style={{

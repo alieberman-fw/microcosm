@@ -7,7 +7,7 @@
  * replied) plus a deep link into the thread.
  */
 
-import { CSSProperties, Fragment, useMemo, useState } from "react";
+import { CSSProperties, Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
@@ -113,8 +113,11 @@ export default function MonitoringClient({ rows, conversations }: { rows: Intera
   const [status, setStatus] = useState("ALL");
   const [q, setQ] = useState("");
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
+  const PAGE = 50;
   const [ctx, setCtx] = useState<Record<number, Ctx>>({});
 
+  useEffect(() => { setPage(0); }, [area, model, status, q]);
   const models = useMemo(() => [...new Set(rows.map((r) => r.model))], [rows]);
   const areas = useMemo(() => [...new Set(rows.map((r) => areaOf(r.surface)))], [rows]);
 
@@ -125,6 +128,8 @@ export default function MonitoringClient({ rows, conversations }: { rows: Intera
     .filter((r) => status === "ALL" || (status === "OK" ? r.status === "ok" : r.status !== "ok"))
     .filter((r) => !ql || [r.agent_name ?? "", r.surface, r.model, conversations[r.conversation_id ?? ""]?.title ?? ""].join(" ").toLowerCase().includes(ql));
 
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
+  const pageRows = filtered.slice(page * PAGE, (page + 1) * PAGE);
   const calls = filtered.length;
   const tokIn = filtered.reduce((a, r) => a + (r.input_tokens ?? 0), 0);
   const tokOut = filtered.reduce((a, r) => a + (r.output_tokens ?? 0), 0);
@@ -274,7 +279,7 @@ export default function MonitoringClient({ rows, conversations }: { rows: Intera
                   </td>
                 </tr>
               )}
-              {filtered.map((r) => {
+              {pageRows.map((r) => {
                 const open = expanded === r.id;
                 const conv = r.conversation_id ? conversations[r.conversation_id] : undefined;
                 const c = ctx[r.id];
@@ -385,6 +390,19 @@ export default function MonitoringClient({ rows, conversations }: { rows: Intera
               })}
             </tbody>
           </table>
+          {pages > 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, fontFamily: "var(--font-mono), monospace", fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)" }}>
+              <button disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}
+                style={{ fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, border: "1px solid var(--ln4)", background: "transparent", color: page === 0 ? "var(--t7)" : "var(--t4)", cursor: page === 0 ? "default" : "pointer" }}>
+                ← NEWER
+              </button>
+              <span>PAGE {page + 1} / {pages} · {filtered.length.toLocaleString()} CALLS</span>
+              <button disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
+                style={{ fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, border: "1px solid var(--ln4)", background: "transparent", color: page >= pages - 1 ? "var(--t7)" : "var(--t4)", cursor: page >= pages - 1 ? "default" : "pointer" }}>
+                OLDER →
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
