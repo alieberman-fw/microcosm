@@ -231,12 +231,15 @@ export default function RunConfigStage({
         </div>
         <Link href={`/sim/${simId}/run`} style={{ textDecoration: "none" }}>
           <span style={{ display: "inline-block", background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 14, padding: "12px 24px", borderRadius: 100, fontFamily: "var(--font-sans), sans-serif", cursor: "pointer" }}>
-            Preview the run screen →
+            Go to the run screen — launch there →
           </span>
         </Link>
-        <span title="The engine lands next batch — the preview runs the Site 47-A golden fixture" style={{ ...mono, fontSize: 10.5, letterSpacing: ".06em", padding: "12px 20px", borderRadius: 100, border: "1px solid var(--ln4)", color: "var(--t7)" }}>
-          LAUNCH — ENGINE ARRIVES NEXT BATCH
+        <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
+          THE RUN SCREEN OPENS WITH ▶ LAUNCH — POSTS STREAM LIVE, EVERYTHING PERSISTS
         </span>
+        <Link href={`/sim/${simId}/run?replay=1`} style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)", textDecoration: "underline" }}>
+          DEMO REPLAY
+        </Link>
       </div>
     </div>
   );
