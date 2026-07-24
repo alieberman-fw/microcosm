@@ -45,7 +45,7 @@ const RATES: Record<string, { in: number; out: number }> = {
 };
 
 /** §6.4 tier map: which model speaks for each population role */
-const TIER_MODELS: Record<RunConfig["tier"], { leads: string; crowd: string; verifier: string; synth: string }> = {
+export const TIER_MODELS: Record<RunConfig["tier"], { leads: string; crowd: string; verifier: string; synth: string }> = {
   economy: { leads: "claude-haiku-4-5", crowd: "claude-haiku-4-5", verifier: "claude-haiku-4-5", synth: "claude-sonnet-5" },
   standard: { leads: "claude-sonnet-5", crowd: "claude-haiku-4-5", verifier: "claude-sonnet-5", synth: "claude-opus-4-8" },
   frontier: { leads: "claude-opus-4-8", crowd: "claude-sonnet-5", verifier: "claude-opus-4-8", synth: "claude-opus-4-8" },

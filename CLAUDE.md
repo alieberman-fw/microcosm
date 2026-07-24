@@ -358,6 +358,8 @@ A Python service (FastAPI) owns everything swarms-related:
 
 ### 6.3 Open-source lib vs hosted swarms API — DECIDED: self-host from day one
 
+> **Engine v1 deviation (shipped):** the POC engine is an **in-app TypeScript orchestrator** (`lib/engine.ts` + `/api/simulations/[id]/run/launch`, ND-JSON streaming) implementing all seven §5 choreographies, §6.2 event shapes, corpus grounding with citations (same Files-API path as Test-the-corpus, cache_control on the prefix), batched crowd sentiment polls, and the stability convergence check — persisting every post/event under RLS (migration 0012). `compilePersonaPrompt()` is the pure §6.1 compiler. The Python/swarms service remains the scale path and takes over when runs outgrow serverless limits (~5 min); the event contract is identical by design so it swaps in behind the same run screen.
+
 We use the **open-source `swarms` library inside our own engine** from the POC onward (no Swarms API key, no extra vendor). Rationale: the library orchestrates in-process and calls Anthropic directly with our `ANTHROPIC_API_KEY`; per-post streaming into our event bridge is trivial when we own the process; per-persona model routing and prompt compilation become plain config. The hosted Swarms API remains a documented fallback runner only. (This resolves former open question #3.)
 
 ### 6.4 Model tiers — Anthropic lineup, priced by role
