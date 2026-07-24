@@ -100,7 +100,6 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
 }): Promise<{ seq: number; text: string }> {
   const model = TIER_MODELS[ctx.cfg.tier].leads;
   await ctx.emit({ type: "presence", agent_key: lead.key, name: lead.spec.name, state: "thinking" });
-  const t0 = Date.now();
   const system = compilePersonaPrompt(lead.spec, { mode: ctx.mode, problem: ctx.problem, temperature: ctx.cfg.temperature });
   const userContent: Anthropic.Beta.BetaContentBlockParam[] = [
     ...ctx.corpusBlocks,
@@ -108,30 +107,39 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
   ];
   let text = "";
   const cites: { title: string; quote: string }[] = [];
-  try {
-    const res = await ctx.anthropic.beta.messages.create({
-      model,
-      max_tokens: opts.maxTokens ?? 450,
-      temperature: ctx.cfg.temperature === "conservative" ? 0.4 : ctx.cfg.temperature === "exploratory" ? 0.9 : 0.7,
-      system,
-      messages: [{ role: "user", content: userContent }],
-      betas: ["files-api-2025-04-14"],
-    });
-    for (const b of res.content) {
-      if (b.type === "text") {
-        text += b.text;
-        const withCites = b as { citations?: { document_title?: string | null; cited_text?: string }[] };
-        for (const c of withCites.citations ?? []) {
-          if (c.document_title) cites.push({ title: c.document_title, quote: (c.cited_text ?? "").slice(0, 160) });
+  // NOTE: no `temperature` param — deprecated on Sonnet 5+ (400s the call);
+  // the §4.1 temperature band steers style through the prompt instead.
+  let lastErr = "";
+  for (let attempt = 0; attempt < 2 && !text; attempt++) {
+    const ta = Date.now();
+    try {
+      const res = await ctx.anthropic.beta.messages.create({
+        model,
+        max_tokens: opts.maxTokens ?? 450,
+        system,
+        messages: [{ role: "user", content: userContent }],
+        betas: ["files-api-2025-04-14"],
+      });
+      for (const b of res.content) {
+        if (b.type === "text") {
+          text += b.text;
+          const withCites = b as { citations?: { document_title?: string | null; cited_text?: string }[] };
+          for (const c of withCites.citations ?? []) {
+            if (c.document_title) cites.push({ title: c.document_title, quote: (c.cited_text ?? "").slice(0, 160) });
+          }
         }
       }
+      await ctx.logCall("engine.turn", model, res.usage as { input_tokens: number; output_tokens: number }, ta);
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "turn failed";
+      await ctx.logCall("engine.turn", model, null, ta, lastErr);
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 600));
     }
-    await ctx.logCall("engine.turn", model, res.usage as { input_tokens: number; output_tokens: number }, t0);
-  } catch (e) {
-    await ctx.logCall("engine.turn", model, null, t0, e instanceof Error ? e.message : "turn failed");
-    text = "";
   }
-  text = clampWords(stripSelfPrefix(text, lead.spec.name) || "(no response — turn skipped)");
+  // fail LOUD: a dead turn after a retry means the run is broken — stop it
+  // with the real API error instead of littering the feed with skipped posts
+  if (!text) throw new Error(`${lead.spec.name}'s turn failed twice — ${lastErr}`);
+  text = clampWords(stripSelfPrefix(text, lead.spec.name));
   await ctx.emit({
     type: "post", seq: opts.seq, author: "agent", agent_key: lead.key,
     name: lead.spec.name, role: lead.spec.seat?.role ?? lead.spec.role, initials: lead.spec.initials,
