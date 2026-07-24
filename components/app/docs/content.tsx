@@ -495,7 +495,7 @@ function GettingStarted() {
         { title: "New simulation → write the brief", body: "One clear question. Then hit SUGGEST — the questions-to-resolve and success criteria draft themselves; edit freely. Your draft autosaves." },
         { title: "Add your documents", body: "Drop in whatever you have — an offering memo, a survey, a zoning letter. No files? Use ✎ WRITE WHAT YOU KNOW. Then hit TEST THE CORPUS and ask a question — you'll get a cited answer proving the agents can read your evidence. Answers are saved with the simulation (leave and come back, they're still there) and each one has a × to delete it." },
         { title: "Cast the population", body: "AUTO-CAST and watch the theater. Review the leads, check the rationale, adjust composition, mode, or counts. Generate the crowd and browse it." },
-        { title: "Configure the run", body: "Pick the mode from animated cards, set rounds, budget, temperature, and model tier — every control has plain-language help, mismatches get flagged, and the cost estimate shows before you commit. PREVIEW opens the live run screen on a golden-fixture replay; LAUNCH activates with the engine (next build)." },
+        { title: "Configure the run", body: "Pick the mode from animated cards, set rounds, budget, temperature, and model tier — every control has plain-language help, mismatches get flagged, and the cost estimate shows before you commit. Then LAUNCH — the deliberation runs live: posts stream in with document citations, the crowd is polled between rounds, and the whole transcript persists." },
       ]} />
       <H>Browse the Agent Library</H>
       <Steps items={[
