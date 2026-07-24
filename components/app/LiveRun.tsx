@@ -1,0 +1,419 @@
+"use client";
+
+/**
+ * The LIVE run screen (engine v1) — real events from /run/launch streamed
+ * into the §5 grammar. One canvas, seven arrangements (mode-specific node
+ * layouts); one feed, seven structures (round markers, tribunal columns,
+ * verdict cards, phase dividers). Crowd sentiment polls render as
+ * expandable cards — the real-run answer to the demo's "+N POSTS" bursts:
+ * nothing is hidden, everything persisted, click to open.
+ */
+
+import { CSSProperties, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+
+const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
+
+export interface LiveLead {
+  key: string;
+  name: string;
+  initials: string;
+  role: string;
+  discipline?: string;
+  adversarial?: boolean;
+  residentSide?: boolean;
+}
+
+export interface LivePost {
+  seq: number;
+  agent_key: string;
+  name: string;
+  role: string;
+  initials: string;
+  adversarial?: boolean;
+  tag: string;
+  reply_to: number | null;
+  content: string;
+  cites: { title: string; quote: string }[];
+  round: number;
+  phase?: string | null;
+  side?: string | null;
+}
+
+export interface LiveSentiment {
+  round: number;
+  polled: number;
+  dist: Record<string, number>;
+  quotes: { name: string; stance: string; quote: string }[];
+}
+
+type Item = { kind: "post"; post: LivePost } | { kind: "sentiment"; s: LiveSentiment };
+
+interface Node { x: number; y: number; label?: string; adversarial?: boolean; key?: string }
+
+function cssToken(name: string, fallback: string) {
+  if (typeof window === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+/** mode-specific lead arrangements (§5 table) */
+function layoutLeads(mode: string, leads: LiveLead[], w: number, h: number): Record<string, Node> {
+  const cx = w / 2, cy = h / 2;
+  const out: Record<string, Node> = {};
+  const label = (l: LiveLead) => `${l.name.split(" ")[0].toUpperCase()}${l.discipline ? ` · ${l.discipline}` : ""}`;
+  if (mode === "Tribunal") {
+    const pro = leads.filter((l) => !l.residentSide && !l.adversarial);
+    const con = leads.filter((l) => l.residentSide || l.adversarial);
+    pro.forEach((l, i) => { out[l.key] = { x: w * 0.22, y: h * (0.3 + (i / Math.max(pro.length - 1, 1)) * 0.45), label: label(l), adversarial: l.adversarial, key: l.key }; });
+    con.forEach((l, i) => { out[l.key] = { x: w * 0.78, y: h * (0.3 + (i / Math.max(con.length - 1, 1)) * 0.45), label: label(l), adversarial: l.adversarial, key: l.key }; });
+    out["__judge"] = { x: cx, y: h * 0.14, label: "THE JUDGE", key: "__judge" };
+  } else if (mode === "Jury") {
+    leads.forEach((l, i) => { out[l.key] = { x: w * 0.18, y: h * (0.12 + (i / Math.max(leads.length - 1, 1)) * 0.76), label: label(l), adversarial: l.adversarial, key: l.key }; });
+    out["__agg"] = { x: w * 0.82, y: cy, label: "TALLY", key: "__agg" };
+  } else if (mode === "Desk") {
+    out[leads[0].key] = { x: cx, y: h * 0.16, label: label(leads[0]), key: leads[0].key };
+    leads.slice(1).forEach((l, i, arr) => { out[l.key] = { x: w * (0.14 + (i / Math.max(arr.length - 1, 1)) * 0.72), y: h * 0.72, label: label(l), adversarial: l.adversarial, key: l.key }; });
+  } else if (mode === "Expedition") {
+    leads.forEach((l, i) => {
+      const p = i / Math.max(leads.length - 1, 1);
+      out[l.key] = { x: w * (0.1 + p * 0.8), y: cy + Math.sin(i * 1.9) * h * 0.2, label: label(l), adversarial: l.adversarial, key: l.key };
+    });
+  } else {
+    // Agora · Roundtable · Chamber: the ring
+    const R = Math.min(w, h) * 0.34;
+    leads.forEach((l, i) => {
+      const a = (i / leads.length) * Math.PI * 2 - Math.PI / 2;
+      out[l.key] = { x: cx + Math.cos(a) * R, y: cy + Math.sin(a) * R, label: label(l), adversarial: l.adversarial, key: l.key };
+    });
+  }
+  return out;
+}
+
+export default function LiveRun({
+  simId, problem, mode, leads, crowdCount, initialPosts, initialSentiments, initialStatus, maxRounds,
+}: {
+  simId: string;
+  problem: string;
+  mode: string;
+  leads: LiveLead[];
+  crowdCount: number;
+  initialPosts: LivePost[];
+  initialSentiments: LiveSentiment[];
+  initialStatus: string;
+  maxRounds: number;
+}) {
+  const merged: Item[] = [
+    ...initialPosts.map((p) => ({ kind: "post" as const, post: p })),
+  ];
+  // weave persisted sentiment cards after their round's posts
+  for (const s of initialSentiments) {
+    let at = merged.length;
+    for (let i = merged.length - 1; i >= 0; i--) {
+      const it = merged[i];
+      if (it.kind === "post" && it.post.round <= s.round) { at = i + 1; break; }
+    }
+    merged.splice(at, 0, { kind: "sentiment", s });
+  }
+  const [items, setItems] = useState<Item[]>(merged);
+  const [status, setStatus] = useState<string>(initialStatus === "complete" && initialPosts.length ? "done" : "idle");
+  const [thinking, setThinking] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const feedEl = useRef<HTMLDivElement>(null);
+  const canvasEl = useRef<HTMLCanvasElement>(null);
+  const nodesRef = useRef<Record<string, Node>>({});
+  const crowdRef = useRef<Node[]>([]);
+  const pulses = useRef<{ a: Node; b: Node; t0: number; dur: number; strong: boolean }[]>([]);
+  const speaker = useRef<{ node: Node | null; until: number }>({ node: null, until: 0 });
+
+  const launch = async () => {
+    if (status === "running") return;
+    setStatus("running");
+    setItems([]);
+    setError(null);
+    try {
+      const res = await fetch(`/api/simulations/${simId}/run/launch`, { method: "POST" });
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Launch failed");
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const evt = JSON.parse(line) as Record<string, unknown>;
+          if (evt.type === "post") {
+            const p = evt as unknown as LivePost & { type: string };
+            setItems((prev) => [...prev, { kind: "post", post: p }]);
+            setThinking(null);
+            // canvas: pulse + speaker
+            const a = nodesRef.current[p.agent_key] ?? nodesRef.current["__judge"];
+            if (a) {
+              const targets = p.reply_to != null
+                ? [Object.values(nodesRef.current).find((n) => n.key !== p.agent_key)].filter(Boolean) as Node[]
+                : Object.values(nodesRef.current).filter((n) => n.key !== p.agent_key).slice(0, 8);
+              const now = performance.now();
+              targets.forEach((t, i) => pulses.current.push({ a, b: t, t0: now + i * 90, dur: p.reply_to != null ? 3600 : 2200, strong: p.reply_to != null }));
+              speaker.current = { node: a, until: now + 4200 };
+            }
+          } else if (evt.type === "presence") {
+            if (evt.state === "thinking") setThinking(String(evt.name));
+          } else if (evt.type === "sentiment") {
+            setItems((prev) => [...prev, { kind: "sentiment", s: evt as unknown as LiveSentiment }]);
+          } else if (evt.type === "stage") {
+            if (evt.value === "converged" || evt.value === "done") setStatus("done");
+            if (evt.value === "error") { setStatus("idle"); setError(String(evt.detail ?? "Run failed")); }
+          } else if (evt.type === "error") {
+            setStatus("idle");
+            setError(String(evt.error ?? "Run failed"));
+          } else if (evt.type === "finished") {
+            setStatus("done");
+          }
+        }
+      }
+      setThinking(null);
+      setStatus((s) => (s === "running" ? "done" : s));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Launch failed");
+      setStatus("idle");
+    }
+  };
+
+  useEffect(() => {
+    const el = feedEl.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [items.length, thinking]);
+
+  // canvas: layout + draw
+  useEffect(() => {
+    const el = canvasEl.current;
+    if (!el) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const layout = () => {
+      el.width = el.offsetWidth * dpr;
+      el.height = el.offsetHeight * dpr;
+      nodesRef.current = layoutLeads(mode, leads, el.width, el.height);
+      const cx = el.width / 2, cy = el.height / 2;
+      const ring: Node[] = [];
+      const n = Math.min(Math.max(Math.ceil(crowdCount / 2), 0), 110);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2, r = Math.min(el.width, el.height) * (0.45 + ((i * 7) % 10) * 0.004);
+        ring.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+      }
+      crowdRef.current = ring;
+    };
+    layout();
+    window.addEventListener("resize", layout);
+    let raf = 0;
+    const draw = () => {
+      const ctx = el.getContext("2d");
+      if (!ctx) return;
+      const now = performance.now();
+      const acc = cssToken("--acc", "#37d98a"), dim = cssToken("--t7", "#6d7378"), mid = cssToken("--t5", "#9aa0a6"), warn = cssToken("--warn", "#d9a03f");
+      ctx.clearRect(0, 0, el.width, el.height);
+      pulses.current = pulses.current.filter((p) => (now - p.t0) / p.dur <= 1);
+      for (const p of pulses.current) {
+        const k = (now - p.t0) / p.dur;
+        if (k < 0) continue;
+        ctx.globalAlpha = (p.strong ? 0.8 : 0.3) * (1 - k * 0.6); ctx.strokeStyle = acc; ctx.lineWidth = dpr * (p.strong ? 1.4 : 0.7);
+        ctx.beginPath(); ctx.moveTo(p.a.x, p.a.y); ctx.lineTo(p.b.x, p.b.y); ctx.stroke();
+        ctx.globalAlpha = 0.9 * (1 - k * 0.5); ctx.fillStyle = acc;
+        ctx.beginPath(); ctx.arc(p.a.x + (p.b.x - p.a.x) * k, p.a.y + (p.b.y - p.a.y) * k, dpr * (p.strong ? 2.4 : 1.6), 0, 7); ctx.fill();
+      }
+      for (const r of crowdRef.current) {
+        ctx.globalAlpha = 0.24 + 0.12 * Math.sin(now / 1400 + r.x);
+        ctx.fillStyle = dim;
+        ctx.beginPath(); ctx.arc(r.x, r.y, dpr * 1.1, 0, 7); ctx.fill();
+      }
+      for (const nd of Object.values(nodesRef.current)) {
+        const speaking = nd === speaker.current.node && now < speaker.current.until;
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = speaking ? acc : nd.adversarial ? warn : mid;
+        const rr = dpr * 3.4 * (speaking ? 1.5 + 0.25 * Math.sin(now / 130) : 1);
+        ctx.beginPath(); ctx.arc(nd.x, nd.y, rr, 0, 7); ctx.fill();
+        if (speaking) { ctx.globalAlpha = 0.25; ctx.strokeStyle = acc; ctx.lineWidth = dpr; ctx.beginPath(); ctx.arc(nd.x, nd.y, rr + dpr * 6, 0, 7); ctx.stroke(); }
+        if (nd.label) {
+          ctx.globalAlpha = speaking ? 1 : 0.55; ctx.fillStyle = speaking ? acc : mid;
+          ctx.font = `${10 * dpr}px "JetBrains Mono", monospace`; ctx.textAlign = "center";
+          ctx.fillText(nd.label, nd.x, nd.y - dpr * 10);
+        }
+      }
+      ctx.globalAlpha = 1;
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", layout); };
+  }, [mode, leads, crowdCount]);
+
+  // feed grouping: insert a divider when round/phase changes (mode-appropriate)
+  const dividers = (idx: number): string | null => {
+    const it = items[idx];
+    if (it.kind !== "post") return null;
+    const prev = [...items.slice(0, idx)].reverse().find((x) => x.kind === "post") as { kind: "post"; post: LivePost } | undefined;
+    if (mode === "Chamber" || mode === "Expedition" || mode === "Desk") {
+      const ph = it.post.phase ?? it.post.tag;
+      const prevPh = prev?.post.phase ?? prev?.post.tag;
+      return ph !== prevPh ? String(ph).toUpperCase() : null;
+    }
+    if (!prev || it.post.round !== prev.post.round) return `ROUND ${it.post.round}${mode === "Roundtable" ? " — EVERY VOICE IN ORDER" : ""}`;
+    return null;
+  };
+
+  const scoreOf = (p: LivePost): string | null => p.content.match(/SCORE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i)?.[1] ?? null;
+  const posts = items.filter((i) => i.kind === "post").length;
+  const currentRound = items.reduce((m, i) => (i.kind === "post" ? Math.max(m, i.post.round) : m), 0);
+
+  const statusLabel = status === "running" ? "SIMULATING" : status === "done" ? "COMPLETE" : "READY";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100dvh", boxSizing: "border-box", padding: "22px 26px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <Link href={`/sim/${simId}`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>← WORKSPACE</Link>
+        <span style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: status === "done" ? "var(--acc)" : "var(--t4)" }}>{statusLabel}</span>
+        <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)", border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 100, padding: "3px 10px" }}>
+          LIVE · {mode.toUpperCase()} · ENGINE V1
+        </span>
+        <Link href={`/sim/${simId}/run?replay=1`} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t7)" }}>VIEW THE DEMO REPLAY →</Link>
+        <span style={{ marginLeft: "auto", ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--t6)" }}>
+          {currentRound > 0 ? `ROUND ${currentRound} / ${maxRounds} · ` : ""}{posts} POSTS
+        </span>
+      </div>
+      <div style={{ marginTop: 8, fontSize: 13, color: "var(--t5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{problem}</div>
+      <div style={{ height: 4, borderRadius: 100, background: "var(--sf2)", marginTop: 12, overflow: "hidden" }}>
+        <div style={{ width: `${status === "done" ? 100 : Math.min(96, (currentRound / Math.max(maxRounds, 1)) * 100)}%`, height: "100%", background: "var(--acc)", transition: "width .4s ease" }} />
+      </div>
+
+      <div style={{ display: "flex", gap: 18, flex: 1, minHeight: 0, marginTop: 14 }}>
+        <div style={{ flex: 1.15, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, padding: "14px 16px", background: "var(--sf)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>
+            <span>AGENT NETWORK · {mode.toUpperCase()} ARRANGEMENT</span>
+            <span>{leads.length} LEADS · {crowdCount} CROWD</span>
+          </div>
+          <canvas ref={canvasEl} style={{ flex: 1, width: "100%", minHeight: 0, marginTop: 10 }} />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, background: "var(--sf)", overflow: "hidden" }}>
+          <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--ln2)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>
+              {mode === "Jury" ? "VERDICTS" : mode === "Desk" ? "THE MEMO, ASSEMBLING" : mode === "Expedition" ? "FINDINGS LOG" : "FORUM FEED"}
+            </span>
+            {status !== "running" && (
+              <button onClick={() => void launch()} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, background: "var(--acc)", color: "var(--acc-c)", border: "none", cursor: "pointer" }}>
+                {status === "done" || posts > 0 ? "↺ RE-RUN" : "▶ LAUNCH THE RUN"}
+              </button>
+            )}
+          </div>
+          <div ref={feedEl} style={{ flex: 1, overflowY: "auto", padding: "14px 18px" }}>
+            {items.length === 0 && status !== "running" && (
+              <div style={{ fontSize: 13, lineHeight: 1.7, color: "var(--t5)", padding: "18px 4px" }}>
+                Launch to watch the {mode} deliberation live — every post persists, the crowd is polled between rounds, and citations link back to your documents.
+              </div>
+            )}
+            {items.map((it, idx) => {
+              if (it.kind === "sentiment") {
+                const total = Math.max(it.s.polled, 1);
+                const open = expanded.has(idx);
+                return (
+                  <div key={`s${idx}`} style={{ margin: "16px 0", border: "1px solid var(--ln3)", borderRadius: 12, background: "var(--sf2)", padding: "12px 16px", cursor: "pointer" }}
+                    onClick={() => setExpanded((prev) => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n; })}>
+                    <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>
+                      CROWD POLL · ROUND {it.s.round} · {it.s.polled} POLLED — CLICK TO {open ? "COLLAPSE" : "EXPAND"}
+                    </div>
+                    <div style={{ display: "flex", gap: 4, height: 8, borderRadius: 100, overflow: "hidden", marginTop: 8 }}>
+                      {(["support", "conditional", "oppose", "disengaged"] as const).map((k, i2) => (
+                        <span key={k} title={`${k} ${it.s.dist[k] ?? 0}`} style={{ width: `${((it.s.dist[k] ?? 0) / total) * 100}%`, background: i2 === 0 ? "var(--acc)" : i2 === 1 ? "var(--t5)" : i2 === 2 ? "var(--warn)" : "var(--ln5)" }} />
+                      ))}
+                    </div>
+                    <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginTop: 6 }}>
+                      {(["support", "conditional", "oppose", "disengaged"] as const).map((k) => `${Math.round(((it.s.dist[k] ?? 0) / total) * 100)}% ${k.toUpperCase()}`).join(" · ")}
+                    </div>
+                    {open && (
+                      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                        {it.s.quotes.map((qt, qi) => (
+                          <div key={qi} style={{ fontSize: 12, lineHeight: 1.55, color: "var(--t4)" }}>
+                            <span style={{ ...mono, fontSize: 8.5, color: qt.stance === "oppose" ? "var(--warn)" : "var(--acc)" }}>{qt.stance.toUpperCase()} · </span>
+                            “{qt.quote}” <span style={{ color: "var(--t6)" }}>— {qt.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              const p = it.post;
+              const div = dividers(idx);
+              const score = mode === "Jury" ? scoreOf(p) : null;
+              const judge = p.tag === "JUDGE'S NOTE";
+              return (
+                <div key={`p${p.seq}`}>
+                  {div && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "18px 0 4px" }}>
+                      <span style={{ flex: 1, height: 1, background: "var(--ln2)" }} />
+                      <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>{div}</span>
+                      <span style={{ flex: 1, height: 1, background: "var(--ln2)" }} />
+                    </div>
+                  )}
+                  <div style={{
+                    marginTop: 14,
+                    marginLeft: mode === "Tribunal" && p.side === "con" ? 28 : p.tag === "REPLY" ? 36 : 0,
+                    paddingLeft: p.tag === "REPLY" ? 14 : 0,
+                    borderLeft: p.tag === "REPLY" ? "1px solid var(--ln2)" : "none",
+                    ...(judge ? { border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 12, padding: "12px 14px" } : {}),
+                    animation: "fadeUp .3s ease both",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                      <span style={{ width: 30, height: 30, borderRadius: "50%", background: "var(--sf2)", border: `1px solid ${p.adversarial ? "var(--warn)" : "var(--ln5)"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: 9.5, color: "var(--t3)", flex: "none" }}>{p.initials}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.2 }}>
+                          {p.name}
+                          <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", marginLeft: 8, padding: "2px 7px", borderRadius: 100, border: `1px solid ${p.tag === "REBUTTAL" || p.adversarial ? "var(--warn)" : "var(--ln4)"}`, color: p.tag === "REBUTTAL" ? "var(--warn)" : p.tag.startsWith("POST") || judge ? "var(--acc)" : "var(--t6)" }}>
+                            {p.tag}
+                          </span>
+                          {score && <span style={{ ...mono, fontSize: 9, marginLeft: 8, color: "var(--acc)" }}>SCORE {score}/10</span>}
+                        </div>
+                        <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginTop: 2 }}>{p.role.toUpperCase()}</div>
+                      </div>
+                    </div>
+                    <p style={{ margin: "8px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "var(--t3)" }}>{p.content}</p>
+                    {p.cites.length > 0 && (
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7 }}>
+                        {p.cites.map((c, ci) => (
+                          <span key={ci} title={c.quote} style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", border: "1px solid var(--ln4)", borderRadius: 100, padding: "2px 8px", color: "var(--t6)" }}>
+                            ⌗ {c.title.toUpperCase().slice(0, 28)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {thinking && status === "running" && (
+              <div style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t6)", marginTop: 14, display: "flex", alignItems: "center", gap: 7 }}>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.1s ease infinite" }} />
+                {thinking.toUpperCase()} IS COMPOSING…
+              </div>
+            )}
+            {status === "done" && posts > 0 && (
+              <div style={{ margin: "20px 0 6px", padding: "14px 16px", border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 12 }}>
+                <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--acc)" }}>RUN COMPLETE · {posts} POSTS PERSISTED</div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--t4)", marginTop: 6 }}>
+                  The transcript is saved — the report engine (next build) synthesizes it into the verdict, scores, and preserved dissents.
+                </div>
+              </div>
+            )}
+            {error && <div style={{ ...mono, fontSize: 10.5, color: "var(--warn)", marginTop: 14 }}>{error}</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
