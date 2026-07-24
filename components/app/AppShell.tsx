@@ -46,18 +46,23 @@ const NAV: NavItem[] = [
   { href: null, label: "Marketplace", icon: ICONS.market, soon: true },
 ];
 
+export interface RecentSim { id: string; status: string; problem: string; ran: boolean }
+
 export default function AppShell({
   email,
   orgName,
+  recentSims = [],
   children,
 }: {
   email: string;
   orgName: string;
+  recentSims?: RecentSim[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [simsOpen, setSimsOpen] = useState(true);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -143,10 +148,41 @@ export default function AppShell({
                 )}
               </span>
             );
-            return item.href ? (
-              <Link key={item.label} href={item.href}>{inner}</Link>
-            ) : (
-              <div key={item.label}>{inner}</div>
+            const isSims = item.label === "Simulations";
+            return (
+              <div key={item.label}>
+                {item.href ? (
+                  <span style={{ display: "flex", alignItems: "center" }}>
+                    <Link href={item.href} style={{ flex: 1, minWidth: 0 }}>{inner}</Link>
+                    {isSims && !collapsed && recentSims.length > 0 && (
+                      <button
+                        onClick={() => setSimsOpen((v) => !v)}
+                        aria-label="Toggle simulation history"
+                        style={{ background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: "0 8px", fontSize: 9 }}
+                      >
+                        {simsOpen ? "▾" : "▸"}
+                      </button>
+                    )}
+                  </span>
+                ) : (
+                  inner
+                )}
+                {isSims && !collapsed && simsOpen && recentSims.length > 0 && (
+                  <div style={{ margin: "2px 0 4px 26px", display: "flex", flexDirection: "column", gap: 1, borderLeft: "1px solid var(--ln2)", paddingLeft: 10 }}>
+                    {recentSims.map((r) => (
+                      <Link key={r.id} href={`/sim/${r.id}`} title={r.problem}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 6px", borderRadius: 7, fontSize: 11.5, color: pathname.includes(r.id) ? "var(--acc)" : "var(--t5)", lineHeight: 1.3 }}>
+                          <span style={{ width: 5, height: 5, borderRadius: "50%", flex: "none", background: r.ran ? "var(--acc)" : "var(--ln6, var(--ln5))" }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.problem}</span>
+                        </span>
+                      </Link>
+                    ))}
+                    <Link href="/dashboard">
+                      <span style={{ ...mono, display: "block", fontSize: 8.5, letterSpacing: ".07em", color: "var(--t6)", padding: "5px 6px" }}>ALL SIMULATIONS →</span>
+                    </Link>
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>

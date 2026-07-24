@@ -43,14 +43,18 @@ export default function ReportView({
   versions?: number[];
 }) {
   const [flash, setFlash] = useState<number | null>(null);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
   const v = VERDICT_STYLE[spec.verdict.tone] ?? VERDICT_STYLE.split;
   const jump = (seq: number) => {
-    const el = document.getElementById(`post-${seq}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      setFlash(seq);
-      setTimeout(() => setFlash(null), 2200);
-    }
+    setTranscriptOpen(true); // citations open the transcript, then scroll
+    setTimeout(() => {
+      const el = document.getElementById(`post-${seq}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setFlash(seq);
+        setTimeout(() => setFlash(null), 2200);
+      }
+    }, 60);
   };
   const label: CSSProperties = { ...mono, fontSize: 10, letterSpacing: ".12em", color: "var(--t6)" };
   const m = spec.methodology;
@@ -243,26 +247,64 @@ export default function ReportView({
         <p style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.7, color: "var(--t6)" }}>{spec.limitations}</p>
       </div>
 
-      {/* transcript with anchors for citations */}
+      {/* transcript: collapsed by default, forum-style when open; citations auto-expand it */}
       <div style={{ marginTop: 40 }}>
-        <div style={label}>TRANSCRIPT · EVERY CITED POST LIVES HERE</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
-          {posts.map((p) => (
-            <div
-              key={p.seq}
-              id={`post-${p.seq}`}
-              style={{
-                padding: "14px 18px", borderRadius: 12, border: `1px solid ${flash === p.seq ? "var(--acc)" : "var(--ln2)"}`,
-                background: flash === p.seq ? "var(--acc-dim)" : "var(--sf)", transition: "all .4s", scrollMarginTop: 90,
-              }}
-            >
-              <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t6)" }}>
-                [{p.seq}] {p.tag} · <span style={{ color: p.adversarial ? "var(--warn)" : "var(--t4)" }}>{p.name.toUpperCase()}</span> · {p.role.toUpperCase()}
-              </div>
-              <p style={{ margin: "7px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "var(--t3)" }}>{p.content}</p>
-            </div>
-          ))}
-        </div>
+        <button
+          onClick={() => setTranscriptOpen((v) => !v)}
+          style={{ ...label, background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+        >
+          TRANSCRIPT · {posts.length} POSTS — RE-READ THE FORUM {transcriptOpen ? "▴" : "▾"}
+        </button>
+        {transcriptOpen && (
+          <div style={{ marginTop: 14, border: "1px solid var(--ln2)", borderRadius: 14, background: "var(--sf)", padding: "18px 22px", animation: "fadeUp .25s ease both" }}>
+            {(() => {
+              let lastRound = 0;
+              return posts.map((p) => {
+                const divider = p.round !== lastRound;
+                lastRound = p.round;
+                const reply = p.tag === "REPLY" || p.tag === "REBUTTAL";
+                return (
+                  <div key={p.seq}>
+                    {divider && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "18px 0 4px" }}>
+                        <span style={{ flex: 1, height: 1, background: "var(--ln2)" }} />
+                        <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>ROUND {p.round}</span>
+                        <span style={{ flex: 1, height: 1, background: "var(--ln2)" }} />
+                      </div>
+                    )}
+                    <div
+                      id={`post-${p.seq}`}
+                      style={{
+                        marginTop: 14,
+                        marginLeft: reply ? 36 : 0,
+                        paddingLeft: reply ? 14 : 0,
+                        borderLeft: reply ? "1px solid var(--ln2)" : "none",
+                        borderRadius: 10,
+                        background: flash === p.seq ? "var(--acc-dim)" : "transparent",
+                        outline: flash === p.seq ? "1px solid var(--acc)" : "none",
+                        transition: "all .4s", scrollMarginTop: 90, padding: flash === p.seq ? "10px 12px" : undefined,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                        <span style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--sf2)", border: `1px solid ${p.adversarial ? "var(--warn)" : "var(--ln5)"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: 9, color: "var(--t3)", flex: "none" }}>{p.initials}</span>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.2 }}>
+                            {p.name}
+                            <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", marginLeft: 8, padding: "2px 7px", borderRadius: 100, border: `1px solid ${p.adversarial ? "var(--warn)" : "var(--ln4)"}`, color: p.adversarial ? "var(--warn)" : p.tag.startsWith("POST") ? "var(--acc)" : "var(--t6)" }}>
+                              [{p.seq}] {p.tag}
+                            </span>
+                          </div>
+                          <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginTop: 2 }}>{p.role.toUpperCase()}</div>
+                        </div>
+                      </div>
+                      <p style={{ margin: "7px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "var(--t3)" }}>{p.content}</p>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        )}
       </div>
     </div>
   );

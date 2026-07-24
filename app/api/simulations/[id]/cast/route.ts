@@ -63,6 +63,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     docLines.push(`- ${d.name} (${d.page_count ? `${d.page_count}p, ` : ""}~${d.token_estimate ?? "?"} tokens)${excerpt}`);
   }
 
+  // anchor re-casts to the previous plan so composition/mode/scale stay
+  // stable run-to-run unless the brief or the user's guidance warrants change
+  const prevPlan = ((sim.config as { casting?: { composition?: string; mode?: string; scale?: { experts?: number; residents?: number } } } | null)?.casting) ?? null;
+  const prevLine = !addMode && prevPlan?.composition
+    ? `PREVIOUS CASTING PLAN (stay consistent with it — composition "${prevPlan.composition}", mode ${prevPlan.mode}, scale ${JSON.stringify(prevPlan.scale)} — unless the brief or the user's guidance clearly warrants a change; if you change it, say why in the rationale):
+`
+    : "";
+
   const questions = normalizeQuestions(brief.questions);
   const success = normalizeSuccess(brief.success);
   const briefText =
@@ -71,6 +79,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     (success.length ? `SUCCESS CRITERIA:\n${success.map((s) => `- ${s}`).join("\n")}\n` : "") +
     (brief.template && brief.template !== "Custom" ? `DECISION SHAPE (internal classification): ${brief.template}\n` : "") +
     (docLines.length ? `DILIGENCE CORPUS:\n${docLines.join("\n")}\n` : "DILIGENCE CORPUS: none uploaded yet\n") +
+    prevLine +
     (guidance ? `USER GUIDANCE FOR THIS CAST (apply it): ${guidance}\n` : "");
 
   const anthropic = new Anthropic();
