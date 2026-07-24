@@ -33,13 +33,14 @@ function CiteChips({ cites, onJump }: { cites: number[]; onJump: (seq: number) =
 }
 
 export default function ReportView({
-  simId, problem, spec, posts, version,
+  simId, problem, spec, posts, version, versions = [],
 }: {
   simId: string;
   problem: string;
   spec: ReportSpec;
   posts: LivePost[];
   version: number;
+  versions?: number[];
 }) {
   const [flash, setFlash] = useState<number | null>(null);
   const v = VERDICT_STYLE[spec.verdict.tone] ?? VERDICT_STYLE.split;
@@ -68,8 +69,20 @@ export default function ReportView({
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <Link href={`/sim/${simId}`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>← WORKSPACE</Link>
         <Link href={`/sim/${simId}/run`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>VIEW THE RUN →</Link>
-        <span style={{ marginLeft: "auto", ...mono, fontSize: 9, letterSpacing: ".07em", color: "var(--t7)" }}>
-          REPORT V{version} · SYNTHETIC & DIRECTIONAL
+        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          {versions.length > 1 && versions.map((vn) => (
+            <Link key={vn} href={`/sim/${simId}/report?v=${vn}`} style={{
+              ...mono, fontSize: 8.5, letterSpacing: ".05em", padding: "3px 10px", borderRadius: 100,
+              border: `1px solid ${vn === version ? "var(--acc)" : "var(--ln4)"}`,
+              color: vn === version ? "var(--acc)" : "var(--t6)",
+              background: vn === version ? "var(--acc-dim)" : "transparent",
+            }}>
+              V{vn}
+            </Link>
+          ))}
+          <span style={{ ...mono, fontSize: 9, letterSpacing: ".07em", color: "var(--t7)" }}>
+            {versions.length > 1 ? "· " : `REPORT V${version} · `}SYNTHETIC & DIRECTIONAL
+          </span>
         </span>
       </div>
 
@@ -220,6 +233,13 @@ export default function ReportView({
           {m.docs.length ? ` grounded in: ${m.docs.join(", ")} · ` : " no documents attached · "}
           generated {new Date(m.generated_at).toLocaleString()}
         </p>
+        {spec.cast && spec.cast.length > 0 && (
+          <p style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.7, color: "var(--t5)" }}>
+            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>THE PANEL THAT RAN · </span>
+            {spec.cast.map((c) => `${c.name} (${c.role}${c.adversarial ? " · adversarial" : ""})`).join(" · ")}
+            {spec.run_config && ` — frozen with this report: ${spec.run_config.mode}, ${spec.run_config.rounds} rounds, ${spec.run_config.tier} tier, ${spec.run_config.temperature}`}
+          </p>
+        )}
         <p style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.7, color: "var(--t6)" }}>{spec.limitations}</p>
       </div>
 

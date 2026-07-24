@@ -20,6 +20,10 @@ export interface ReportSpec {
   dissents: { name: string; role: string; position: string; quote: string; seq: number }[];
   tripwires: string[];
   sentiment?: { round: number; polled: number; dist: Record<string, number> }[];
+  /** frozen at synthesis — the report survives re-runs and re-casts intact */
+  transcript?: { seq: number; name: string; role: string; initials: string; adversarial: boolean; tag: string; content: string; round: number }[];
+  cast?: { name: string; role: string; kind: string; provenance: string; adversarial: boolean }[];
+  run_config?: { mode: string; rounds: number; max_posts: number; speaker: string; convergence: string; temperature: string; tier: string; verifier: boolean };
   verification?: { checks: number; supported: number; contradicted: number; unverifiable: number; contradictions: { claim: string; seq: number; note: string }[] };
   methodology: {
     mode: string; rounds: number; leads: number; crowd: number; polls: number;
