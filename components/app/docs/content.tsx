@@ -310,7 +310,7 @@ function WhatIsMicrocosm() {
         { title: "Corpus", body: "Upload your documents — surveys, offering memos, zoning letters, rent rolls. Agents cite them by name and page; no documents? Write what you know and it becomes one." },
         { title: "Population", body: "Cast the leads (the voices that speak) and the crowd (the population behind them). Auto-cast from your brief, or hand-pick from the 1,800-persona library." },
         { title: "Run", body: "Pick an interaction mode and watch the deliberation live — a network graph of who's talking to whom, and a forum feed of every post. You can take the floor yourself." },
-        { title: "Report", body: "Verdict, dimension scores, findings cited to specific posts and documents, risk register, and — deliberately — the preserved dissents." },
+        { title: "Report", body: "One click after the run: verdict chip, dimension scores, findings cited to specific posts (click a citation — the transcript scrolls to it), risk register, claims checked against your documents, and — deliberately — the preserved dissents." },
       ]} />
       <H>Why it works — four principles</H>
       <Term term="Show the argument">You watch the deliberation, not just the answer. Every claim in the report links to the post and the document behind it.</Term>
