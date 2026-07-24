@@ -32,6 +32,7 @@ interface PendingUpload { key: string; name: string; size: number; error?: strin
 
 interface Cite { title: string; pageStart?: number; pageEnd?: number; quote: string }
 interface Answer {
+  id?: string;
   question: string;
   segments: { text: string; cites: Cite[] }[];
   model: string;
@@ -57,12 +58,14 @@ export default function SimWorkspace({
   initialSeats,
   initialCrowd = [],
   initialCasting,
+  initialAnswers = [],
 }: {
   sim: { id: string; status: string; brief: Brief; created_at: string };
   initialDocs: DocRow[];
   initialSeats: WorkspaceSeat[];
   initialCrowd?: WorkspaceSeat[];
   initialCasting: CastingInfo | null;
+  initialAnswers?: Answer[];
 }) {
   const router = useRouter();
   const [brief, setBrief] = useState<Brief>(sim.brief);
@@ -73,7 +76,7 @@ export default function SimWorkspace({
   const [dragOver, setDragOver] = useState(false);
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
-  const [answers, setAnswers] = useState<Answer[]>([]);
+  const [answers, setAnswers] = useState<Answer[]>(initialAnswers);
   const [askError, setAskError] = useState<string | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
   const [noteTitle, setNoteTitle] = useState("");
@@ -464,8 +467,21 @@ export default function SimWorkspace({
 
         <div style={answers.length > 1 ? { maxHeight: 480, overflowY: "auto", marginTop: 4, paddingRight: 6 } : undefined}>
         {answers.map((a, i) => (
-          <div key={i} style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid var(--ln2)", animation: "fadeUp .35s ease both" }}>
-            <div style={{ ...mono, fontSize: 10.5, letterSpacing: ".05em", color: "var(--t5)" }}>Q · {a.question}</div>
+          <div key={a.id ?? i} style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid var(--ln2)", animation: "fadeUp .35s ease both", position: "relative" }}>
+            <button
+              onClick={() => {
+                setAnswers((prev) => prev.filter((x) => x !== a));
+                if (a.id) void fetch(`/api/simulations/${sim.id}/config`, {
+                  method: "PATCH", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ qa_remove: a.id }),
+                });
+              }}
+              aria-label="Delete this answer"
+              style={{ position: "absolute", top: 16, right: 2, background: "none", border: "none", color: "var(--t7)", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}
+            >
+              ×
+            </button>
+            <div style={{ ...mono, fontSize: 10.5, letterSpacing: ".05em", color: "var(--t5)", paddingRight: 24 }}>Q · {a.question}</div>
             {/* render as ONE markdown block — citations segment the text and
                 would otherwise shatter tables/lists at cited-span boundaries */}
             <div style={{ fontSize: 13.5, lineHeight: 1.65, color: "var(--t2)", marginTop: 10 }}>

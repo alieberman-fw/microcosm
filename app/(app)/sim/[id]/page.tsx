@@ -51,6 +51,9 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
   }
   crowd.sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
   const casting = ((sim.config as { casting?: CastingInfo } | null)?.casting) ?? null;
+  // persisted corpus Q&A, newest first (the workspace prepends new answers)
+  const qaRaw = ((sim.config as { qa?: unknown[] } | null)?.qa ?? []) as never[];
+  const qa = [...qaRaw].reverse();
 
   return (
     <SimWorkspace
@@ -59,6 +62,7 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
       initialSeats={seats}
       initialCrowd={crowd}
       initialCasting={casting}
+      initialAnswers={qa}
     />
   );
 }

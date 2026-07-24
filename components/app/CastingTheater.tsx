@@ -371,12 +371,14 @@ export function MiniSwarm({ label }: { label: string }) {
  * at run time (leads deliberate; the crowd is sampled/polled per §5), so this
  * is the honest preview of scale, not 500 live cards.
  */
-export function CrowdBand({ experts, residents, litExperts, litResidents }: {
+export function CrowdBand({ experts, residents, litExperts, litResidents, active }: {
   experts: number;
   residents: number;
   /** materialized counts — lit dots are real members, dim dots are still to come */
   litExperts?: number;
   litResidents?: number;
+  /** generation in flight — lit dots render accent-bright so progress is unmissable */
+  active?: boolean;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
@@ -408,13 +410,15 @@ export function CrowdBand({ experts, residents, litExperts, litResidents }: {
     const drawGroup = (count: number, lit: number | undefined, x0: number, x1: number, color: string, salt: number, r: number) => {
       const dots = Math.min(Math.ceil(count / 2), 450);
       const litDots = lit === undefined ? dots : Math.min(Math.ceil(lit / 2), dots);
-      ctx.fillStyle = color;
       for (let i = 0; i < dots; i++) {
         const x = x0 + rand(i, salt) * (x1 - x0);
         const y = 10 + rand(i, salt + 7) * (H - 20);
-        ctx.globalAlpha = i < litDots ? 0.35 + rand(i, salt + 13) * 0.55 : 0.1;
+        // while generating, every landed member is accent-bright; settled
+        // bands return to the quiet expert-green / resident-gray grammar
+        ctx.fillStyle = active && i < litDots ? acc : color;
+        ctx.globalAlpha = i < litDots ? (active ? 0.85 : 0.35 + rand(i, salt + 13) * 0.55) : 0.1;
         ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.arc(x, y, active && i < litDots ? r + 0.4 : r, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
@@ -431,7 +435,7 @@ export function CrowdBand({ experts, residents, litExperts, litResidents }: {
       ctx.stroke();
       ctx.setLineDash([]);
     }
-  }, [experts, residents, litExperts, litResidents]);
+  }, [experts, residents, litExperts, litResidents, active]);
 
   return <canvas ref={ref} style={{ width: "100%", height: 72, display: "block" }} />;
 }

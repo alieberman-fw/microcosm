@@ -43,7 +43,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!userRow) return NextResponse.json({ error: "No org" }, { status: 400 });
   const orgId = userRow.org_id as string;
 
-  const { data: sim } = await supabase.from("simulations").select("id, brief").eq("id", id).maybeSingle();
+  const { data: sim } = await supabase.from("simulations").select("id, brief, config").eq("id", id).maybeSingle();
   if (!sim) return NextResponse.json({ error: "Simulation not found" }, { status: 404 });
 
   const { data: docs } = await supabase.from("documents")
@@ -135,7 +135,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       output_tokens: usage.output, latency_ms: Date.now() - t0, status: "ok",
       detail: { question: question.slice(0, 200), docs: docs.length, cache_read: usage.cacheRead },
     });
-    return NextResponse.json({ segments, model, usage, groundedIn: docs.length });
+    // persist so the Q&A survives leaving the page (removable via config PATCH qa_remove)
+    const qaId = crypto.randomUUID();
+    const cfg = ((sim as { config?: Record<string, unknown> }).config as Record<string, unknown>) ?? {};
+    const prevQa = Array.isArray(cfg.qa) ? (cfg.qa as unknown[]) : [];
+    await supabase.from("simulations").update({
+      config: { ...cfg, qa: [...prevQa, { id: qaId, question, segments, model, usage, groundedIn: docs.length, at: new Date().toISOString() }].slice(-20) },
+    }).eq("id", id);
+    return NextResponse.json({ id: qaId, segments, model, usage, groundedIn: docs.length });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "corpus answer failed";
     await supabase.from("agent_interactions").insert({

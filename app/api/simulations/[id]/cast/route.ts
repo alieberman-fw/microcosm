@@ -94,12 +94,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const { data: existingAgents } = addMode
           ? await supabase.from("sim_agents").select("agent_key, spec_frozen").eq("sim_id", id)
           : { data: [] as { agent_key: string; spec_frozen: FrozenSpec }[] };
-        const existingRoles = (existingAgents ?? []).map((a) => {
-          const f = a.spec_frozen as FrozenSpec;
-          return `${f.seat?.role ?? f.role} (${f.name})`;
-        });
+        // only LEAD seats count toward the cap and the roster context — crowd rows don't
+        const existingRoles = (existingAgents ?? [])
+          .filter((a) => (a.spec_frozen as FrozenSpec).seat?.tier !== "crowd")
+          .map((a) => {
+            const f = a.spec_frozen as FrozenSpec;
+            return `${f.seat?.role ?? f.role} (${f.name})`;
+          });
         const maxNew = Math.max(1, MAX_SEATS - existingRoles.length);
-        if (addMode && existingRoles.length >= MAX_SEATS) throw new Error(`Panels are capped at ${MAX_SEATS} leads`);
+        if (addMode && existingRoles.length >= MAX_SEATS) throw new Error(`Lead seats are capped at ${MAX_SEATS}`);
 
         let raw: Record<string, unknown> & { seats?: unknown; scale?: { experts?: unknown; residents?: unknown }; composition?: unknown; mode?: unknown } = {};
         for (let attempt = 0; attempt < 2; attempt++) {
@@ -143,13 +146,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         };
         const plan: CastPlan = {
           composition: compOverride ?? (["experts", "consumers", "mixed"] as const).find((c) => c === raw.composition) ?? "mixed",
-          rationale: clip(raw.rationale, 300),
+          rationale: clip(raw.rationale, 1200),
+          rationaleSummary: clip((raw as { rationale_summary?: unknown }).rationale_summary ?? raw.rationale, 260),
           scale: {
             experts: Math.min(Math.max(Number(raw.scale?.experts) || seats.length, 4), 500),
             residents: Math.min(Math.max(Number(raw.scale?.residents) || 0, 0), 1000),
           },
           mode: SIM_MODES.find((m) => m === raw.mode) ?? "Agora",
-          modeRationale: clip(raw.mode_rationale, 300),
+          modeRationale: clip(raw.mode_rationale, 900),
+          modeSummary: clip((raw as { mode_summary?: unknown }).mode_summary ?? raw.mode_rationale, 260),
           seats,
         };
         emit({ type: "plan", ...plan, add: addMode });
@@ -288,8 +293,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             casting: addMode && prevCasting
               ? { ...prevCasting, last_addition: guidance, cast_at: new Date().toISOString() }
               : {
-                  composition: plan.composition, rationale: plan.rationale, scale: plan.scale,
-                  mode: plan.mode, modeRationale: plan.modeRationale,
+                  composition: plan.composition, rationale: plan.rationale, rationaleSummary: plan.rationaleSummary, scale: plan.scale,
+                  mode: plan.mode, modeRationale: plan.modeRationale, modeSummary: plan.modeSummary,
                   guidance: guidance || null, cast_at: new Date().toISOString(),
                 },
           },

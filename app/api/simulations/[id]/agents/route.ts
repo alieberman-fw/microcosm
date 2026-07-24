@@ -31,8 +31,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .select("agent_key, persona_id").eq("sim_id", id);
   const existingIds = new Set((existing ?? []).map((e) => e.persona_id));
   const existingKeys = new Set((existing ?? []).map((e) => e.agent_key as string));
-  if ((existing?.length ?? 0) + personaIds.length > MAX_SEATS) {
-    return NextResponse.json({ error: `Panels are capped at ${MAX_SEATS} leads for now` }, { status: 400 });
+  // only LEAD seats count toward the cap — crowd members (crowd-* keys) don't
+  const leadCount = (existing ?? []).filter((e) => !(e.agent_key as string).startsWith("crowd-")).length;
+  if (leadCount + personaIds.length > MAX_SEATS) {
+    return NextResponse.json({ error: `Lead seats are capped at ${MAX_SEATS} — the crowd is unlimited up to your totals` }, { status: 400 });
   }
 
   const { data: personas, error: pErr } = await supabase

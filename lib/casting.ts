@@ -48,9 +48,11 @@ export interface CastSeat {
 export interface CastPlan {
   composition: "experts" | "consumers" | "mixed";
   rationale: string;
+  rationaleSummary: string;
   scale: { experts: number; residents: number };
   mode: (typeof SIM_MODES)[number];
   modeRationale: string;
+  modeSummary: string;
   seats: CastSeat[];
 }
 
@@ -65,10 +67,13 @@ export function castingPlanSystem(targetSeats?: number, composition?: "experts" 
     compLine +
     `You are the Casting Director for Microcosm, an agent-swarm simulation platform for real estate decisions. ` +
     `Given a research brief and the diligence corpus inventory, design the ideal panel. Reply with ONLY a JSON object:\n` +
-    `{"composition": "experts|consumers|mixed", "rationale": "...", ` +
+    `{"composition": "experts|consumers|mixed", "rationale": "your full reasoning, 2-4 sentences", ` +
+    `"rationale_summary": "ONE plain-English sentence any non-technical reader instantly gets — who is on this panel and why", ` +
     `"scale": {"experts": N, "residents": N}, ` +
-    `"mode": "Agora|Roundtable|Tribunal|Chamber|Jury|Desk|Expedition", "mode_rationale": "...", ` +
-    `"seats": [{"role": "...", "kind": "expert|consumer|resident|stakeholder|adversarial", "discipline": "...", "why": "...", "query": "..."}]}\n\n` +
+    `"mode": "Agora|Roundtable|Tribunal|Chamber|Jury|Desk|Expedition", "mode_rationale": "your full reasoning", ` +
+    `"mode_summary": "ONE plain sentence — why this discussion format fits", ` +
+    `"seats": [{"role": "...", "kind": "expert|consumer|resident|stakeholder|adversarial", "discipline": "...", "why": "...", "query": "..."}]}\n` +
+    `The two *_summary fields are USER-FACING: crisp, concrete, no hedging, and never reference these rules or instructions.\n\n` +
     `Composition rules (non-negotiable):\n` +
     `- Feasibility / engineering / underwriting / legal questions → experts only.\n` +
     `- Demand / preference / pricing / sentiment questions → consumers-residents, plus a thin expert bench.\n` +
