@@ -85,12 +85,14 @@ export default function PopulationStage({
   initialCrowd = [],
   initialCasting,
   onCountChange,
+  onCastingChange,
 }: {
   simId: string;
   initialSeats: WorkspaceSeat[];
   initialCrowd?: WorkspaceSeat[];
   initialCasting: CastingInfo | null;
   onCountChange?: (n: number) => void;
+  onCastingChange?: (busy: boolean) => void;
 }) {
   const router = useRouter();
   const [seats, setSeats] = useState<WorkspaceSeat[]>(initialSeats);
@@ -126,6 +128,7 @@ export default function PopulationStage({
     const g = guidance.trim();
     if (mode === "add" && !g) { setError("Describe who to add — e.g. “more pool engineering experts”"); return; }
     setCasting(true);
+    onCastingChange?.(true);
     setCastMode(mode);
     setPlanReady(mode === "add"); // adding keeps the grid visible; recast opens the theater
     setScouting(mode === "add"); // scouting card until the add-plan names the seats
@@ -194,6 +197,7 @@ export default function PopulationStage({
       setPending([]);
       setScouting(false);
       setCasting(false);
+      onCastingChange?.(false);
     }
   };
 

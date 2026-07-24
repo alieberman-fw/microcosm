@@ -77,6 +77,7 @@ export default function SimWorkspace({
   const [brief, setBrief] = useState<Brief>(sim.brief);
   const [editing, setEditing] = useState(false);
   const [populationCount, setPopulationCount] = useState(initialSeats.length);
+  const [castingBusy, setCastingBusy] = useState(false);
   const [docs, setDocs] = useState<DocRow[]>(initialDocs);
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -540,10 +541,11 @@ export default function SimWorkspace({
         initialCrowd={initialCrowd}
         initialCasting={initialCasting}
         onCountChange={setPopulationCount}
+        onCastingChange={setCastingBusy}
       />
 
       {/* stage 4 — run configuration (§4.1); LAUNCH activates with the engine */}
-      {initialSeats.length > 0 && (() => {
+      {populationCount > 0 && !castingBusy && (() => {
         const residentSide = initialSeats.filter((x) => x.spec.kind === "consumer" || x.spec.kind === "resident").length;
         const expertSide = initialSeats.length - residentSide;
         const scale = initialCasting?.scale ?? { experts: expertSide, residents: residentSide };

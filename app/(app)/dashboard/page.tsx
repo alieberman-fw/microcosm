@@ -12,15 +12,17 @@ export default async function Dashboard() {
   const supabase = await createServerSupabase();
   const { data } = await supabase!
     .from("simulations")
-    .select("id, status, brief, created_at, documents(count), sim_agents(count)")
+    .select("id, status, brief, config, created_at, documents(count), sim_agents(count), reports(count)")
     .order("created_at", { ascending: false })
     .limit(24);
 
   const sims: SimCardRow[] = ((data ?? []) as {
     id: string; status: string; created_at: string;
     brief: { problem?: string; question?: string; questions?: unknown[] } | null;
+    config: { casting?: { mode?: string }; run_result?: { posts?: number; converged?: boolean; at?: string } } | null;
     documents: { count: number }[];
     sim_agents: { count: number }[];
+    reports: { count: number }[];
   }[]).map((s) => ({
     id: s.id,
     status: s.status,
@@ -29,6 +31,9 @@ export default async function Dashboard() {
     questionCount: s.brief?.questions?.length ?? 0,
     docCount: s.documents?.[0]?.count ?? 0,
     seatCount: s.sim_agents?.[0]?.count ?? 0,
+    mode: s.config?.casting?.mode ?? null,
+    runPosts: s.config?.run_result?.posts ?? null,
+    reportCount: s.reports?.[0]?.count ?? 0,
   }));
 
   return (
