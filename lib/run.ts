@@ -103,7 +103,7 @@ export function modeFitFlags(args: { mode: string; leads: number; expertSide: nu
   }
   if (mode === "Tribunal") {
     if (expertSide < 2 || residentSide < 2) {
-      flags.push({ level: "warn", text: `TRIBUNAL NEEDS TWO REAL SIDES — this cast splits ${expertSide} vs ${residentSide}. Add leads to the thin side or switch modes.` });
+      flags.push({ level: "warn", text: `TRIBUNAL SIDES SPLIT ${expertSide} vs ${residentSide} — the engine auto-balances the benches at launch, but adding leads to the thin side makes the opposition genuine rather than assigned.` });
     }
   }
   if (mode === "Chamber" && leads > 16) {

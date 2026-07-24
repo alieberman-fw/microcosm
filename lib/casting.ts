@@ -86,7 +86,7 @@ export function castingPlanSystem(targetSeats?: number, composition?: "experts" 
     `- discipline: short UPPERCASE cluster label (POWER, WATER, CAPITAL, ZONING, COMMUNITY, MARKET...).\n` +
     `- query: 2-4 lowercase keywords to find this person in a persona library (e.g. "grid interconnection utility").\n` +
     `Mode guide: Agora = open deliberation (default); Roundtable = equals, every voice each round; Tribunal = genuinely two-sided dispute; ` +
-    `Chamber = independent takes then blind peer review; Jury = independent scored verdicts; Desk = research memo; Expedition = deep background research.`
+    `Chamber = independent takes then blind peer review; Jury = independent scored verdicts; Desk = research memo; Expedition = deep background research.\nIf you recommend Tribunal, the seats MUST form two real benches: at least two seats whose stances argue FOR the thesis and at least two AGAINST (the adversarial seat counts as against).`
   );
 }
 

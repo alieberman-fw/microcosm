@@ -122,3 +122,6 @@ button { font-family: var(--font-grotesk), sans-serif; }
 }
 .menuItem:hover { background: var(--sf2); }
 .rosterRow:hover { background: var(--sf2); }
+
+/* run-config primary CTA — same hover grammar as site primary buttons */
+.runCta:hover { filter: brightness(1.12); }

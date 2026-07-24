@@ -101,9 +101,25 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         });
       };
       try {
-        await emit({ type: "stage", value: "running" });
+        // serverless guard: cap effective rounds so the run fits the ~5-minute
+        // window (the Python worker engine lifts this at scale)
+        const postsPerRound = mode === "Roundtable" ? leads.length
+          : mode === "Tribunal" ? 7
+          : mode === "Agora" ? 1 + Math.min(Math.max(leads.length - 1, 2), 6)
+          : 0;
+        let effRounds = cfg.rounds;
+        if (postsPerRound > 0) {
+          const maxRounds = Math.max(1, Math.floor(250 / (postsPerRound * 9 + (crowd.length > 0 ? 12 : 0))));
+          effRounds = Math.min(cfg.rounds, maxRounds);
+        }
+        await emit({
+          type: "stage", value: "running",
+          detail: effRounds < cfg.rounds
+            ? `rounds capped ${cfg.rounds} → ${effRounds} to fit the 5-minute runtime — the worker engine lifts this limit`
+            : undefined,
+        });
         const result = await runMode({
-          anthropic, cfg, mode,
+          anthropic, cfg: { ...cfg, rounds: effRounds }, mode,
           problem: brief.problem!,
           questions: normalizeQuestions(brief.questions).map((x) => x.label),
           leads, crowd, corpusBlocks,
