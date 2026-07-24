@@ -476,6 +476,7 @@ function CastingAndPopulation() {
         { title: "Regenerate if needed", body: "If you already generated the crowd, changing totals shows COUNTS CHANGED — REGENERATE TO MATCH. The old members stay browsable until you regenerate." },
       ]} />
       <P>Raising TOTAL EXPERTS never adds leads — leads only change via RE-CAST, ADD LEADS, or the library picker. The extra experts become crowd members, generated in the crowd panel.</P>
+      <P>One subtlety the leads header spells out (“5 EXPERT-SIDE · 5 RESIDENT-SIDE”): stakeholders count on the expert side of the math, and an adversarial seed counts on whichever side their persona actually is — a skeptical homeowner is resident-side even though the filter chips list them under ADVERSARIAL.</P>
     </>
   );
 }
@@ -492,9 +493,9 @@ function GettingStarted() {
       <H>Run your first simulation (15 minutes)</H>
       <Steps items={[
         { title: "New simulation → write the brief", body: "One clear question. Then hit SUGGEST — the questions-to-resolve and success criteria draft themselves; edit freely. Your draft autosaves." },
-        { title: "Add your documents", body: "Drop in whatever you have — an offering memo, a survey, a zoning letter. No files? Use ✎ WRITE WHAT YOU KNOW. Then hit TEST THE CORPUS and ask a question — you'll get a cited answer proving the agents can read your evidence." },
+        { title: "Add your documents", body: "Drop in whatever you have — an offering memo, a survey, a zoning letter. No files? Use ✎ WRITE WHAT YOU KNOW. Then hit TEST THE CORPUS and ask a question — you'll get a cited answer proving the agents can read your evidence. Answers are saved with the simulation (leave and come back, they're still there) and each one has a × to delete it." },
         { title: "Cast the population", body: "AUTO-CAST and watch the theater. Review the leads, check the rationale, adjust composition, mode, or counts. Generate the crowd and browse it." },
-        { title: "Configure and run", body: "Pick the mode, see the cost estimate before launch, and watch the deliberation live. (The run engine is the next build — everything through casting is live today.)" },
+        { title: "Configure the run", body: "Pick the mode from animated cards, set rounds, budget, temperature, and model tier — every control has plain-language help, mismatches get flagged, and the cost estimate shows before you commit. PREVIEW opens the live run screen on a golden-fixture replay; LAUNCH activates with the engine (next build)." },
       ]} />
       <H>Browse the Agent Library</H>
       <Steps items={[

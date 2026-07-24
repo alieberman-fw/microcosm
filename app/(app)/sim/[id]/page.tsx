@@ -54,6 +54,7 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
   // persisted corpus Q&A, newest first (the workspace prepends new answers)
   const qaRaw = ((sim.config as { qa?: unknown[] } | null)?.qa ?? []) as never[];
   const qa = [...qaRaw].reverse();
+  const run = ((sim.config as { run?: Record<string, unknown> } | null)?.run) ?? null;
 
   return (
     <SimWorkspace
@@ -63,6 +64,7 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
       initialCrowd={crowd}
       initialCasting={casting}
       initialAnswers={qa}
+      initialRun={run}
     />
   );
 }
