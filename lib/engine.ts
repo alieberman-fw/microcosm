@@ -33,6 +33,7 @@ export type EngineEvent =
   | { type: "stage"; value: "running" | "converged" | "done" | "error"; detail?: string }
   | { type: "post"; seq: number; author: string; agent_key: string; name: string; role: string; initials: string; adversarial?: boolean; thread: string; reply_to: number | null; tag: string; content: string; cites: { title: string; quote: string }[]; round: number; phase?: string; side?: string; score?: number }
   | { type: "presence"; agent_key: string; name: string; state: "thinking" | "speaking" | "idle" }
+  | { type: "polling"; round: number; count: number }
   | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[] }
   | { type: "convergence"; aligned: number; total: number; dissents: number };
 
@@ -46,6 +47,8 @@ export interface EngineContext {
   crowd: EngineCrowdMember[];
   corpusBlocks: Anthropic.Beta.BetaContentBlockParam[]; // document blocks with citations enabled (may be empty)
   temperature: number;
+  deadline: number;                                     // ms epoch — suspend at the next safe boundary after this
+  polledRounds: Set<number>;                            // sentiment polls already run (resume safety)
   emit: (e: EngineEvent) => Promise<void>;              // persists + streams
   logCall: (surface: string, model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string) => Promise<void>;
   isCancelled: () => boolean;
@@ -161,6 +164,9 @@ function windowOf(posts: { name: string; role: string; content: string; tag: str
 /** crowd sentiment poll (§5 — our custom layer): batched Haiku calls between rounds */
 async function pollCrowd(ctx: EngineContext, round: number, topic: string): Promise<void> {
   if (ctx.crowd.length === 0) return;
+  if (ctx.polledRounds.has(round)) return; // already polled before a suspension
+  ctx.polledRounds.add(round);
+  await ctx.emit({ type: "polling", round, count: ctx.crowd.length }); // canvas animates WHILE the poll runs
   const model = TIER_MODELS[ctx.cfg.tier].crowd;
   const BATCH = 20;
   const dist: Record<string, number> = { support: 0, conditional: 0, oppose: 0, disengaged: 0 };
@@ -216,30 +222,41 @@ async function stabilityCheck(ctx: EngineContext, transcript: string): Promise<b
   }
 }
 
-interface PostRec { name: string; role: string; content: string; tag: string; seq: number; agentKey: string }
+export interface PostRec { name: string; role: string; content: string; tag: string; seq: number; agentKey: string; round: number }
 
 /** the seven §5 choreographies over shared primitives */
-export async function runMode(ctx: EngineContext): Promise<{ posts: number; converged: boolean }> {
-  const posts: PostRec[] = [];
-  let seq = 0;
+export interface RunResume { posts: PostRec[]; seq: number; round: number }
+
+export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{ posts: number; converged: boolean; suspendedAtRound?: number }> {
+  const posts: PostRec[] = resume?.posts ? [...resume.posts] : [];
+  let seq = resume?.seq ?? 0;
+  let currentRound = 0;
+  const outOfTime = () => Date.now() > ctx.deadline;
+  // derive-skip: has this lead already produced this tagged post (this round)?
+  const did = (name: string, tag: string, round?: number) =>
+    posts.some((p) => p.name === name && p.tag === tag && (round === undefined || p.round === round));
   const record = (lead: EngineLead, tag: string, text: string) => {
-    posts.push({ name: lead.spec.name, role: lead.spec.seat?.role ?? lead.spec.role, content: text, tag, seq, agentKey: lead.key });
+    posts.push({ name: lead.spec.name, role: lead.spec.seat?.role ?? lead.spec.role, content: text, tag, seq, agentKey: lead.key, round: currentRound });
   };
   const budget = () => posts.length < ctx.cfg.max_posts && !ctx.isCancelled();
   const q = ctx.questions.length ? `Key questions: ${ctx.questions.join(" · ")}.` : "";
   let converged = false;
 
   const turn = async (lead: EngineLead, o: { round: number; thread: string; tag: string; reply_to?: number | null; instruction: string; phase?: string; side?: string }) => {
+    currentRound = o.round;
     seq += 1;
     const r = await speak(ctx, lead, { seq, transcript: windowOf(posts), ...o });
     record(lead, o.tag, r.text);
     return r;
   };
+  const startRound = resume?.round ?? 1;
 
   if (ctx.mode === "Roundtable") {
-    for (let round = 1; round <= ctx.cfg.rounds && budget(); round++) {
+    for (let round = startRound; round <= ctx.cfg.rounds && budget(); round++) {
       for (const lead of ctx.leads) {
         if (!budget()) break;
+        if (did(lead.spec.name, `ROUND ${round}`, round)) continue; // resumed mid-round
+        if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: round };
         await turn(lead, {
           round, thread: "ROUNDTABLE", tag: `ROUND ${round}`,
           instruction: round === 1
@@ -269,15 +286,21 @@ export async function runMode(ctx: EngineContext): Promise<{ posts: number; conv
     };
     const judgeLead = proSide[0] ?? ctx.leads[0]; // strongest available voice chairs
     const judge: EngineLead = { key: `${judgeLead.key}-judge`, spec: { ...judgeLead.spec, name: "The Judge", initials: "JD", role: "Presiding judge", seat: { ...(judgeLead.spec.seat ?? { role: "", why: "", discipline: "", adversarial: false, provenance: "generated" as const }), role: "Presiding judge" } } };
-    for (let round = 1; round <= ctx.cfg.rounds && budget(); round++) {
+    for (let round = startRound; round <= ctx.cfg.rounds && budget(); round++) {
       for (const lead of bench(proSide, round)) {
         if (!budget()) break;
+        if (did(lead.spec.name, "ARGUMENT", round)) continue;
+        if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: round };
         await turn(lead, { round, thread: "TRIBUNAL", tag: "ARGUMENT", side: "pro", instruction: `Round ${round}: argue FOR the thesis with your strongest specific evidence. ${q}` });
       }
       for (const lead of bench(residentSide, round)) {
         if (!budget()) break;
+        if (did(lead.spec.name, "REBUTTAL", round)) continue;
+        if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: round };
         await turn(lead, { round, thread: "TRIBUNAL", tag: "REBUTTAL", side: "con", instruction: `Round ${round}: rebut the arguments just made — attack the weakest link with specifics.` });
       }
+      if (did("The Judge", "JUDGE'S NOTE", round)) continue;
+      currentRound = round;
       seq += 1;
       const jr = await speak(ctx, judge, { seq, round, thread: "TRIBUNAL", tag: "JUDGE'S NOTE", instruction: `As presiding judge, weigh THIS round only: who carried it and on what evidence? End with the scale: "Round to <side>, <x>–<y>".`, transcript: windowOf(posts), maxTokens: 800 });
       record(judge, "JUDGE'S NOTE", jr.text);
@@ -286,19 +309,27 @@ export async function runMode(ctx: EngineContext): Promise<{ posts: number; conv
   } else if (ctx.mode === "Chamber") {
     for (const lead of ctx.leads) {
       if (!budget()) break;
+      if (did(lead.spec.name, "INDEPENDENT TAKE")) continue;
+      if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: 1 };
+      currentRound = 1;
       seq += 1;
       const r = await speak(ctx, lead, { seq, round: 1, thread: "CHAMBER", tag: "INDEPENDENT TAKE", phase: "takes", instruction: `Write your INDEPENDENT take — you have NOT seen anyone else's. ${q}`, transcript: "" });
       record(lead, "INDEPENDENT TAKE", r.text);
     }
-    const takes = [...posts];
+    const takes = posts.filter((p) => p.tag === "INDEPENDENT TAKE");
     for (let i = 0; i < ctx.leads.length && budget(); i++) {
       const reviewer = ctx.leads[i];
+      if (did(reviewer.spec.name, "BLIND REVIEW")) continue;
+      if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: 2 };
+      currentRound = 2;
       const target = takes[(i + 1) % takes.length];
       seq += 1;
       const r = await speak(ctx, reviewer, { seq, round: 2, thread: "CHAMBER", tag: "BLIND REVIEW", phase: "review", instruction: `Peer-review this ANONYMIZED take (author hidden): "${target.content}" — what holds, what breaks, what's missing?`, transcript: "" });
       record(reviewer, "BLIND REVIEW", r.text);
     }
     const chair = ctx.leads[0];
+    if (outOfTime() && !did(chair.spec.name, "CHAIR SYNTHESIS")) return { posts: posts.length, converged: false, suspendedAtRound: 3 };
+    currentRound = 3;
     seq += 1;
     const r = await speak(ctx, chair, { seq, round: 3, thread: "CHAMBER", tag: "CHAIR SYNTHESIS", phase: "synthesis", instruction: `As chair, synthesize the takes and reviews into the panel's position: points of consensus, live disagreements, and the recommendation.`, transcript: windowOf(posts, 24), maxTokens: 1400 });
     record(chair, "CHAIR SYNTHESIS", r.text);
@@ -306,6 +337,9 @@ export async function runMode(ctx: EngineContext): Promise<{ posts: number; conv
   } else if (ctx.mode === "Jury") {
     for (const lead of ctx.leads) {
       if (!budget()) break;
+      if (did(lead.spec.name, "VERDICT")) continue;
+      if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: 1 };
+      currentRound = 1;
       seq += 1;
       const jr = await speak(ctx, lead, { seq, round: 1, thread: "JURY", tag: "VERDICT", instruction: `Independent verdict — you have NOT seen the others. Score the proposition 0–10 and defend it in 3–4 sentences. Start EXACTLY with "SCORE: <n>/10 — ". ${q}`, transcript: "" });
       record(lead, "VERDICT", jr.text);
@@ -314,11 +348,15 @@ export async function runMode(ctx: EngineContext): Promise<{ posts: number; conv
   } else if (ctx.mode === "Desk") {
     const director = ctx.leads[0];
     const workers = ctx.leads.slice(1);
+    currentRound = 1;
     seq += 1;
     const outline = await speak(ctx, director, { seq, round: 1, thread: "DESK", tag: "ASSIGNMENT", phase: "outline", instruction: `As desk director, assign one memo section to each analyst by name: ${workers.map((w) => w.spec.name).join(", ")}. One line per assignment. ${q}`, transcript: "" });
     record(director, "ASSIGNMENT", outline.text);
     for (const w of workers) {
       if (!budget()) break;
+      if (did(w.spec.name, "SECTION DRAFT")) continue;
+      if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: 2 };
+      currentRound = 2;
       seq += 1;
       const r = await speak(ctx, w, { seq, round: 2, thread: "DESK", tag: "SECTION DRAFT", phase: "draft", instruction: `Draft YOUR assigned memo section per the director's assignment — findings first, evidence cited by document name.`, transcript: windowOf(posts, 6) });
       record(w, "SECTION DRAFT", r.text);
@@ -342,6 +380,9 @@ export async function runMode(ctx: EngineContext): Promise<{ posts: number; conv
       const scouts = rotated.slice(0, Math.min(3, ctx.leads.length));
       for (const s of scouts) {
         if (!budget()) break;
+        if (did(s.spec.name, ph.name)) continue;
+        if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: pi + 1 };
+        currentRound = pi + 1;
         seq += 1;
         const r = await speak(ctx, s, { seq, round: pi + 1, thread: "EXPEDITION", tag: ph.name, phase: ph.name, instruction: `${ph.instruction} ${pi === 0 ? q : ""}`, transcript: windowOf(posts, 10) });
         record(s, ph.name, r.text);
@@ -374,17 +415,20 @@ export async function runMode(ctx: EngineContext): Promise<{ posts: number; conv
       return { lead: ctx.leads[posts.length % ctx.leads.length], replyTo: last.seq };
     };
 
-    for (let round = 1; round <= ctx.cfg.rounds && budget(); round++) {
+    for (let round = startRound; round <= ctx.cfg.rounds && budget(); round++) {
+      const inRound = posts.filter((p) => p.round === round).length;
       const opener = ctx.leads[(round - 1) % ctx.leads.length];
       let postNo = posts.filter((p) => p.tag.startsWith("POST")).length + 1;
-      await turn(opener, {
+      if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: round };
+      if (inRound === 0) await turn(opener, {
         round, thread: opener.spec.seat?.discipline || "AGORA", tag: `POST ${postNo}`,
         instruction: round === 1
           ? `Open the deliberation with your read and ONE pointed question for a specific colleague. ${q}`
           : `Open round ${round}: advance the argument — new evidence, a challenge, or a position change (say "changing my position" if so).`,
       });
       const repliesPerRound = Math.min(Math.max(ctx.leads.length - 1, 2), 6);
-      for (let i = 0; i < repliesPerRound && budget(); i++) {
+      for (let i = Math.max(inRound - 1, 0); i < repliesPerRound && budget(); i++) {
+        if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: round };
         const { lead, replyTo } = await router(posts[posts.length - 1]);
         await turn(lead, {
           round, thread: lead.spec.seat?.discipline || "AGORA", tag: "REPLY", reply_to: replyTo,

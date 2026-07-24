@@ -4,9 +4,9 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { FrozenSpec } from "@/lib/casting";
 import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
 import { normalizeQuestions } from "@/lib/corpus";
-import { EngineEvent, EngineLead, runMode } from "@/lib/engine";
+import { EngineEvent, EngineLead, PostRec, RunResume, runMode } from "@/lib/engine";
 
-export const maxDuration = 300; // serverless ceiling — preflight caps runs to fit
+export const maxDuration = 800; // Vercel Pro ceiling; chunked continuation covers anything longer
 
 const FILES_BETA = "files-api-2025-04-14";
 
@@ -16,7 +16,7 @@ const FILES_BETA = "files-api-2025-04-14";
  * to `events` — the run is replayable from the database afterwards.
  * Re-launching clears the previous transcript.
  */
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createServerSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
@@ -24,13 +24,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
 
+  let body: { continue?: boolean } = {};
+  try { body = await request.json(); } catch { body = {}; }
+  const isContinue = body.continue === true;
+
   const { data: userRow } = await supabase.from("users").select("org_id").eq("id", user.id).single();
   if (!userRow) return NextResponse.json({ error: "No org" }, { status: 400 });
   const orgId = userRow.org_id as string;
 
   const { data: sim } = await supabase.from("simulations").select("id, brief, config, status").eq("id", id).maybeSingle();
   if (!sim) return NextResponse.json({ error: "Simulation not found" }, { status: 404 });
-  if (sim.status === "running") return NextResponse.json({ error: "A run is already in progress" }, { status: 409 });
+  if (sim.status === "running" && !isContinue) return NextResponse.json({ error: "A run is already in progress" }, { status: 409 });
   const brief = (sim.brief ?? {}) as { problem?: string; questions?: unknown };
   if (!brief.problem) return NextResponse.json({ error: "Write the brief first" }, { status: 400 });
 
@@ -64,15 +68,30 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   }
   if (corpusBlocks.length) corpusBlocks[corpusBlocks.length - 1].cache_control = { type: "ephemeral" };
 
-  // fresh transcript on relaunch
-  await supabase.from("posts").delete().eq("sim_id", id);
-  await supabase.from("events").delete().eq("sim_id", id);
+  // fresh transcript on relaunch; a CONTINUE resumes the suspended run
+  let resume: RunResume | undefined;
+  const polledRounds = new Set<number>();
+  if (isContinue) {
+    const runState = (config.run_state as { round?: number } | undefined) ?? {};
+    const { data: prevPosts } = await supabase.from("posts")
+      .select("seq, agent_key, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true });
+    const recs: PostRec[] = (prevPosts ?? []).map((r) => {
+      const meta = (r.cites as { name?: string; role?: string; round?: number } | null) ?? {};
+      return { name: meta.name ?? "Agent", role: meta.role ?? "", content: r.content as string, tag: r.tag as string, seq: r.seq as number, agentKey: r.agent_key as string, round: meta.round ?? 1 };
+    });
+    const { data: prevEvents } = await supabase.from("events").select("type, payload").eq("sim_id", id).eq("type", "sentiment");
+    for (const e of prevEvents ?? []) polledRounds.add(Number((e.payload as { round?: number }).round ?? 0));
+    resume = { posts: recs, seq: recs.reduce((m, r) => Math.max(m, r.seq), 0), round: runState.round ?? Math.max(1, ...recs.map((r) => r.round)) };
+  } else {
+    await supabase.from("posts").delete().eq("sim_id", id);
+    await supabase.from("events").delete().eq("sim_id", id);
+  }
   await supabase.from("simulations").update({ status: "running" }).eq("id", id);
 
   const anthropic = new Anthropic();
   const encoder = new TextEncoder();
   let cancelled = false;
-  let evSeq = 0;
+  let evSeq = isContinue ? 1000 * (resume?.round ?? 1) : 0; // coarse but monotonic across chunks
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -87,7 +106,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             thread: e.thread, reply_to: e.reply_to, tag: e.tag, content: e.content,
             cites: { cites: e.cites, name: e.name, role: e.role, initials: e.initials, adversarial: e.adversarial ?? false, round: e.round, phase: e.phase ?? null, side: e.side ?? null },
           });
-        } else if (e.type !== "presence") {
+        } else if (e.type !== "presence" && e.type !== "polling") {
           // presence is transient UI state — streamed, never persisted
           evSeq += 1;
           await supabase.from("events").insert({ sim_id: id, seq: evSeq, type: e.type, payload: e });
@@ -101,38 +120,35 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         });
       };
       try {
-        // serverless guard: cap effective rounds so the run fits the ~5-minute
-        // window (the Python worker engine lifts this at scale)
-        const postsPerRound = mode === "Roundtable" ? leads.length
-          : mode === "Tribunal" ? 7
-          : mode === "Agora" ? 1 + Math.min(Math.max(leads.length - 1, 2), 6)
-          : 0;
-        let effRounds = cfg.rounds;
-        if (postsPerRound > 0) {
-          const maxRounds = Math.max(1, Math.floor(250 / (postsPerRound * 9 + (crowd.length > 0 ? 12 : 0))));
-          effRounds = Math.min(cfg.rounds, maxRounds);
-        }
-        await emit({
-          type: "stage", value: "running",
-          detail: effRounds < cfg.rounds
-            ? `rounds capped ${cfg.rounds} → ${effRounds} to fit the 5-minute runtime — the worker engine lifts this limit`
-            : undefined,
-        });
+        await emit({ type: "stage", value: "running" });
+        // unlimited total length via chunked continuation: each request runs a
+        // ~4-minute slice, suspends at a safe boundary, and the run screen
+        // reconnects for the next slice (the Python worker later makes this
+        // one unbroken process)
         const result = await runMode({
-          anthropic, cfg: { ...cfg, rounds: effRounds }, mode,
+          anthropic, cfg, mode,
           problem: brief.problem!,
           questions: normalizeQuestions(brief.questions).map((x) => x.label),
           leads, crowd, corpusBlocks,
           temperature: 0.7,
+          deadline: Date.now() + (Number(process.env.ENGINE_CHUNK_MS) || 770_000), // ~13-min slices on Pro; env override for dev tests
+          polledRounds,
           emit, logCall,
           isCancelled: () => cancelled,
-        });
-        await emit({ type: "stage", value: result.converged ? "converged" : "done" });
-        await supabase.from("simulations").update({
-          status: "complete",
-          config: { ...config, run_result: { posts: result.posts, converged: result.converged, mode, at: new Date().toISOString() } },
-        }).eq("id", id);
-        send({ type: "finished", posts: result.posts });
+        }, resume);
+        if (result.suspendedAtRound) {
+          await supabase.from("simulations").update({
+            config: { ...config, run_state: { round: result.suspendedAtRound } },
+          }).eq("id", id);
+          send({ type: "continue", round: result.suspendedAtRound, posts: result.posts });
+        } else {
+          await emit({ type: "stage", value: result.converged ? "converged" : "done" });
+          await supabase.from("simulations").update({
+            status: "complete",
+            config: { ...config, run_state: null, run_result: { posts: result.posts, converged: result.converged, mode, at: new Date().toISOString() } },
+          }).eq("id", id);
+          send({ type: "finished", posts: result.posts });
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Run failed";
         await emit({ type: "stage", value: "error", detail: msg });

@@ -128,19 +128,26 @@ export default function LiveRun({
   const pulses = useRef<{ a: Node; b: Node; t0: number; dur: number; strong: boolean }[]>([]);
   const speaker = useRef<{ node: Node | null; until: number }>({ node: null, until: 0 });
   const authorBySeq = useRef<Map<number, string>>(new Map());
+  const pollWave = useRef<number>(0); // performance.now() when the last crowd poll landed
+  const polling = useRef<{ t0: number; n: number } | null>(null); // live sweep while the poll executes
+  const chunkCount = useRef(0);
 
   useEffect(() => {
     for (const it of merged) if (it.kind === "post") authorBySeq.current.set(it.post.seq, it.post.agent_key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const launch = async () => {
-    if (status === "running") return;
+  const launch = async (cont = false) => {
+    if (!cont && status === "running") return;
     setStatus("running");
-    setItems([]);
+    if (!cont) { setItems([]); chunkCount.current = 0; }
     setError(null);
     try {
-      const res = await fetch(`/api/simulations/${simId}/run/launch`, { method: "POST" });
+      const res = await fetch(`/api/simulations/${simId}/run/launch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ continue: cont }),
+      });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error ?? "Launch failed");
@@ -177,8 +184,19 @@ export default function LiveRun({
             }
           } else if (evt.type === "presence") {
             if (evt.state === "thinking") setThinking(String(evt.name));
+          } else if (evt.type === "polling") {
+            polling.current = { t0: performance.now(), n: Number(evt.count) || crowdCount };
           } else if (evt.type === "sentiment") {
+            polling.current = null;
             setItems((prev) => [...prev, { kind: "sentiment", s: evt as unknown as LiveSentiment }]);
+            // canvas: the crowd lights up and pulses inward while the poll lands
+            pollWave.current = performance.now();
+            const ring = crowdRef.current;
+            const cx = (canvasEl.current?.width ?? 0) / 2, cy = (canvasEl.current?.height ?? 0) / 2;
+            const now = performance.now();
+            for (let i = 0; i < ring.length; i += Math.max(1, Math.floor(ring.length / 14))) {
+              pulses.current.push({ a: ring[i], b: { x: cx, y: cy }, t0: now + (i % 7) * 120, dur: 2200, strong: false });
+            }
           } else if (evt.type === "stage") {
             if (evt.value === "running" && evt.detail) setNote(String(evt.detail));
             if (evt.value === "converged" || evt.value === "done") setStatus("done");
@@ -188,6 +206,13 @@ export default function LiveRun({
             setError(String(evt.error ?? "Run failed"));
           } else if (evt.type === "finished") {
             setStatus("done");
+          } else if (evt.type === "continue") {
+            // the slice hit the serverless window — reconnect for the next one
+            chunkCount.current += 1;
+            if (chunkCount.current < 40) {
+              setNote(`LONG RUN · CONTINUING SEAMLESSLY (SLICE ${chunkCount.current + 1}) — ROUND ${evt.round}`);
+              setTimeout(() => void launch(true), 400);
+            }
           }
         }
       }
@@ -240,10 +265,44 @@ export default function LiveRun({
         ctx.globalAlpha = 0.9 * (1 - k * 0.5); ctx.fillStyle = acc;
         ctx.beginPath(); ctx.arc(p.a.x + (p.b.x - p.a.x) * k, p.a.y + (p.b.y - p.a.y) * k, dpr * (p.strong ? 2.4 : 1.6), 0, 7); ctx.fill();
       }
-      for (const r of crowdRef.current) {
-        ctx.globalAlpha = 0.24 + 0.12 * Math.sin(now / 1400 + r.x);
-        ctx.fillStyle = dim;
-        ctx.beginPath(); ctx.arc(r.x, r.y, dpr * 1.1, 0, 7); ctx.fill();
+      const ring = crowdRef.current;
+      const wave = now - pollWave.current;
+      const finale = pollWave.current > 0 && wave < 3200;
+      const sweep = polling.current;
+      let ci = 0;
+      for (const r of ring) {
+        if (sweep) {
+          // POLLING sweep: members get "counted" one by one — a bright frontier
+          // circles the ring while the real poll executes server-side
+          const cycle = ((now - sweep.t0) / 2400) % 1;              // one lap ≈ 2.4s, loops until results land
+          const frontier = Math.floor(cycle * ring.length);
+          const dist = (ci - frontier + ring.length) % ring.length; // distance behind the frontier
+          const counted = dist > ring.length * 0.55;                // trail stays lit ~45% of the lap
+          const atFrontier = dist < 3;
+          ctx.fillStyle = counted || atFrontier ? acc : dim;
+          ctx.globalAlpha = atFrontier ? 1 : counted ? 0.75 : 0.18;
+          ctx.beginPath(); ctx.arc(r.x, r.y, dpr * (atFrontier ? 2.6 : counted ? 1.6 : 1.0), 0, 7); ctx.fill();
+          if (atFrontier && dist === 0) {
+            ctx.globalAlpha = 0.3; ctx.strokeStyle = acc; ctx.lineWidth = dpr;
+            ctx.beginPath(); ctx.arc(r.x, r.y, dpr * 6, 0, 7); ctx.stroke();
+          }
+        } else if (finale) {
+          // results landed: one bright ripple through the whole crowd
+          const phase = Math.sin((wave / 380) - ci * 0.35);
+          ctx.globalAlpha = Math.max(0.18, Math.min(0.95, 0.35 + 0.6 * phase * (1 - wave / 3200)));
+          ctx.fillStyle = acc;
+          ctx.beginPath(); ctx.arc(r.x, r.y, dpr * (1.4 + Math.max(0, phase) * 0.9), 0, 7); ctx.fill();
+        } else {
+          ctx.globalAlpha = 0.24 + 0.12 * Math.sin(now / 1400 + r.x);
+          ctx.fillStyle = dim;
+          ctx.beginPath(); ctx.arc(r.x, r.y, dpr * 1.1, 0, 7); ctx.fill();
+        }
+        ci++;
+      }
+      if (sweep) {
+        ctx.globalAlpha = 0.9; ctx.fillStyle = acc;
+        ctx.font = `${10 * dpr}px "JetBrains Mono", monospace`; ctx.textAlign = "center";
+        ctx.fillText(`POLLING ${sweep.n} CROWD MEMBERS…`, el.width / 2, el.height - 12 * dpr);
       }
       for (const nd of Object.values(nodesRef.current)) {
         const speaking = nd === speaker.current.node && now < speaker.current.until;
@@ -319,7 +378,7 @@ export default function LiveRun({
               {mode === "Jury" ? "VERDICTS" : mode === "Desk" ? "THE MEMO, ASSEMBLING" : mode === "Expedition" ? "FINDINGS LOG" : "FORUM FEED"}
             </span>
             {status !== "running" && (
-              <button onClick={() => void launch()} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, background: "var(--acc)", color: "var(--acc-c)", border: "none", cursor: "pointer" }}>
+              <button onClick={() => void launch(false)} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, background: "var(--acc)", color: "var(--acc-c)", border: "none", cursor: "pointer" }}>
                 {status === "done" || posts > 0 ? "↺ RE-RUN" : "▶ LAUNCH THE RUN"}
               </button>
             )}
