@@ -14,7 +14,7 @@ export default async function Dashboard() {
     .from("simulations")
     .select("id, status, brief, config, created_at, documents(count), sim_agents(count), reports(count)")
     .order("created_at", { ascending: false })
-    .limit(24);
+    .limit(200);
 
   const sims: SimCardRow[] = ((data ?? []) as {
     id: string; status: string; created_at: string;
