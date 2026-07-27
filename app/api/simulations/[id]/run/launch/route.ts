@@ -120,6 +120,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         });
       };
       try {
+        // the engine's ACTUAL parameters, first thing on the wire — the run
+        // header trusts this over whatever it server-rendered with
+        send({ type: "config", rounds: cfg.rounds, max_posts: cfg.max_posts, mode });
         await emit({ type: "stage", value: "running" });
         // unlimited total length via chunked continuation: each request runs a
         // ~4-minute slice, suspends at a safe boundary, and the run screen

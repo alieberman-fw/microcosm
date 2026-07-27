@@ -72,7 +72,7 @@ export default function ReportView({
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "40px 40px 90px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <Link href={`/sim/${simId}`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>← WORKSPACE</Link>
-        <Link href={`/sim/${simId}/run`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>VIEW THE RUN →</Link>
+        <Link href={`/sim/${simId}/run`} prefetch={false} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>VIEW THE RUN →</Link>
         <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
           {versions.length > 1 && versions.map((vn) => (
             <Link key={vn} href={`/sim/${simId}/report?v=${vn}`} style={{

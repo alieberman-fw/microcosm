@@ -83,7 +83,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       const send = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
       try {
         // ---- 1 · compile: director synthesizes the structured report ----
-        send({ type: "stage", value: "compile", note: `SYNTHESIZING WITH ${synthModel.toUpperCase()}` });
+        // stage notes are user-facing copy — models stay in Monitoring
+        send({ type: "stage", value: "compile", note: `READING ${postRows.length} POSTS · COMPILING VERDICT, FINDINGS & DISSENTS…` });
         let raw: Record<string, unknown> | null = null;
         let lastErr = "";
         for (let attempt = 0; attempt < 2 && !raw; attempt++) {
@@ -109,7 +110,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         // ---- 2 · verify: numeric claims vs the corpus (§4.1) ----
         let verification: ReportSpec["verification"];
         if (cfg.verifier && (docs?.length ?? 0) > 0) {
-          send({ type: "stage", value: "verify", note: `CHECKING CLAIMS AGAINST ${docs!.length} DOCUMENT${docs!.length > 1 ? "S" : ""}` });
+          send({ type: "stage", value: "verify", note: `FACT-CHECKING CLAIMS AGAINST ${docs!.length} DOCUMENT${docs!.length > 1 ? "S" : ""}…` });
           const corpusBlocks: (Anthropic.Beta.BetaContentBlockParam & { cache_control?: { type: "ephemeral" } })[] = [];
           for (const d of docs!) {
             if (d.anthropic_file_id && !(d.mime ?? "").startsWith("image/")) {

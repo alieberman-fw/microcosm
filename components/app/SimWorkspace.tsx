@@ -62,6 +62,7 @@ export default function SimWorkspace({
   initialCasting,
   initialAnswers = [],
   initialRun = null,
+  hasRun = false,
   hasReport = false,
 }: {
   sim: { id: string; status: string; brief: Brief; created_at: string };
@@ -71,6 +72,7 @@ export default function SimWorkspace({
   initialCasting: CastingInfo | null;
   initialAnswers?: Answer[];
   initialRun?: Partial<RunConfig> | null;
+  hasRun?: boolean;
   hasReport?: boolean;
 }) {
   const router = useRouter();
@@ -108,29 +110,40 @@ export default function SimWorkspace({
 
   const parsedDocs = docs.filter((d) => d.parse_status === "parsed");
   const totalTokens = parsedDocs.reduce((s, d) => s + (d.token_estimate ?? 0), 0);
-  const stageDone = [true, parsedDocs.length > 0, populationCount > 0, !!initialRun, hasReport];
+  // a stage is DONE when its artifact exists: parsed docs, a cast panel,
+  // persisted run posts, a synthesized report — never mere saved config
+  const stageDone = [true, parsedDocs.length > 0, populationCount > 0, hasRun, hasReport];
 
+  // bulk drops: every file queues visibly at once, then uploads 3 at a time —
+  // a strictly serial loop made 5-file drops look like only the first landed
   const uploadFiles = async (files: FileList | File[]) => {
-    for (const file of Array.from(files)) {
-      const key = `${file.name}-${Date.now()}-${Math.random()}`;
-      if (file.size > MAX_DOC_BYTES) {
-        setPending((prev) => [...prev, { key, name: file.name, size: file.size, error: "Over the 50MB limit" }]);
-        continue;
+    const entries = Array.from(files).map((file) => ({ file, key: `${file.name}-${Date.now()}-${Math.random()}` }));
+    const oversize = entries.filter((e) => e.file.size > MAX_DOC_BYTES);
+    const queue = entries.filter((e) => e.file.size <= MAX_DOC_BYTES);
+    setPending((prev) => [
+      ...prev,
+      ...oversize.map((e) => ({ key: e.key, name: e.file.name, size: e.file.size, error: "Over the 50MB limit" })),
+      ...queue.map((e) => ({ key: e.key, name: e.file.name, size: e.file.size })),
+    ]);
+    let next = 0;
+    const worker = async () => {
+      while (next < queue.length) {
+        const e = queue[next++];
+        const form = new FormData();
+        form.set("simId", sim.id);
+        form.set("file", e.file);
+        try {
+          const res = await fetch("/api/documents", { method: "POST", body: form });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error ?? "Upload failed");
+          setDocs((prev) => [...prev, data.document as DocRow]);
+          setPending((prev) => prev.filter((p) => p.key !== e.key));
+        } catch (err) {
+          setPending((prev) => prev.map((p) => p.key === e.key ? { ...p, error: err instanceof Error ? err.message : "Upload failed" } : p));
+        }
       }
-      setPending((prev) => [...prev, { key, name: file.name, size: file.size }]);
-      const form = new FormData();
-      form.set("simId", sim.id);
-      form.set("file", file);
-      try {
-        const res = await fetch("/api/documents", { method: "POST", body: form });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Upload failed");
-        setDocs((prev) => [...prev, data.document as DocRow]);
-        setPending((prev) => prev.filter((p) => p.key !== key));
-      } catch (e) {
-        setPending((prev) => prev.map((p) => p.key === key ? { ...p, error: e instanceof Error ? e.message : "Upload failed" } : p));
-      }
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
   };
 
   const removeDoc = async (id: string) => {
@@ -179,7 +192,8 @@ export default function SimWorkspace({
             <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
               <button
                 onClick={() => {
-                  if (reportStage && hasReport) { router.push(`/sim/${sim.id}/report`); return; }
+                  if (reportStage) { if (hasReport) router.push(`/sim/${sim.id}/report`); return; }
+                  if (i === 3 && hasRun) { router.push(`/sim/${sim.id}/run`); return; }
                   if (target) document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
                 }}
                 style={{
@@ -187,11 +201,10 @@ export default function SimWorkspace({
                   cursor: (target || (reportStage && hasReport)) ? "pointer" : "default",
                   color: stageDone[i] ? "var(--acc)" : i <= 3 ? "var(--t4)" : "var(--t7)",
                 }}
-                title={target ? `Jump to ${s.toLowerCase()}` : undefined}
+                title={reportStage ? (hasReport ? "Open the report" : "Synthesize on the run screen after a run") : i === 3 && hasRun ? "Open the run" : target ? `Jump to ${s.toLowerCase()}` : undefined}
               >
                 {String(i + 1).padStart(2, "0")} {s}
                 {stageDone[i] && " ✓"}
-                {i > 3 && !hasReport && <span style={{ marginLeft: 6, border: "1px solid var(--ln4)", borderRadius: 100, padding: "1px 6px", fontSize: 8, color: "var(--t7)" }}>SOON</span>}
               </button>
               {i < STAGES.length - 1 && <span style={{ width: 18, height: 1, background: "var(--ln4)" }} />}
             </span>

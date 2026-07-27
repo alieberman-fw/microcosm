@@ -55,7 +55,10 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
   const qaRaw = ((sim.config as { qa?: unknown[] } | null)?.qa ?? []) as never[];
   const qa = [...qaRaw].reverse();
   const run = ((sim.config as { run?: Record<string, unknown> } | null)?.run) ?? null;
-  const { count: reportCount } = await supabase!.from("reports").select("id", { count: "exact", head: true }).eq("sim_id", id);
+  const [{ count: reportCount }, { count: postCount }] = await Promise.all([
+    supabase!.from("reports").select("id", { count: "exact", head: true }).eq("sim_id", id),
+    supabase!.from("posts").select("seq", { count: "exact", head: true }).eq("sim_id", id),
+  ]);
 
   return (
     <SimWorkspace
@@ -66,6 +69,7 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
       initialCasting={casting}
       initialAnswers={qa}
       initialRun={run}
+      hasRun={(postCount ?? 0) > 0}
       hasReport={(reportCount ?? 0) > 0}
     />
   );

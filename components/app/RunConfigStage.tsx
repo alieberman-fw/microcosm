@@ -9,7 +9,7 @@
  */
 
 import { CSSProperties, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import ModeDiagram, { ModeKey } from "@/components/app/docs/ModeDiagram";
 import { SIM_MODES } from "@/lib/casting";
 import { RUN_DEFAULTS, RUN_RANGES, RunConfig, estimateRunCost, modeFitFlags } from "@/lib/run";
@@ -54,10 +54,12 @@ export default function RunConfigStage({
   crowd: number;
   initialRun?: Partial<RunConfig> | null;
 }) {
+  const router = useRouter();
   const [mode, setMode] = useState<string>(initialMode ?? "Agora");
   const [cfg, setCfg] = useState<RunConfig>({ ...RUN_DEFAULTS, ...(initialRun ?? {}) });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saved, setSaved] = useState(false);
+  const [launching, setLaunching] = useState(false);
 
   const persist = (next: RunConfig, nextMode?: string) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -83,6 +85,31 @@ export default function RunConfigStage({
   const pickMode = (m: string) => {
     setMode(m);
     persist(cfg, m);
+  };
+
+  // proceed = FLUSH then navigate: the debounced save raced client-side nav,
+  // so the run screen could render stale defaults (ROUND x / 3) — commit any
+  // in-flight drafts, PATCH synchronously, and only then open the run screen
+  const proceed = async () => {
+    if (launching) return;
+    setLaunching(true);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const final = { ...cfg };
+    for (const k of ["rounds", "max_posts", "duration_days"] as const) {
+      const raw = drafts[k];
+      if (raw === undefined) continue;
+      const r = RUN_RANGES[k];
+      const v = parseInt(raw, 10);
+      if (!isNaN(v)) final[k] = Math.min(Math.max(v, r.min), r.max);
+    }
+    try {
+      await fetch(`/api/simulations/${simId}/config`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run: final, mode }),
+      });
+    } catch { /* launch route re-reads config server-side either way */ }
+    router.push(`/sim/${simId}/run`);
   };
 
   const est = useMemo(() => estimateRunCost({ leads, crowd, cfg }), [leads, crowd, cfg]);
@@ -254,21 +281,22 @@ export default function RunConfigStage({
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 7 }}>
-          <Link href={`/sim/${simId}/run`} style={{ textDecoration: "none" }}>
-            <span
-              className="runCta"
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 10,
-                background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 15,
-                padding: "13px 30px", borderRadius: 100, fontFamily: "var(--font-sans), sans-serif", cursor: "pointer",
-              }}
-            >
-              Proceed to launch
-              <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>→</span>
-            </span>
-          </Link>
+          <button
+            onClick={() => void proceed()}
+            disabled={launching}
+            className="runCta"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 10, border: "none",
+              background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 15,
+              padding: "13px 30px", borderRadius: 100, fontFamily: "var(--font-sans), sans-serif",
+              cursor: launching ? "default" : "pointer", opacity: launching ? 0.75 : 1,
+            }}
+          >
+            {launching ? "Saving settings…" : "Proceed to launch"}
+            <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>→</span>
+          </button>
           <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>
-            OPENS THE RUN SCREEN · PRESS ▶ LAUNCH WHEN READY
+            SAVES THESE SETTINGS · OPENS THE RUN SCREEN
           </span>
         </div>
       </div>
