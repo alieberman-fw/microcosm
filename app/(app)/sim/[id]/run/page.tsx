@@ -43,9 +43,10 @@ export default async function RunPage({ params, searchParams }: {
     return <RunScreen simId={sim.id} problem={problem} />;
   }
 
-  const [{ data: postRows }, { data: eventRows }] = await Promise.all([
+  const [{ data: postRows }, { data: eventRows }, { count: reportCount }] = await Promise.all([
     supabase!.from("posts").select("seq, agent_key, thread, reply_to, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true }),
     supabase!.from("events").select("type, payload").eq("sim_id", id).eq("type", "sentiment").order("seq", { ascending: true }),
+    supabase!.from("reports").select("id", { count: "exact", head: true }).eq("sim_id", id),
   ]);
   const initialPosts: LivePost[] = (postRows ?? []).map((r) => {
     const meta = (r.cites as { cites?: { title: string; quote: string }[]; name?: string; role?: string; initials?: string; adversarial?: boolean; round?: number; phase?: string | null; side?: string | null } | null) ?? {};
@@ -74,6 +75,7 @@ export default async function RunPage({ params, searchParams }: {
       initialSentiments={initialSentiments}
       initialStatus={sim.status as string}
       maxRounds={cfg.rounds}
+      hasReport={(reportCount ?? 0) > 0}
     />
   );
 }

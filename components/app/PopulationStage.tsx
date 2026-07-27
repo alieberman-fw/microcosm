@@ -101,7 +101,14 @@ export default function PopulationStage({
   const [crowdSample, setCrowdSample] = useState<number | null>(null); // target of the in-flight generation
   const [rosterOpen, setRosterOpen] = useState(false);
   const [pending, setPending] = useState<PendingSeat[]>([]);
-  const [castingInfo, setCastingInfo] = useState<CastingInfo | null>(initialCasting);
+  // hand-picked panels reach the DB as casting {mode, user_set} with NO scale
+  // (the mode PATCH creates it) — normalize here or every scale read crashes
+  const [castingInfo, setCastingInfo] = useState<CastingInfo | null>(() => {
+    if (!initialCasting) return null;
+    if (initialCasting.scale && typeof initialCasting.scale.experts === "number") return initialCasting;
+    const residents = initialSeats.filter((s) => s.spec.kind === "consumer" || s.spec.kind === "resident").length;
+    return { ...initialCasting, composition: initialCasting.composition ?? (residents === 0 ? "experts" : residents === initialSeats.length ? "consumers" : "mixed"), rationale: initialCasting.rationale ?? "", mode: initialCasting.mode ?? "Agora", modeRationale: initialCasting.modeRationale ?? "", scale: { experts: initialSeats.length - residents, residents } };
+  });
   const [casting, setCasting] = useState(false);
   const [planReady, setPlanReady] = useState(false); // plan arrived → theater gives way to cards
   const [castMode, setCastMode] = useState<"recast" | "add">("recast");

@@ -93,7 +93,7 @@ function layoutLeads(mode: string, leads: LiveLead[], w: number, h: number): Rec
 }
 
 export default function LiveRun({
-  simId, problem, mode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialStatus, maxRounds,
+  simId, problem, mode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialStatus, maxRounds, hasReport = false,
 }: {
   simId: string;
   problem: string;
@@ -105,6 +105,7 @@ export default function LiveRun({
   initialSentiments: LiveSentiment[];
   initialStatus: string;
   maxRounds: number;
+  hasReport?: boolean;
 }) {
   const merged: Item[] = [
     ...initialPosts.map((p) => ({ kind: "post" as const, post: p })),
@@ -126,7 +127,16 @@ export default function LiveRun({
   const [synthesizing, setSynthesizing] = useState<string | null>(null);
   const [liveCrowd, setLiveCrowd] = useState(crowdCount);
   const [materializing, setMaterializing] = useState<{ landed: number; target: number } | null>(null);
+  const [maxR, setMaxR] = useState(maxRounds);       // corrected live by the engine's config event
+  const [reportReady, setReportReady] = useState(hasReport);
   const router = useRouter();
+
+  // self-heal a stale client-cache hit: a completed run can never be empty —
+  // if the server payload says complete but carried no posts, refetch once
+  useEffect(() => {
+    if (initialStatus === "complete" && initialPosts.length === 0) router.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const synthesize = async () => {
     if (synthesizing) return;
@@ -150,7 +160,13 @@ export default function LiveRun({
           if (!line.trim()) continue;
           const evt = JSON.parse(line) as { type: string; note?: string; error?: string };
           if (evt.type === "stage") setSynthesizing(String(evt.note ?? "SYNTHESIZING…"));
-          else if (evt.type === "done") { router.push(`/sim/${simId}/report`); return; }
+          else if (evt.type === "done") {
+            setReportReady(true);
+            setSynthesizing(null);
+            router.refresh(); // drop any cached payloads before landing on the report
+            router.push(`/sim/${simId}/report`);
+            return;
+          }
           else if (evt.type === "error") throw new Error(evt.error ?? "Synthesis failed");
         }
       }
@@ -166,6 +182,8 @@ export default function LiveRun({
   const crowdRef = useRef<Node[]>([]);
   const pulses = useRef<{ a: Node; b: Node; t0: number; dur: number; strong: boolean }[]>([]);
   const speaker = useRef<{ node: Node | null; until: number }>({ node: null, until: 0 });
+  const composing = useRef<{ key: string; until: number } | null>(null); // presence: who is thinking right now
+  const edges = useRef<{ a: Node; b: Node; until: number }[]>([]);       // steady reply lines, feed↔canvas sync
   const authorBySeq = useRef<Map<number, string>>(new Map());
   const pollWave = useRef<number>(0); // performance.now() when the last crowd poll landed
   const polling = useRef<{ t0: number; n: number } | null>(null); // live sweep while the poll executes
@@ -219,6 +237,7 @@ export default function LiveRun({
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let sawContinue = false;
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -228,26 +247,38 @@ export default function LiveRun({
         for (const line of lines) {
           if (!line.trim()) continue;
           const evt = JSON.parse(line) as Record<string, unknown>;
-          if (evt.type === "post") {
+          if (evt.type === "config") {
+            // the engine's real parameters win over the server-rendered props
+            if (Number(evt.rounds)) setMaxR(Number(evt.rounds));
+          } else if (evt.type === "post") {
             const p = evt as unknown as LivePost & { type: string };
             setItems((prev) => [...prev, { kind: "post", post: p }]);
             setThinking(null);
-            // canvas: pulse + speaker
+            // canvas: pulse + speaker — in lockstep with the feed item landing
             authorBySeq.current.set(p.seq, p.agent_key);
+            composing.current = null;
             const a = nodesRef.current[p.agent_key] ?? nodesRef.current["__judge"];
             if (a) {
               // a reply pulses to the ACTUAL author being answered; an open post broadcasts
               const replyAuthor = p.reply_to != null ? authorBySeq.current.get(p.reply_to) : undefined;
               const replyNode = replyAuthor ? nodesRef.current[replyAuthor] : undefined;
+              const now = performance.now();
               const targets = replyNode && replyNode !== a
                 ? [replyNode]
                 : Object.values(nodesRef.current).filter((n) => n.key !== p.agent_key && n.key !== "__judge").slice(0, 8);
-              const now = performance.now();
               targets.forEach((t, i) => pulses.current.push({ a, b: t, t0: now + i * 90, dur: targets.length === 1 ? 3600 : 2200, strong: targets.length === 1 }));
+              // replies also hold a steady line while the post is read
+              if (replyNode && replyNode !== a) {
+                edges.current = [...edges.current.filter((e) => e.until > now), { a, b: replyNode, until: now + 7000 }].slice(-3);
+              }
               speaker.current = { node: a, until: now + 4200 };
             }
           } else if (evt.type === "presence") {
-            if (evt.state === "thinking") setThinking(String(evt.name));
+            if (evt.state === "thinking") {
+              setThinking(String(evt.name));
+              const key = String(evt.agent_key ?? "");
+              if (nodesRef.current[key]) composing.current = { key, until: performance.now() + 30_000 };
+            }
           } else if (evt.type === "polling") {
             polling.current = { t0: performance.now(), n: Number(evt.count) || crowdCount };
           } else if (evt.type === "sentiment") {
@@ -273,6 +304,7 @@ export default function LiveRun({
             setStatus("done");
           } else if (evt.type === "continue") {
             // the slice hit the serverless window — reconnect for the next one
+            sawContinue = true;
             chunkCount.current += 1;
             if (chunkCount.current < 40) {
               setNote(`LONG RUN · CONTINUING SEAMLESSLY (SLICE ${chunkCount.current + 1}) — ROUND ${evt.round}`);
@@ -282,7 +314,10 @@ export default function LiveRun({
         }
       }
       setThinking(null);
-      setStatus((s) => (s === "running" ? "done" : s));
+      if (!sawContinue) {
+        setStatus((s) => (s === "running" ? "done" : s));
+        router.refresh(); // the persisted run replaces any cached empty payload
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Launch failed");
       setStatus("idle");
@@ -321,6 +356,16 @@ export default function LiveRun({
       const now = performance.now();
       const acc = cssToken("--acc", "#37d98a"), dim = cssToken("--t7", "#6d7378"), mid = cssToken("--t5", "#9aa0a6"), warn = cssToken("--warn", "#d9a03f");
       ctx.clearRect(0, 0, el.width, el.height);
+      // steady reply lines: who is answering whom, held while the post is read
+      edges.current = edges.current.filter((e) => e.until > now);
+      for (const e of edges.current) {
+        const left = (e.until - now) / 7000;
+        ctx.globalAlpha = 0.28 * Math.min(1, left * 3);
+        ctx.strokeStyle = acc; ctx.lineWidth = dpr * 0.8;
+        ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
+        ctx.globalAlpha = 0.4 * Math.min(1, left * 3); ctx.lineWidth = dpr;
+        ctx.beginPath(); ctx.arc(e.b.x, e.b.y, dpr * 6.5, 0, 7); ctx.stroke();
+      }
       pulses.current = pulses.current.filter((p) => (now - p.t0) / p.dur <= 1);
       for (const p of pulses.current) {
         const k = (now - p.t0) / p.dur;
@@ -346,7 +391,7 @@ export default function LiveRun({
           const atFrontier = dist < 3;
           ctx.fillStyle = counted || atFrontier ? acc : dim;
           ctx.globalAlpha = atFrontier ? 1 : counted ? 0.75 : 0.18;
-          ctx.beginPath(); ctx.arc(r.x, r.y, dpr * (atFrontier ? 3.4 : counted ? 2.1 : 1.1), 0, 7); ctx.fill();
+          ctx.beginPath(); ctx.arc(r.x, r.y, dpr * (atFrontier ? 2.6 : counted ? 1.6 : 1.0), 0, 7); ctx.fill();
           if (atFrontier && dist === 0) {
             ctx.globalAlpha = 0.3; ctx.strokeStyle = acc; ctx.lineWidth = dpr;
             ctx.beginPath(); ctx.arc(r.x, r.y, dpr * 6, 0, 7); ctx.stroke();
@@ -365,27 +410,25 @@ export default function LiveRun({
         ci++;
       }
       if (sweep) {
-        // radiating rings from center + a headline label — polling is an event
-        const et = (now - sweep.t0) / 1000;
-        for (let ri = 0; ri < 3; ri++) {
-          const rr = ((et * 0.5 + ri / 3) % 1);
-          ctx.globalAlpha = 0.22 * (1 - rr);
-          ctx.strokeStyle = acc; ctx.lineWidth = dpr * 1.2;
-          ctx.beginPath(); ctx.arc(el.width / 2, el.height / 2, rr * Math.min(el.width, el.height) * 0.46, 0, 7); ctx.stroke();
-        }
-        ctx.globalAlpha = 0.95; ctx.fillStyle = acc;
-        ctx.font = `600 ${13 * dpr}px "JetBrains Mono", monospace`; ctx.textAlign = "center";
-        ctx.fillText(`POLLING ${sweep.n} CROWD MEMBERS…`, el.width / 2, el.height / 2 - 6 * dpr);
-        ctx.font = `${9 * dpr}px "JetBrains Mono", monospace`; ctx.globalAlpha = 0.6;
-        ctx.fillText("EACH DOT = A MEMBER ANSWERING", el.width / 2, el.height / 2 + 12 * dpr);
+        // the counting sweep speaks for itself — one quiet caption at the base
+        ctx.globalAlpha = 0.9; ctx.fillStyle = acc;
+        ctx.font = `${10 * dpr}px "JetBrains Mono", monospace`; ctx.textAlign = "center";
+        ctx.fillText(`POLLING ${sweep.n} CROWD MEMBERS…`, el.width / 2, el.height - 12 * dpr);
       }
       for (const nd of Object.values(nodesRef.current)) {
         const speaking = nd === speaker.current.node && now < speaker.current.until;
+        const isComposing = !speaking && composing.current !== null && nd.key === composing.current.key && now < composing.current.until;
         ctx.globalAlpha = 1;
         ctx.fillStyle = speaking ? acc : nd.adversarial ? warn : mid;
         const rr = dpr * 3.4 * (speaking ? 1.5 + 0.25 * Math.sin(now / 130) : 1);
         ctx.beginPath(); ctx.arc(nd.x, nd.y, rr, 0, 7); ctx.fill();
         if (speaking) { ctx.globalAlpha = 0.25; ctx.strokeStyle = acc; ctx.lineWidth = dpr; ctx.beginPath(); ctx.arc(nd.x, nd.y, rr + dpr * 6, 0, 7); ctx.stroke(); }
+        if (isComposing) {
+          // "X IS COMPOSING…" in the feed = this breathing ring on the canvas
+          ctx.globalAlpha = 0.3 + 0.2 * Math.sin(now / 300);
+          ctx.strokeStyle = acc; ctx.lineWidth = dpr;
+          ctx.beginPath(); ctx.arc(nd.x, nd.y, rr + dpr * (5 + 1.5 * Math.sin(now / 300)), 0, 7); ctx.stroke();
+        }
         if (nd.label) {
           ctx.globalAlpha = speaking ? 1 : 0.55; ctx.fillStyle = speaking ? acc : mid;
           ctx.font = `${10 * dpr}px "JetBrains Mono", monospace`; ctx.textAlign = "center";
@@ -428,7 +471,7 @@ export default function LiveRun({
           LIVE · {mode.toUpperCase()} · ENGINE V1
         </span>
         <span style={{ marginLeft: "auto", ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--t6)" }}>
-          {currentRound > 0 ? `ROUND ${currentRound} / ${maxRounds} · ` : ""}{posts} POSTS
+          {currentRound > 0 ? `ROUND ${currentRound} / ${maxR} · ` : ""}{posts} POSTS
         </span>
       </div>
       <div style={{ marginTop: 8, fontSize: 13, color: "var(--t5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{problem}</div>
@@ -441,7 +484,7 @@ export default function LiveRun({
         </div>
       )}
       <div style={{ height: 4, borderRadius: 100, background: "var(--sf2)", marginTop: 12, overflow: "hidden" }}>
-        <div style={{ width: `${status === "done" ? 100 : Math.min(96, (currentRound / Math.max(maxRounds, 1)) * 100)}%`, height: "100%", background: "var(--acc)", transition: "width .4s ease" }} />
+        <div style={{ width: `${status === "done" ? 100 : Math.min(96, (currentRound / Math.max(maxR, 1)) * 100)}%`, height: "100%", background: "var(--acc)", transition: "width .4s ease" }} />
       </div>
 
       <div style={{ display: "flex", gap: 18, flex: 1, minHeight: 0, marginTop: 14 }}>
@@ -458,9 +501,10 @@ export default function LiveRun({
             <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>
               {mode === "Jury" ? "VERDICTS" : mode === "Desk" ? "THE MEMO, ASSEMBLING" : mode === "Expedition" ? "FINDINGS LOG" : "FORUM FEED"}
             </span>
-            {status !== "running" && (
+            {/* one launch control at a time: empty feed → the hero button below; a finished run → RE-RUN up here */}
+            {status !== "running" && items.length > 0 && (
               <button onClick={() => void launch(false)} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, background: "var(--acc)", color: "var(--acc-c)", border: "none", cursor: "pointer" }}>
-                {status === "done" || posts > 0 ? "↺ RE-RUN" : "▶ LAUNCH THE RUN"}
+                ↺ RE-RUN
               </button>
             )}
           </div>
@@ -584,30 +628,61 @@ export default function LiveRun({
               </div>
             )}
             {status === "done" && posts > 0 && (
-              <div style={{ margin: "20px 0 6px", padding: "14px 16px", border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 12 }}>
+              <div style={{ margin: "20px 0 6px", padding: "16px 18px", border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 12 }}>
                 <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--acc)" }}>RUN COMPLETE · {posts} POSTS PERSISTED</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
-                  <button
-                    onClick={() => void synthesize()}
-                    disabled={!!synthesizing}
-                    style={{
-                      background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 13.5,
-                      padding: "10px 22px", borderRadius: 100, border: "none", cursor: synthesizing ? "default" : "pointer",
-                      fontFamily: "var(--font-sans), sans-serif", opacity: synthesizing ? 0.7 : 1,
-                    }}
-                  >
-                    {synthesizing ? "Synthesizing…" : "Synthesize the report →"}
-                  </button>
-                  {synthesizing && (
-                    <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--acc)", display: "inline-flex", alignItems: "center", gap: 7 }}>
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.1s ease infinite" }} />
-                      {synthesizing}
-                    </span>
-                  )}
-                  <Link href={`/sim/${simId}/report`} prefetch={false} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t6)" }}>
-                    VIEW LATEST REPORT →
-                  </Link>
-                </div>
+                {synthesizing ? (
+                  /* the button becomes the instrument: a full-width strip streaming stage updates */
+                  <div style={{ marginTop: 12, borderRadius: 100, background: "var(--acc)", padding: "13px 24px", position: "relative", overflow: "hidden" }}>
+                    <div style={{
+                      position: "absolute", inset: 0,
+                      background: "linear-gradient(90deg, transparent 30%, rgba(255,255,255,.28) 50%, transparent 70%)",
+                      backgroundSize: "400px 100%", animation: "shim 1.4s linear infinite",
+                    }} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 11, position: "relative", minWidth: 0 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc-c)", animation: "pulseDot 1.1s ease infinite", flex: "none" }} />
+                      <span style={{ fontWeight: 600, fontSize: 13.5, color: "var(--acc-c)", fontFamily: "var(--font-sans), sans-serif", flex: "none" }}>
+                        Synthesizing the report
+                      </span>
+                      <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", color: "var(--acc-c)", opacity: 0.8, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {synthesizing}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+                    {reportReady ? (
+                      <>
+                        <button
+                          onClick={() => router.push(`/sim/${simId}/report`)}
+                          style={{
+                            background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 13.5,
+                            padding: "10px 22px", borderRadius: 100, border: "none", cursor: "pointer",
+                            fontFamily: "var(--font-sans), sans-serif",
+                          }}
+                        >
+                          Read the report →
+                        </button>
+                        <button
+                          onClick={() => void synthesize()}
+                          style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "8px 16px", borderRadius: 100, background: "transparent", border: "1px solid var(--ln6)", color: "var(--t5)", cursor: "pointer" }}
+                        >
+                          SYNTHESIZE A NEW VERSION
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => void synthesize()}
+                        style={{
+                          background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 13.5,
+                          padding: "10px 22px", borderRadius: 100, border: "none", cursor: "pointer",
+                          fontFamily: "var(--font-sans), sans-serif",
+                        }}
+                      >
+                        Synthesize the report →
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {error && <div style={{ ...mono, fontSize: 10.5, color: "var(--warn)", marginTop: 14 }}>{error}</div>}

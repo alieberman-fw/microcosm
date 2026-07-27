@@ -93,13 +93,15 @@ export default function BriefComposer({
     setDraftRestored(false);
   };
 
+  // grow to fit — never clip: the page scrolls, long statements drop a size
   const autosize = () => {
     const el = problemRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
+    el.style.height = `${el.scrollHeight}px`;
   };
   useEffect(autosize, [problem]);
+  const longProblem = problem.length > 280;
 
   const addQuestion = (raw: string) => {
     const label = raw.trim().toUpperCase().slice(0, 40);
@@ -220,7 +222,7 @@ export default function BriefComposer({
           width: "100%", boxSizing: "border-box", marginTop: mode === "create" ? 18 : 0,
           background: "transparent", border: "none", outline: "none", resize: "none",
           fontFamily: "var(--font-sans), sans-serif", fontWeight: 600,
-          fontSize: "clamp(22px, 2.8vw, 34px)", lineHeight: 1.22, letterSpacing: "-.03em",
+          fontSize: longProblem ? "clamp(18px, 2vw, 24px)" : "clamp(22px, 2.8vw, 34px)", lineHeight: longProblem ? 1.4 : 1.22, letterSpacing: "-.03em",
           color: "var(--t0)", caretColor: "var(--acc)", overflow: "hidden",
         }}
       />
