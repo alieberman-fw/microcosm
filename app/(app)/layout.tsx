@@ -13,19 +13,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .from("users").select("org_id, orgs(name)").eq("id", user.id).single();
   const orgName = (userRow as { orgs?: { name?: string } } | null)?.orgs?.name ?? "personal";
 
-  // recent simulations for the sidebar history sub-menu
-  const { data: recentSims } = await supabase!
-    .from("simulations").select("id, status, brief, config")
-    .order("created_at", { ascending: false }).limit(6);
-  const recent = (recentSims ?? []).map((s) => ({
-    id: s.id as string,
-    status: s.status as string,
-    problem: String((s.brief as { problem?: string } | null)?.problem ?? "Untitled").slice(0, 60),
-    ran: !!((s.config as { run_result?: unknown } | null)?.run_result),
-  }));
-
   return (
-    <AppShell email={user.email ?? "account"} orgName={orgName} recentSims={recent}>
+    <AppShell email={user.email ?? "account"} orgName={orgName}>
       {children}
     </AppShell>
   );

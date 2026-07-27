@@ -105,14 +105,38 @@ export default function RunConfigStage({
     </button>
   );
 
-  const NumInput = ({ k, min, max }: { k: "rounds" | "max_posts" | "duration_days"; min: number; max: number }) => (
-    <input
-      type="number" min={min} max={max}
-      value={cfg[k]}
-      onChange={(e) => set(k, Math.min(Math.max(parseInt(e.target.value, 10) || min, min), max))}
-      onWheel={(e) => (e.target as HTMLInputElement).blur()}
-      style={{ ...mono, width: 74, padding: "5px 8px", fontSize: 10.5, background: "var(--sf)", border: "1px solid var(--ln4)", borderRadius: 8, color: "var(--t1)", outline: "none" }}
-    />
+  // NOTE: defined via useCallback-free stable render — draft commits on
+  // blur/Enter so typing never fights the clamp, with −/+ steppers
+  const stepFor = (k: string) => (k === "max_posts" ? 50 : 1);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const commitNum = (k: "rounds" | "max_posts" | "duration_days", min: number, max: number) => {
+    const raw = drafts[k];
+    if (raw === undefined) return;
+    const v = Math.min(Math.max(parseInt(raw, 10) || min, min), max);
+    setDrafts((d) => { const n = { ...d }; delete n[k]; return n; });
+    if (v !== cfg[k]) set(k, v);
+  };
+  const numInput = (k: "rounds" | "max_posts" | "duration_days", min: number, max: number) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 0, border: "1px solid var(--ln4)", borderRadius: 10, background: "var(--sf)", overflow: "hidden" }}>
+      <button
+        onClick={() => set(k, Math.max(min, cfg[k] - stepFor(k)))}
+        aria-label={`decrease ${k}`}
+        style={{ ...mono, fontSize: 12, width: 28, height: 30, border: "none", background: "transparent", color: "var(--t5)", cursor: "pointer" }}
+      >−</button>
+      <input
+        type="text" inputMode="numeric"
+        value={drafts[k] ?? String(cfg[k])}
+        onChange={(e) => setDrafts((d) => ({ ...d, [k]: e.target.value.replace(/[^0-9]/g, "") }))}
+        onBlur={() => commitNum(k, min, max)}
+        onKeyDown={(e) => { if (e.key === "Enter") commitNum(k, min, max); }}
+        style={{ ...mono, width: 56, textAlign: "center", padding: "6px 0", fontSize: 11, background: "transparent", border: "none", borderLeft: "1px solid var(--ln3)", borderRight: "1px solid var(--ln3)", color: "var(--t1)", outline: "none" }}
+      />
+      <button
+        onClick={() => set(k, Math.min(max, cfg[k] + stepFor(k)))}
+        aria-label={`increase ${k}`}
+        style={{ ...mono, fontSize: 12, width: 28, height: 30, border: "none", background: "transparent", color: "var(--t5)", cursor: "pointer" }}
+      >+</button>
+    </span>
   );
 
   return (
@@ -168,17 +192,17 @@ export default function RunConfigStage({
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 18, padding: "16px 18px", border: "1px solid var(--ln2)", borderRadius: 12, background: "var(--sf2)" }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <span style={label}>ROUNDS</span>
-          <NumInput k="rounds" min={RUN_RANGES.rounds.min} max={RUN_RANGES.rounds.max} />
+          {numInput("rounds", RUN_RANGES.rounds.min, RUN_RANGES.rounds.max)}
           <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t7)", alignSelf: "center" }}>{HELP.rounds}</span>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <span style={label}>MAX POSTS</span>
-          <NumInput k="max_posts" min={RUN_RANGES.max_posts.min} max={RUN_RANGES.max_posts.max} />
+          {numInput("max_posts", RUN_RANGES.max_posts.min, RUN_RANGES.max_posts.max)}
           <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t7)", alignSelf: "center" }}>{HELP.max_posts}</span>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <span style={label}>SIM DAYS</span>
-          <NumInput k="duration_days" min={RUN_RANGES.duration_days.min} max={RUN_RANGES.duration_days.max} />
+          {numInput("duration_days", RUN_RANGES.duration_days.min, RUN_RANGES.duration_days.max)}
           <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t7)", alignSelf: "center" }}>{HELP.duration_days}</span>
         </div>
         {mode === "Agora" && (

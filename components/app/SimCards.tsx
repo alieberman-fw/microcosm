@@ -26,9 +26,14 @@ export interface SimCardRow {
   reportCount?: number;
 }
 
+const PAGE = 12;
+
 export default function SimCards({ initialSims }: { initialSims: SimCardRow[] }) {
   const router = useRouter();
   const [sims, setSims] = useState(initialSims);
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<"all" | "ran" | "draft" | "reported">("all");
+  const [page, setPage] = useState(0);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [confirmFor, setConfirmFor] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -57,9 +62,38 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
     setConfirmFor(null);
   };
 
+  const visible = sims.filter((s) => {
+    if (q.trim() && !s.problem.toLowerCase().includes(q.trim().toLowerCase())) return false;
+    if (filter === "ran") return !!s.runPosts;
+    if (filter === "draft") return !s.runPosts;
+    if (filter === "reported") return (s.reportCount ?? 0) > 0;
+    return true;
+  });
+  const pages = Math.max(1, Math.ceil(visible.length / PAGE));
+  const pageRows = visible.slice(page * PAGE, (page + 1) * PAGE);
+  const pill = (on: boolean): CSSProperties => ({
+    fontFamily: "var(--font-mono), monospace", fontSize: 9, letterSpacing: ".05em", padding: "5px 12px",
+    borderRadius: 100, cursor: "pointer", background: on ? "var(--acc-dim)" : "transparent",
+    border: `1px solid ${on ? "var(--acc)" : "var(--ln4)"}`, color: on ? "var(--acc)" : "var(--t6)",
+  });
+
   return (
-    <div className="grid3" style={{ marginTop: 36 }}>
-      {sims.map((s) => {
+    <>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 26 }}>
+      <input
+        value={q}
+        onChange={(e) => { setQ(e.target.value); setPage(0); }}
+        placeholder="Search simulations…"
+        style={{ flex: 1, minWidth: 220, maxWidth: 380, padding: "10px 16px", background: "var(--sf)", border: "1px solid var(--ln3)", borderRadius: 100, fontFamily: "var(--font-sans), sans-serif", fontSize: 13, color: "var(--t1)", outline: "none" }}
+      />
+      {([["all", "ALL"], ["ran", "RAN"], ["draft", "NOT RUN"], ["reported", "HAS REPORT"]] as const).map(([k, l]) => (
+        <button key={k} onClick={() => { setFilter(k); setPage(0); }} style={pill(filter === k)}>
+          {l} {k === "all" ? sims.length : sims.filter((x) => (k === "ran" ? !!x.runPosts : k === "draft" ? !x.runPosts : (x.reportCount ?? 0) > 0)).length}
+        </button>
+      ))}
+    </div>
+    <div className="grid3" style={{ marginTop: 22 }}>
+      {pageRows.map((s) => {
         const meta = [
           s.questionCount ? `${s.questionCount} QUESTIONS` : null,
           s.docCount ? `${s.docCount} DOC${s.docCount > 1 ? "S" : ""}` : null,
@@ -168,5 +202,13 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
       </Link>
 
     </div>
+    {pages > 1 && (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 20, fontFamily: "var(--font-mono), monospace", fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)" }}>
+        <button disabled={page === 0} onClick={() => setPage((x) => Math.max(0, x - 1))} style={{ ...pill(false), cursor: page === 0 ? "default" : "pointer", color: page === 0 ? "var(--t7)" : "var(--t4)" }}>← PREV</button>
+        <span>PAGE {page + 1} / {pages} · {visible.length} SIMULATIONS</span>
+        <button disabled={page >= pages - 1} onClick={() => setPage((x) => Math.min(pages - 1, x + 1))} style={{ ...pill(false), cursor: page >= pages - 1 ? "default" : "pointer", color: page >= pages - 1 ? "var(--t7)" : "var(--t4)" }}>NEXT →</button>
+      </div>
+    )}
+    </>
   );
 }

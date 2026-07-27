@@ -12,6 +12,7 @@
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { MiniSwarm } from "@/components/app/CastingTheater";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -124,6 +125,7 @@ export default function LiveRun({
   const [note, setNote] = useState<string | null>(null);
   const [synthesizing, setSynthesizing] = useState<string | null>(null);
   const [liveCrowd, setLiveCrowd] = useState(crowdCount);
+  const [materializing, setMaterializing] = useState<{ landed: number; target: number } | null>(null);
   const router = useRouter();
 
   const synthesize = async () => {
@@ -183,7 +185,7 @@ export default function LiveRun({
       // the run needs its crowd: auto-materialize when the target says there
       // should be one but nothing exists yet (e.g. after a re-cast)
       if (!cont && liveCrowd === 0 && crowdTarget > 0) {
-        setNote(`MATERIALIZING THE CROWD FIRST — ${Math.min(crowdTarget, 300)} MEMBERS…`);
+        setMaterializing({ landed: 0, target: Math.min(crowdTarget, 300) });
         const cres = await fetch(`/api/simulations/${simId}/crowd`, { method: "POST" });
         if (cres.ok && cres.body) {
           const creader = cres.body.getReader();
@@ -198,12 +200,12 @@ export default function LiveRun({
             for (const line of lines) {
               if (!line.trim()) continue;
               const evt = JSON.parse(line) as { type: string; generated?: number };
-              if (evt.type === "members") setNote(`MATERIALIZING THE CROWD — ${evt.generated ?? "…"} LANDED…`);
+              if (evt.type === "members") setMaterializing((m) => m ? { ...m, landed: Number(evt.generated) || m.landed } : m);
               if (evt.type === "done") setLiveCrowd(Number(evt.generated) || 0);
             }
           }
         }
-        setNote(null);
+        setMaterializing(null);
       }
       const res = await fetch(`/api/simulations/${simId}/run/launch`, {
         method: "POST",
@@ -303,7 +305,7 @@ export default function LiveRun({
       nodesRef.current = layoutLeads(mode, leads, el.width, el.height);
       const cx = el.width / 2, cy = el.height / 2;
       const ring: Node[] = [];
-      const n = Math.min(Math.max(Math.ceil(crowdCount / 2), 0), 110);
+      const n = Math.min(Math.max(Math.ceil(Math.max(liveCrowd, crowdCount) / 2), 0), 110);
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2, r = Math.min(el.width, el.height) * (0.45 + ((i * 7) % 10) * 0.004);
         ring.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
@@ -344,7 +346,7 @@ export default function LiveRun({
           const atFrontier = dist < 3;
           ctx.fillStyle = counted || atFrontier ? acc : dim;
           ctx.globalAlpha = atFrontier ? 1 : counted ? 0.75 : 0.18;
-          ctx.beginPath(); ctx.arc(r.x, r.y, dpr * (atFrontier ? 2.6 : counted ? 1.6 : 1.0), 0, 7); ctx.fill();
+          ctx.beginPath(); ctx.arc(r.x, r.y, dpr * (atFrontier ? 3.4 : counted ? 2.1 : 1.1), 0, 7); ctx.fill();
           if (atFrontier && dist === 0) {
             ctx.globalAlpha = 0.3; ctx.strokeStyle = acc; ctx.lineWidth = dpr;
             ctx.beginPath(); ctx.arc(r.x, r.y, dpr * 6, 0, 7); ctx.stroke();
@@ -363,9 +365,19 @@ export default function LiveRun({
         ci++;
       }
       if (sweep) {
-        ctx.globalAlpha = 0.9; ctx.fillStyle = acc;
-        ctx.font = `${10 * dpr}px "JetBrains Mono", monospace`; ctx.textAlign = "center";
-        ctx.fillText(`POLLING ${sweep.n} CROWD MEMBERS…`, el.width / 2, el.height - 12 * dpr);
+        // radiating rings from center + a headline label — polling is an event
+        const et = (now - sweep.t0) / 1000;
+        for (let ri = 0; ri < 3; ri++) {
+          const rr = ((et * 0.5 + ri / 3) % 1);
+          ctx.globalAlpha = 0.22 * (1 - rr);
+          ctx.strokeStyle = acc; ctx.lineWidth = dpr * 1.2;
+          ctx.beginPath(); ctx.arc(el.width / 2, el.height / 2, rr * Math.min(el.width, el.height) * 0.46, 0, 7); ctx.stroke();
+        }
+        ctx.globalAlpha = 0.95; ctx.fillStyle = acc;
+        ctx.font = `600 ${13 * dpr}px "JetBrains Mono", monospace`; ctx.textAlign = "center";
+        ctx.fillText(`POLLING ${sweep.n} CROWD MEMBERS…`, el.width / 2, el.height / 2 - 6 * dpr);
+        ctx.font = `${9 * dpr}px "JetBrains Mono", monospace`; ctx.globalAlpha = 0.6;
+        ctx.fillText("EACH DOT = A MEMBER ANSWERING", el.width / 2, el.height / 2 + 12 * dpr);
       }
       for (const nd of Object.values(nodesRef.current)) {
         const speaking = nd === speaker.current.node && now < speaker.current.until;
@@ -385,7 +397,7 @@ export default function LiveRun({
     };
     raf = requestAnimationFrame(draw);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", layout); };
-  }, [mode, leads, crowdCount]);
+  }, [mode, leads, crowdCount, liveCrowd]);
 
   // feed grouping: insert a divider when round/phase changes (mode-appropriate)
   const dividers = (idx: number): string | null => {
@@ -454,8 +466,36 @@ export default function LiveRun({
           </div>
           <div ref={feedEl} style={{ flex: 1, overflowY: "auto", padding: "14px 18px" }}>
             {items.length === 0 && status !== "running" && (
-              <div style={{ fontSize: 13, lineHeight: 1.7, color: "var(--t5)", padding: "18px 4px" }}>
-                Launch to watch the {mode} deliberation live — every post persists, the crowd is polled between rounds, and citations link back to your documents.
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: "60px 24px", textAlign: "center" }}>
+                <div style={{ fontSize: 14, lineHeight: 1.7, color: "var(--t4)", maxWidth: 420 }}>
+                  Watch the {mode} deliberation live — every post persists, the crowd is polled between rounds, and citations link back to your documents.
+                </div>
+                <button
+                  onClick={() => void launch(false)}
+                  className="runCta"
+                  style={{
+                    background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 16,
+                    padding: "15px 38px", borderRadius: 100, border: "none", cursor: "pointer",
+                    fontFamily: "var(--font-sans), sans-serif",
+                  }}
+                >
+                  ▶ Launch the run
+                </button>
+                {liveCrowd === 0 && crowdTarget > 0 && (
+                  <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t6)" }}>
+                    THE CROWD ({Math.min(crowdTarget, 300)} MEMBERS) MATERIALIZES AUTOMATICALLY FIRST
+                  </span>
+                )}
+              </div>
+            )}
+            {materializing && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "40px 24px" }}>
+                <div style={{ width: "100%", maxWidth: 360 }}>
+                  <MiniSwarm label={`MATERIALIZING THE CROWD · ${materializing.landed}/${materializing.target}`} />
+                </div>
+                <div style={{ fontSize: 13, color: "var(--t5)" }}>
+                  Casting {materializing.target} crowd members before the run — they’ll be polled every round.
+                </div>
               </div>
             )}
             {items.map((it, idx) => {

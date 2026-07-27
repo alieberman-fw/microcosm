@@ -76,7 +76,9 @@ export function compilePersonaPrompt(spec: FrozenSpec, args: { mode: string; pro
     `Forum rules: write ONE post in your own voice, 60–140 words, concrete and specific — numbers, names, mechanisms. ` +
     `Reference documents by name when you use them. Address colleagues by first name. ` +
     `Start directly with your point — never prefix your post with your own name, a greeting, or markdown headers. ` +
-    `Never break character, never mention being an AI, never summarize the whole discussion — advance it.`,
+    `Never break character, never mention being an AI, never summarize the whole discussion — advance it. ` +
+    `Do NOT rush to consensus: hold your position until the evidence genuinely moves you, surface what the panel ` +
+    `has not addressed yet, and quantify disagreements instead of smoothing them over.`,
     styleBits.join(" "),
     temp,
   ].filter(Boolean).join("\n\n");
@@ -211,8 +213,12 @@ async function stabilityCheck(ctx: EngineContext, transcript: string): Promise<b
   try {
     const res = await ctx.anthropic.messages.create({
       model, max_tokens: 10,
-      system: `Read the deliberation round. Reply ONLY "moving" if positions are still materially changing, or "stable" if the panel has converged.`,
-      messages: [{ role: "user", content: transcript.slice(-6000) }],
+      system:
+        `Read the deliberation. Reply ONLY "stable" or "moving". ` +
+        `Reply "stable" ONLY IF the most recent round added NO new arguments, NO new evidence, NO position changes, ` +
+        `and left NO open challenge or unanswered question on the table. Restating agreement politely still counts as "moving" ` +
+        `if any thread is unresolved. When in ANY doubt, reply "moving".`,
+      messages: [{ role: "user", content: transcript.slice(-12000) }],
     });
     await ctx.logCall("engine.converge", model, res.usage, t0);
     const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
@@ -241,6 +247,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
   const budget = () => posts.length < ctx.cfg.max_posts && !ctx.isCancelled();
   const q = ctx.questions.length ? `Key questions: ${ctx.questions.join(" · ")}.` : "";
   let converged = false;
+  let stableStreak = 0; // stop only after TWO consecutive stable rounds (round ≥ 3)
 
   const turn = async (lead: EngineLead, o: { round: number; thread: string; tag: string; reply_to?: number | null; instruction: string; phase?: string; side?: string }) => {
     currentRound = o.round;
@@ -265,7 +272,10 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         });
       }
       await pollCrowd(ctx, round, ctx.problem);
-      if (ctx.cfg.convergence === "stability" && round >= 2 && await stabilityCheck(ctx, windowOf(posts, 24))) { converged = true; break; }
+      if (ctx.cfg.convergence === "stability" && round >= 3) {
+        stableStreak = (await stabilityCheck(ctx, windowOf(posts, 30))) ? stableStreak + 1 : 0;
+        if (stableStreak >= 2) { converged = true; break; }
+      }
     }
   } else if (ctx.mode === "Tribunal") {
     // benches by kind first, then AUTO-BALANCE: a 7-v-1 cast still gets a
@@ -437,7 +447,10 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         postNo = posts.filter((p) => p.tag.startsWith("POST")).length;
       }
       await pollCrowd(ctx, round, ctx.problem);
-      if (ctx.cfg.convergence === "stability" && round >= 2 && await stabilityCheck(ctx, windowOf(posts, 24))) { converged = true; break; }
+      if (ctx.cfg.convergence === "stability" && round >= 3) {
+        stableStreak = (await stabilityCheck(ctx, windowOf(posts, 30))) ? stableStreak + 1 : 0;
+        if (stableStreak >= 2) { converged = true; break; }
+      }
     }
   }
 
