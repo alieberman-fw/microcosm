@@ -19,6 +19,10 @@ export interface RunConfig {
   verifier: boolean;
   /** how deep the synthesized report goes — auto lets the engine match the transcript */
   report_length: "auto" | "brief" | "standard" | "dense";
+  /** §4.2 interaction density — how busy each round gets (replies, crossfire,
+   *  counter-rebuttals, crowd interjections). Structural counts live in the
+   *  DENSITY helpers below — the engine AND the estimator read the same math. */
+  density: "focused" | "lively" | "bustling";
 }
 
 export const RUN_DEFAULTS: RunConfig = {
@@ -30,7 +34,35 @@ export const RUN_DEFAULTS: RunConfig = {
   tier: "standard",
   verifier: true,
   report_length: "auto",
+  density: "lively",
 };
+
+/* ---- density math (single source of truth: engine + estimator + docs) ---- */
+
+export type Density = RunConfig["density"];
+
+/** Agora replies per round (after the opener). focused = the v1 shape. */
+export function agoraReplies(leads: number, density: Density): number {
+  if (density === "focused") return Math.min(Math.max(leads - 1, 2), 6);
+  const n = density === "lively" ? Math.ceil(leads * 1.5) : leads * 2;
+  return Math.min(Math.max(n, 2), 40);
+}
+
+/** Roundtable crossfire replies after the circuit. */
+export function crossfireSlots(leads: number, density: Density): number {
+  return density === "focused" ? 0 : density === "lively" ? Math.ceil(leads / 2) : leads;
+}
+
+/** Tribunal counter-volley slots after the rebuttals (alternating benches). */
+export function counterSlots(density: Density): number {
+  return density === "focused" ? 0 : density === "lively" ? 2 : 4;
+}
+
+/** crowd members sampled into an interjection burst after each poll. */
+export function burstSize(density: Density, crowd: number): number {
+  const k = density === "focused" ? 0 : density === "lively" ? 3 : 6;
+  return Math.min(k, crowd);
+}
 
 export const RUN_RANGES = {
   rounds: { min: 1, max: 100 },
@@ -63,6 +95,7 @@ const SHAPE = {
 export interface CostEstimate {
   posts: number;
   polls: number;
+  votes: number; // vote-pass model calls
   low: number;   // dollars
   high: number;  // dollars
 }
@@ -73,6 +106,25 @@ export const isFixedShape = (mode: string) => (FIXED_SHAPE_MODES as readonly str
 /** modes that poll the crowd for sentiment (Desk/Expedition are research choreographies) */
 export const POLLING_MODES = ["Agora", "Roundtable", "Tribunal", "Jury", "Chamber"] as const;
 
+/** rounds that poll (and burst/vote) for a mode: round modes = cfg.rounds; Chamber = 2 */
+export function pollingRoundsOf(mode: string, rounds: number): number {
+  if (mode === "Chamber") return 2;
+  return isFixedShape(mode) ? 0 : rounds;
+}
+
+/** EXACT per-round lead-post shape per mode — mirrors lib/engine.ts; the offline
+ *  matrix (tests/engine) pins the engine to these same numbers. */
+export function postsPerRound(mode: string, leads: number, density: Density): number {
+  const L = Math.max(leads, 1);
+  if (mode === "Roundtable") return L + crossfireSlots(L, density);
+  if (mode === "Tribunal") {
+    const bench = Math.min(3, Math.max(Math.floor(L / 2), 1));
+    return bench * 2 + counterSlots(density) + 1; // args + rebuttals + counters + judge
+  }
+  if (mode === "Jury") return L + 1; // verdicts + tally (density never dilutes verdict integrity)
+  return 1 + agoraReplies(L, density); // Agora: opener + routed replies
+}
+
 export function estimateRunCost(args: {
   leads: number;
   crowd: number;
@@ -82,17 +134,19 @@ export function estimateRunCost(args: {
   const { leads, crowd, cfg } = args;
   const mode = args.mode ?? "Agora";
   const m = TIER_MODELS[cfg.tier];
-  const perPost = leads > 0 ? leads : 1;
-  // fixed choreographies have their own post shapes; round modes scale with rounds
+  const L = leads > 0 ? leads : 1;
+  const pollRounds = pollingRoundsOf(mode, cfg.rounds);
+  const interjections = pollRounds * burstSize(cfg.density, crowd);
+  // fixed choreographies have their own post shapes; round modes use the shared per-round math
   const posts = Math.min(cfg.max_posts,
-    mode === "Chamber" ? perPost * 2 + 1
-    : mode === "Desk" ? perPost + 1
-    : mode === "Expedition" ? 5 * Math.min(3, perPost)
-    : mode === "Jury" ? perPost * cfg.rounds
-    : Math.max(perPost * cfg.rounds, 1) + Math.round(perPost * cfg.rounds * 0.6)); // replies ≈ 0.6× posts
-  const polls = crowd > 0
-    ? (mode === "Chamber" ? crowd * 2 : isFixedShape(mode) ? 0 : crowd * cfg.rounds)
-    : 0;
+    (mode === "Chamber" ? L * 2 + 1
+    : mode === "Desk" ? L + 1
+    : mode === "Expedition" ? 5 * Math.min(3, L)
+    : postsPerRound(mode, L, cfg.density) * cfg.rounds) + interjections);
+  const polls = crowd > 0 ? pollRounds * crowd : 0;
+  // one vote pass per polled round: leads + a crowd sample, batched ~20 voters/call
+  const votersPerRound = Math.min(L + Math.min(crowd, 12), 32);
+  const votes = pollRounds > 0 ? pollRounds * Math.ceil(votersPerRound / 20) : 0;
   const dollars = (model: string, calls: number, shape: { in: number; out: number }, cached = true) => {
     const r = RATES[model] ?? RATES["claude-sonnet-5"];
     const inTok = calls * shape.in * (cached ? SHAPE.cacheFactor : 1);
@@ -102,10 +156,11 @@ export function estimateRunCost(args: {
   let mid =
     dollars(m.leads, posts, SHAPE.post) +
     dollars(m.crowd, polls, SHAPE.poll) +
+    dollars(m.crowd, votes + (interjections > 0 ? pollRounds : 0), SHAPE.verify) + // vote + burst passes (Haiku-class batched)
     (cfg.verifier ? dollars(m.verifier, Math.round(posts * 0.5), SHAPE.verify) : 0) +
     dollars(m.synth, posts, SHAPE.synthPerPost);
   mid = Math.max(mid, 0.05);
-  return { posts, polls, low: mid * 0.7, high: mid * 1.6 };
+  return { posts, polls, votes, low: mid * 0.7, high: mid * 1.6 };
 }
 
 export interface FitFlag { level: "warn" | "info"; text: string }

@@ -31,6 +31,8 @@ const argOf = (flag, fb) => {
 };
 const BASE = argOf("--base", "http://localhost:3000").replace(/\/$/, "");
 const ONLY = argOf("--modes", "").split(",").map((s) => s.trim()).filter(Boolean);
+const KEEP = args.includes("--keep");        // skip cleanup + print the session (manual UI verification)
+const SKIP_FORUM = args.includes("--no-forum"); // matrix only
 
 const env = {};
 for (const line of readFileSync(new URL("../.env.local", import.meta.url), "utf8").split("\n")) {
@@ -148,9 +150,11 @@ async function runOne(mode, personas) {
   });
   if (!seat.ok) throw new Error(`seat panel failed: ${seat.status} ${await seat.text()}`);
 
+  // FOCUSED density = the structural v1 counts the matrix pins; the living-
+  // forum check below exercises lively separately
   const pc = await app(`/api/simulations/${simId}/config`, {
     method: "PATCH",
-    body: JSON.stringify({ mode, run: { rounds: ROUNDS, max_posts: 60, tier: "economy", convergence: "fixed", verifier: false, report_length: "brief", speaker: "round-robin", temperature: "balanced" } }),
+    body: JSON.stringify({ mode, run: { rounds: ROUNDS, max_posts: 60, tier: "economy", convergence: "fixed", verifier: false, report_length: "brief", speaker: "round-robin", temperature: "balanced", density: "focused" } }),
   });
   if (!pc.ok) throw new Error(`config failed: ${pc.status} ${await pc.text()}`);
 
@@ -197,6 +201,85 @@ async function runOne(mode, personas) {
     console.log(`✗ ${mode.padEnd(10)} ${posts} posts · stop ${stop} · polls [${polls}] · ${secs}s — ${problems.join("; ")}`);
   } else {
     console.log(`✓ ${mode.padEnd(10)} ${posts} posts · stop ${stop} · polls [${polls}] · ${secs}s`);
+  }
+  return simId;
+}
+
+/** Phase-2 living-forum check: an Agora run at LIVELY must produce threaded
+ *  chains (depth ≥ 2), crowd interjections, and vote events — then Take the
+ *  Floor must get an in-context reply. Returns the simId (kept for --keep). */
+async function livingForumCheck(personas) {
+  const t0 = Date.now();
+  const cr = await app("/api/simulations", {
+    method: "POST",
+    body: JSON.stringify({ problem: PROBLEM, questions: [{ label: "POOL VS FINISHES", detail: "which spend returns more at sale?" }], success: ["A committed answer"] }),
+  });
+  const simId = (await cr.json()).id;
+  simIds.push(simId);
+  await app(`/api/simulations/${simId}/agents`, { method: "POST", body: JSON.stringify({ personaIds: personas.leadIds, crowdPersonaIds: personas.crowdIds }) });
+  await app(`/api/simulations/${simId}/config`, {
+    method: "PATCH",
+    body: JSON.stringify({ mode: "Agora", run: { rounds: 2, max_posts: 80, tier: "economy", convergence: "fixed", verifier: false, report_length: "brief", speaker: "round-robin", density: "lively" } }),
+  });
+
+  const postEvents = []; let voteEvents = 0; let finished = false;
+  for (let slice = 0; slice < 6 && !finished; slice++) {
+    const res = await app(`/api/simulations/${simId}/run/launch`, { method: "POST", body: JSON.stringify(slice ? { continue: true } : {}) });
+    if (!res.ok) throw new Error(`lively launch failed: ${res.status}`);
+    let wantsContinue = false;
+    const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n"); buf = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const e = JSON.parse(line);
+        if (e.type === "post") postEvents.push(e);
+        else if (e.type === "votes") voteEvents += 1;
+        else if (e.type === "finished") finished = true;
+        else if (e.type === "continue") wantsContinue = true;
+        else if (e.type === "error") throw new Error(`lively run errored: ${e.error}`);
+      }
+    }
+    if (!wantsContinue) break;
+  }
+
+  // threading depth from reply_to chains
+  const bySeq = new Map(postEvents.map((p) => [p.seq, p]));
+  const depthOf = (seq) => { let d = 0, cur = bySeq.get(seq); while (cur?.reply_to != null && d < 20) { d += 1; cur = bySeq.get(cur.reply_to); } return d; };
+  const maxDepth = Math.max(...postEvents.map((p) => depthOf(p.seq)));
+  const interjections = postEvents.filter((p) => p.tag === "INTERJECTION").length;
+  const leadPosts = postEvents.filter((p) => p.tag !== "INTERJECTION").length;
+
+  // Take the Floor: mention the first lead by agent_key
+  const seat = await admin(`/rest/v1/sim_agents?sim_id=eq.${simId}&select=agent_key,spec_frozen&limit=1`);
+  const firstSeat = (await seat.json())[0];
+  const fl = await app(`/api/simulations/${simId}/floor`, {
+    method: "POST",
+    body: JSON.stringify({ content: "Before I decide: what single number would change your answer?", mentions: [firstSeat.agent_key] }),
+  });
+  let floorReplies = 0;
+  if (fl.ok) {
+    for (const line of (await fl.text()).split("\n")) {
+      try { if (JSON.parse(line).type === "post") floorReplies += 1; } catch { /* not json */ }
+    }
+  }
+
+  const problems = [];
+  if (!finished) problems.push("never finished");
+  if (leadPosts < 14) problems.push(`lead posts ${leadPosts} (want ≥14: 2×(1+6))`);
+  if (maxDepth < 2) problems.push(`max chain depth ${maxDepth} (want ≥2)`);
+  if (interjections < 3) problems.push(`interjections ${interjections} (want ≥3)`);
+  if (voteEvents < 1) problems.push("no vote events");
+  if (floorReplies < 1) problems.push(`floor got ${floorReplies} replies (want ≥1)`);
+  const secs = Math.round((Date.now() - t0) / 1000);
+  if (problems.length) {
+    failures.push({ mode: "living-forum", problems });
+    console.log(`✗ living-forum ${leadPosts}+${interjections} posts · depth ${maxDepth} · votes ${voteEvents} · floor ${floorReplies} · ${secs}s — ${problems.join("; ")}`);
+  } else {
+    console.log(`✓ living-forum ${leadPosts} lead + ${interjections} interjection posts · chain depth ${maxDepth} · ${voteEvents} vote rounds · floor ${floorReplies} repl${floorReplies === 1 ? "y" : "ies"} · ${secs}s`);
   }
   return simId;
 }
@@ -261,6 +344,14 @@ try {
     }
   }
   if (firstSim) await synthesizeReport(firstSim);
+  let forumSim = null;
+  if (!SKIP_FORUM) forumSim = await livingForumCheck(personas);
+  if (KEEP && forumSim) {
+    console.log(`\n--keep: session preserved for manual UI verification`);
+    console.log(`  run screen: ${BASE}/sim/${forumSim}/run`);
+    console.log(`  cookie: ${cookie}`);
+    console.log(`  CLEANUP IS ON YOU: re-run without --keep, or delete the smoke user + disable email manually`);
+  }
   if (failures.length) {
     exitCode = 1;
     console.log(`\nFAILURES (${failures.length}):`);
@@ -272,12 +363,16 @@ try {
   exitCode = 1;
   console.error("Smoke sweep aborted:", e.message ?? e);
 } finally {
-  try { await cleanup(); } catch (e) { console.error("cleanup issue:", e.message ?? e); }
-  // NON-NEGOTIABLE: production auth is Google-only — always re-disable email
-  if (emailEnabled) {
-    const r = await mgmtAuth({ external_email_enabled: false });
-    console.log(r.ok ? "• email provider re-disabled" : `!! FAILED to re-disable email provider (${r.status}) — disable manually NOW`);
-    if (!r.ok) exitCode = 1;
+  if (KEEP) {
+    console.log("• --keep: skipping cleanup AND leaving email enabled — clean up when done");
+  } else {
+    try { await cleanup(); } catch (e) { console.error("cleanup issue:", e.message ?? e); }
+    // NON-NEGOTIABLE: production auth is Google-only — always re-disable email
+    if (emailEnabled) {
+      const r = await mgmtAuth({ external_email_enabled: false });
+      console.log(r.ok ? "• email provider re-disabled" : `!! FAILED to re-disable email provider (${r.status}) — disable manually NOW`);
+      if (!r.ok) exitCode = 1;
+    }
   }
 }
 process.exit(exitCode);

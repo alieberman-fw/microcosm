@@ -31,6 +31,11 @@ export default async function RunPage({ params, searchParams }: {
         discipline: s.seat?.discipline || s.discipline,
         adversarial: s.seat?.adversarial || s.kind === "adversarial",
         residentSide: s.kind === "consumer" || s.kind === "resident",
+        kind: s.kind,
+        tagline: s.tagline,
+        stances: s.stances ?? [],
+        backstory: s.backstory,
+        spec: s, // full frozen spec → roster rail + PersonaProfile + canvas click
       };
     });
   const crowdCount = (agents ?? []).length - leads.length;
@@ -43,15 +48,16 @@ export default async function RunPage({ params, searchParams }: {
     return <RunScreen simId={sim.id} problem={problem} />;
   }
 
-  const [{ data: postRows }, { data: eventRows }, { count: reportCount }] = await Promise.all([
-    supabase!.from("posts").select("seq, agent_key, thread, reply_to, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true }),
+  const [{ data: postRows }, { data: eventRows }, { count: reportCount }, { data: voteRows }] = await Promise.all([
+    supabase!.from("posts").select("seq, author, agent_key, thread, reply_to, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true }),
     supabase!.from("events").select("type, payload").eq("sim_id", id).eq("type", "sentiment").order("seq", { ascending: true }),
     supabase!.from("reports").select("id", { count: "exact", head: true }).eq("sim_id", id),
+    supabase!.from("post_votes").select("seq, voter_key, voter_name, voter_role, vote").eq("sim_id", id),
   ]);
   const initialPosts: LivePost[] = (postRows ?? []).map((r) => {
     const meta = (r.cites as { cites?: { title: string; quote: string }[]; name?: string; role?: string; initials?: string; adversarial?: boolean; round?: number; phase?: string | null; side?: string | null } | null) ?? {};
     return {
-      seq: r.seq as number, agent_key: r.agent_key as string,
+      seq: r.seq as number, agent_key: r.agent_key as string, author: (r.author as string) ?? "agent",
       name: meta.name ?? "Agent", role: meta.role ?? "", initials: meta.initials ?? "·",
       adversarial: meta.adversarial ?? false,
       tag: r.tag as string, reply_to: r.reply_to as number | null, content: r.content as string,
@@ -59,6 +65,10 @@ export default async function RunPage({ params, searchParams }: {
     };
   });
   const initialSentiments: LiveSentiment[] = (eventRows ?? []).map((e) => e.payload as unknown as LiveSentiment);
+  const initialVotes = (voteRows ?? []).map((v) => ({
+    seq: v.seq as number, voter_key: v.voter_key as string, voter_name: v.voter_name as string,
+    voter_role: (v.voter_role as string) ?? "", vote: (v.vote as number) === -1 ? -1 as const : 1 as const,
+  }));
 
   const cfg: RunConfig = { ...RUN_DEFAULTS, ...(((sim.config as { run?: Partial<RunConfig> } | null)?.run) ?? {}) };
   const configuredMode = String(((sim.config as { casting?: { mode?: string } } | null)?.casting?.mode) ?? "Agora");
@@ -78,6 +88,7 @@ export default async function RunPage({ params, searchParams }: {
       crowdTarget={crowdTarget}
       initialPosts={initialPosts}
       initialSentiments={initialSentiments}
+      initialVotes={initialVotes}
       initialStatus={sim.status as string}
       maxRounds={cfg.rounds}
       hasReport={(reportCount ?? 0) > 0}

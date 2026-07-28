@@ -71,20 +71,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // fresh transcript on relaunch; a CONTINUE resumes the suspended run
   let resume: RunResume | undefined;
   const polledRounds = new Set<number>();
+  const votedRounds = new Set<number>();
   if (isContinue) {
     const runState = (config.run_state as { round?: number } | undefined) ?? {};
     const { data: prevPosts } = await supabase.from("posts")
-      .select("seq, agent_key, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true });
+      .select("seq, agent_key, tag, content, cites, reply_to").eq("sim_id", id).order("seq", { ascending: true });
     const recs: PostRec[] = (prevPosts ?? []).map((r) => {
       const meta = (r.cites as { name?: string; role?: string; round?: number } | null) ?? {};
-      return { name: meta.name ?? "Agent", role: meta.role ?? "", content: r.content as string, tag: r.tag as string, seq: r.seq as number, agentKey: r.agent_key as string, round: meta.round ?? 1 };
+      return { name: meta.name ?? "Agent", role: meta.role ?? "", content: r.content as string, tag: r.tag as string, seq: r.seq as number, agentKey: r.agent_key as string, round: meta.round ?? 1, replyTo: r.reply_to as number | null };
     });
-    const { data: prevEvents } = await supabase.from("events").select("type, payload").eq("sim_id", id).eq("type", "sentiment");
-    for (const e of prevEvents ?? []) polledRounds.add(Number((e.payload as { round?: number }).round ?? 0));
+    const { data: prevEvents } = await supabase.from("events").select("type, payload").eq("sim_id", id).in("type", ["sentiment", "votes"]);
+    for (const e of prevEvents ?? []) {
+      const round = Number((e.payload as { round?: number }).round ?? 0);
+      if (e.type === "sentiment") polledRounds.add(round);
+      else votedRounds.add(round);
+    }
     resume = { posts: recs, seq: recs.reduce((m, r) => Math.max(m, r.seq), 0), round: runState.round ?? Math.max(1, ...recs.map((r) => r.round)) };
   } else {
     await supabase.from("posts").delete().eq("sim_id", id);
     await supabase.from("events").delete().eq("sim_id", id);
+    await supabase.from("post_votes").delete().eq("sim_id", id);
   }
   await supabase.from("simulations").update({ status: "running" }).eq("id", id);
 
@@ -106,6 +112,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             thread: e.thread, reply_to: e.reply_to, tag: e.tag, content: e.content,
             cites: { cites: e.cites, name: e.name, role: e.role, initials: e.initials, adversarial: e.adversarial ?? false, round: e.round, phase: e.phase ?? null, side: e.side ?? null },
           });
+        } else if (e.type === "votes") {
+          // votes land in their own table (hover attribution + report queries)
+          // AND in events (resume detection + replay)
+          if (e.votes.length) {
+            await supabase.from("post_votes").upsert(
+              e.votes.map((v) => ({ sim_id: id, seq: v.seq, voter_key: v.voter_key, voter_name: v.voter_name, voter_role: v.voter_role, vote: v.vote })),
+              { onConflict: "sim_id,seq,voter_key" },
+            );
+          }
+          evSeq += 1;
+          await supabase.from("events").insert({ sim_id: id, seq: evSeq, type: e.type, payload: e });
         } else if (e.type !== "presence" && e.type !== "polling") {
           // presence is transient UI state — streamed, never persisted
           evSeq += 1;
@@ -136,6 +153,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           temperature: 0.7,
           deadline: Date.now() + (Number(process.env.ENGINE_CHUNK_MS) || 770_000), // ~13-min slices on Pro; env override for dev tests
           polledRounds,
+          votedRounds,
           emit, logCall,
           isCancelled: () => cancelled,
         }, resume);
