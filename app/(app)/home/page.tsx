@@ -14,7 +14,6 @@ export default async function HomePage() {
   const { data: userRow } = await supabase!
     .from("users").select("org_id, prefs").eq("id", user!.id).single();
   const prefs = (userRow?.prefs ?? {}) as { hide_onboarding?: boolean };
-  const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
   const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
 
   const [
@@ -55,12 +54,9 @@ export default async function HomePage() {
       .select("id, sim_id, spec, created_at", { count: "exact" })
       .order("created_at", { ascending: false })
       .limit(4),
-    supabase!
-      .from("agent_interactions")
-      .select("created_at, input_tokens, output_tokens")
-      .gte("created_at", since)
-      .order("created_at", { ascending: false })
-      .limit(5000),
+    // server-side rollup — raw-row fetches hit PostgREST's 1,000-row response
+    // cap on heavy days, which erased every earlier day from the chart
+    supabase!.rpc("activity_rollup", { p_days: 14 }),
     supabase!.from("simulations").select("created_at").gte("created_at", since30).limit(2000),
     supabase!.from("conversation_messages").select("created_at").gte("created_at", since30).limit(5000),
     supabase!.from("reports").select("tone:spec->verdict->>tone").limit(500),
@@ -98,17 +94,18 @@ export default async function HomePage() {
     };
   });
 
-  // 14-day activity, aggregated per UTC day — the dashboard's bar strip
+  // 14-day activity from the SQL rollup (activity_rollup RPC) — exact per-day
+  // counts regardless of volume; one heavy day can no longer blank the rest
   const dayKey = (iso: string) => iso.slice(0, 10);
   const byDay = new Map<string, { calls: number; tokens: number }>();
   for (let i = 13; i >= 0; i--) {
     byDay.set(dayKey(new Date(Date.now() - i * 86_400_000).toISOString()), { calls: 0, tokens: 0 });
   }
-  for (const r of activityRows ?? []) {
-    const slot = byDay.get(dayKey(r.created_at as string));
+  for (const r of (activityRows ?? []) as { day: string; calls: number; tokens_in: number; tokens_out: number }[]) {
+    const slot = byDay.get(dayKey(String(r.day)));
     if (slot) {
-      slot.calls += 1;
-      slot.tokens += (Number(r.input_tokens) || 0) + (Number(r.output_tokens) || 0);
+      slot.calls += Number(r.calls) || 0;
+      slot.tokens += (Number(r.tokens_in) || 0) + (Number(r.tokens_out) || 0);
     }
   }
   const activity: HomeActivityDay[] = [...byDay.entries()].map(([day, v]) => ({ day, ...v }));

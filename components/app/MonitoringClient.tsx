@@ -41,6 +41,25 @@ export interface InteractionRow {
 
 export interface ConvMeta { title: string; participants: number }
 
+/** SQL rollup row (activity_rollup RPC) — exact 14-day analytics regardless
+ *  of volume; the raw-row window is only a browsing view of recent calls */
+export interface RollupRow {
+  day: string;
+  model: string;
+  surface: string;
+  calls: number;
+  tokens_in: number;
+  tokens_out: number;
+  errors: number;
+  latency_ms_sum: number;
+}
+
+function costOfRollup(r: RollupRow): number {
+  const rate = RATES[r.model];
+  if (!rate) return 0;
+  return ((Number(r.tokens_in) || 0) / 1e6) * rate.in + ((Number(r.tokens_out) || 0) / 1e6) * rate.out;
+}
+
 /** which part of the app a call came from, derived from its surface */
 function areaOf(surface: string): string {
   if (surface.startsWith("conversation")) return "Conversations";
@@ -106,7 +125,7 @@ function BreakdownBar({ label, value, max, sub }: { label: string; value: number
 
 interface Ctx { loading: boolean; asked?: string; replied?: string }
 
-export default function MonitoringClient({ rows, conversations }: { rows: InteractionRow[]; conversations: Record<string, ConvMeta> }) {
+export default function MonitoringClient({ rows, rollup = [], conversations }: { rows: InteractionRow[]; rollup?: RollupRow[]; conversations: Record<string, ConvMeta> }) {
   const supabase = createClient();
   const [area, setArea] = useState("ALL");
   const [model, setModel] = useState("ALL");
@@ -118,8 +137,8 @@ export default function MonitoringClient({ rows, conversations }: { rows: Intera
   const [ctx, setCtx] = useState<Record<number, Ctx>>({});
 
   useEffect(() => { setPage(0); }, [area, model, status, q]);
-  const models = useMemo(() => [...new Set(rows.map((r) => r.model))], [rows]);
-  const areas = useMemo(() => [...new Set(rows.map((r) => areaOf(r.surface)))], [rows]);
+  const models = useMemo(() => [...new Set([...rows.map((r) => r.model), ...rollup.map((r) => r.model)])], [rows, rollup]);
+  const areas = useMemo(() => [...new Set([...rows.map((r) => areaOf(r.surface)), ...rollup.map((r) => areaOf(r.surface))])], [rows, rollup]);
 
   const ql = q.trim().toLowerCase();
   const filtered = rows
@@ -128,48 +147,84 @@ export default function MonitoringClient({ rows, conversations }: { rows: Intera
     .filter((r) => status === "ALL" || (status === "OK" ? r.status === "ok" : r.status !== "ok"))
     .filter((r) => !ql || [r.agent_name ?? "", r.surface, r.model, conversations[r.conversation_id ?? ""]?.title ?? ""].join(" ").toLowerCase().includes(ql));
 
+  // analytics source: with NO filters active, the SQL rollup gives EXACT
+  // 14-day numbers (the raw window caps at the newest rows and a heavy day
+  // used to blank all earlier days); the search filter always falls back to
+  // the row window since text search can't run on aggregates
+  const rollupActive = rollup.length > 0 && !ql;
+  const rollupFiltered = useMemo(() => rollup
+    .filter((r) => area === "ALL" || areaOf(r.surface) === area)
+    .filter((r) => model === "ALL" || r.model === model)
+    .filter((r) => status === "ALL" || (status === "ERRORS" ? Number(r.errors) > 0 : true)),
+  [rollup, area, model, status]);
+
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const pageRows = filtered.slice(page * PAGE, (page + 1) * PAGE);
-  const calls = filtered.length;
-  const tokIn = filtered.reduce((a, r) => a + (r.input_tokens ?? 0), 0);
-  const tokOut = filtered.reduce((a, r) => a + (r.output_tokens ?? 0), 0);
-  const errors = filtered.filter((r) => r.status !== "ok").length;
-  const avgLatency = calls ? Math.round(filtered.reduce((a, r) => a + (r.latency_ms ?? 0), 0) / calls) : 0;
-  const cost = filtered.reduce((a, r) => a + costOf(r), 0);
+  const calls = rollupActive
+    ? rollupFiltered.reduce((a, r) => a + (status === "ERRORS" ? Number(r.errors) : Number(r.calls)), 0)
+    : filtered.length;
+  const tokIn = rollupActive ? rollupFiltered.reduce((a, r) => a + (Number(r.tokens_in) || 0), 0) : filtered.reduce((a, r) => a + (r.input_tokens ?? 0), 0);
+  const tokOut = rollupActive ? rollupFiltered.reduce((a, r) => a + (Number(r.tokens_out) || 0), 0) : filtered.reduce((a, r) => a + (r.output_tokens ?? 0), 0);
+  const errors = rollupActive ? rollupFiltered.reduce((a, r) => a + (Number(r.errors) || 0), 0) : filtered.filter((r) => r.status !== "ok").length;
+  const avgLatency = rollupActive
+    ? (calls ? Math.round(rollupFiltered.reduce((a, r) => a + (Number(r.latency_ms_sum) || 0), 0) / Math.max(calls, 1)) : 0)
+    : (calls ? Math.round(filtered.reduce((a, r) => a + (r.latency_ms ?? 0), 0) / calls) : 0);
+  const cost = rollupActive ? rollupFiltered.reduce((a, r) => a + costOfRollup(r), 0) : filtered.reduce((a, r) => a + costOf(r), 0);
 
-  // charts (computed over the filtered set so the rail drives everything)
+  // 14-day chart — rollup path buckets by the RPC's UTC day, row path by local day
   const daily = useMemo(() => {
     const days: { key: string; label: string; calls: number; cost: number }[] = [];
     const now = new Date();
     for (let i = 13; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-      days.push({ key: d.toDateString(), label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }), calls: 0, cost: 0 });
+      if (rollupActive) {
+        const d = new Date(Date.now() - i * 86_400_000);
+        days.push({ key: d.toISOString().slice(0, 10), label: d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" }), calls: 0, cost: 0 });
+      } else {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+        days.push({ key: d.toDateString(), label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }), calls: 0, cost: 0 });
+      }
     }
     const ix = new Map(days.map((d, i) => [d.key, i]));
-    filtered.forEach((r) => {
-      const k = new Date(r.created_at).toDateString();
-      const i = ix.get(k);
-      if (i !== undefined) { days[i].calls++; days[i].cost += costOf(r); }
-    });
+    if (rollupActive) {
+      rollupFiltered.forEach((r) => {
+        const i = ix.get(String(r.day).slice(0, 10));
+        if (i !== undefined) { days[i].calls += Number(r.calls) || 0; days[i].cost += costOfRollup(r); }
+      });
+    } else {
+      filtered.forEach((r) => {
+        const k = new Date(r.created_at).toDateString();
+        const i = ix.get(k);
+        if (i !== undefined) { days[i].calls++; days[i].cost += costOf(r); }
+      });
+    }
     return days;
-  }, [filtered]);
+  }, [filtered, rollupActive, rollupFiltered]);
   const maxDaily = Math.max(1, ...daily.map((d) => d.calls));
 
   const byModel = useMemo(() => {
     const m = new Map<string, { calls: number; cost: number }>();
-    filtered.forEach((r) => {
-      const e = m.get(r.model) ?? { calls: 0, cost: 0 };
-      e.calls++; e.cost += costOf(r);
-      m.set(r.model, e);
-    });
+    if (rollupActive) {
+      rollupFiltered.forEach((r) => {
+        const e = m.get(r.model) ?? { calls: 0, cost: 0 };
+        e.calls += Number(r.calls) || 0; e.cost += costOfRollup(r);
+        m.set(r.model, e);
+      });
+    } else {
+      filtered.forEach((r) => {
+        const e = m.get(r.model) ?? { calls: 0, cost: 0 };
+        e.calls++; e.cost += costOf(r);
+        m.set(r.model, e);
+      });
+    }
     return [...m.entries()].sort((a, b) => b[1].cost - a[1].cost);
-  }, [filtered]);
+  }, [filtered, rollupActive, rollupFiltered]);
 
   const byArea = useMemo(() => {
     const m = new Map<string, number>();
-    filtered.forEach((r) => m.set(areaOf(r.surface), (m.get(areaOf(r.surface)) ?? 0) + 1));
+    if (rollupActive) rollupFiltered.forEach((r) => m.set(areaOf(r.surface), (m.get(areaOf(r.surface)) ?? 0) + (Number(r.calls) || 0)));
+    else filtered.forEach((r) => m.set(areaOf(r.surface), (m.get(areaOf(r.surface)) ?? 0) + 1));
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [filtered]);
+  }, [filtered, rollupActive, rollupFiltered]);
 
   const toggle = async (r: InteractionRow) => {
     const next = expanded === r.id ? null : r.id;
@@ -220,7 +275,7 @@ export default function MonitoringClient({ rows, conversations }: { rows: Intera
       </div>
 
       <div className="grid4" style={{ marginTop: 24 }}>
-        <Tile k={`MODEL CALLS · LAST ${rows.length}`} v={String(calls)} sub={errors ? `${errors} ERRORS` : "NO ERRORS"} />
+        <Tile k={rollupActive ? "MODEL CALLS · 14 DAYS" : `MODEL CALLS · SEARCH · LAST ${rows.length}`} v={calls.toLocaleString()} sub={errors ? `${errors} ERRORS` : "NO ERRORS"} />
         <Tile k="TOKENS IN" v={tokIn.toLocaleString()} />
         <Tile k="TOKENS OUT" v={tokOut.toLocaleString()} />
         <Tile k="EST. SPEND" v={`$${cost.toFixed(2)}`} sub={`AVG LATENCY ${avgLatency}MS · ESTIMATE ONLY`} accent />
