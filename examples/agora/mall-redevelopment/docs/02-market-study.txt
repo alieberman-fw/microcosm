@@ -1,0 +1,46 @@
+ARVADA WADSWORTH CORRIDOR — MARKET STUDY (EXECUTIVE SUMMARY)
+Prepared by Copperline Analytics for Southgate Acquisition LLC · March 2026
+All data synthetic/demonstration
+
+1. MULTIFAMILY DEMAND
+Within the 3-mile primary market area (PMA):
+- Existing inventory: 8,420 market-rate units; stabilized occupancy 94.1%
+- Under construction: 1,140 units across 4 projects (deliveries 2026–2027)
+- New Class A effective rents (2025 leases): $1.98/SF average
+  - Studio $1,620 ($2.31/SF) · 1BR $1,890 ($2.08/SF) · 2BR $2,410 ($1.83/SF)
+- Concessions: 6 weeks free on new lease-ups, burning off at stabilization
+- Absorption at the two most recent comparable lease-ups:
+  - The Foundry (2024, 312 units): 21 units/month to 93%
+  - Rail & Vine (2023, 268 units): 24 units/month to 95%
+- PMA renter household growth forecast: +1,410 households/year through 2030,
+  driven by G-Line access and Denver-core price displacement.
+Conclusion: 900 units in two phases of ~450 is absorbable at 20–24 units/
+month per phase IF phased at least 24 months apart. Underwriting above
+$2.05/SF average requires a finish/amenity package exceeding current PMA
+Class A, or a 3–5 year rent-growth bet. We model $1.95–2.05/SF at opening.
+
+2. RETAIL REALITY CHECK
+- PMA retail vacancy: 11.8%; corridor strip vacancy 15.2%
+- Achieved NNN rents, new-construction street retail (six comps, 2023–2025):
+  $22.00–$27.50/SF, average $24.75/SF
+- Anchor-adjacent junior-box demand is weak: two backfills in the PMA took
+  31 and 44 months to lease.
+- Supportable NEW street retail at Southgate given trade-area leakage
+  analysis: 60,000–85,000 SF at stabilization. A 120,000 SF program implies
+  either drawing regional tenancy (unproven at this node) or 25%+ structural
+  vacancy.
+Conclusion: right-size retail to 70,000–80,000 SF anchored by food &
+beverage and the existing GreenLeaf grocer.
+
+3. RESIDENT SENTIMENT (SURVEY, n=402, PMA HOUSEHOLDS)
+- 47% support redeveloping Southgate "as proposed or denser"
+- 29% conditional: traffic mitigation and park delivery in Phase 1 are the
+  two most-cited conditions (68% and 54% of conditional respondents)
+- 18% oppose any residential above 3 stories on the site
+- Owners within 1/2 mile skew oppose (41% oppose) vs. renters (9% oppose)
+
+4. COST ENVIRONMENT
+- Podium multifamily hard costs, Denver metro Q1-2026: $242–265/SF
+- Anchor demolition with slab/foundation removal and asbestos abatement in
+  1970s retail stock has run $19–24/SF on three recent metro projects —
+  materially above typical seller estimates.

@@ -1,0 +1,41 @@
+THE LARKSPUR — TRAFFIC IMPACT ANALYSIS (EXECUTIVE SUMMARY)
+Trident Transportation Group · January 2026 · Synthetic/demonstration
+
+TRIP GENERATION (ITE 11th Edition, multifamily mid-rise + strip retail,
+with 12% internal capture and 8% transit/walk reduction per corridor overlay)
+- Weekday daily: 2,412 net new vehicle trips
+- AM peak hour: 174 net new trips (41 in / 133 out)
+- PM peak hour: 218 net new trips (132 in / 86 out)
+
+STUDY INTERSECTIONS — LEVEL OF SERVICE (LOS), EXISTING → 2029 BUILD
+1. Milbrook Rd & Leland Ave (signalized):
+   AM: LOS C (28.4s delay) → LOS C (31.9s)
+   PM: LOS D (41.2s) → LOS E (61.7s)  ** DEGRADES BELOW LOS D STANDARD **
+   With mitigation (EB right-turn lane + signal retiming): PM LOS D (48.1s)
+2. Milbrook Rd & Site Drive (new, unsignalized RIRO+left-in):
+   PM LOS B; 95th percentile queue 3 vehicles
+3. Leland Ave & Ashford Grove Dr (all-way stop):
+   AM: LOS B → LOS C (school peak overlaps); PM: LOS B → LOS B
+   Cut-through analysis: model projects 34–58 additional PM peak vehicles
+   using Ashford Grove Dr if no traffic calming is installed; with two speed
+   tables and a no-right-turn (4–6 PM) restriction, projection falls to 8–15.
+
+MITIGATION PACKAGE (RECOMMENDED, APPLICANT-FUNDED)
+- EB right-turn lane on Milbrook at Leland + signal retiming: $410,000
+- Two speed tables + signage on Ashford Grove Dr: $58,000
+- Leland Ave sidewalk gap closure (620 ft, west side): $195,000
+- Total: $663,000
+
+SCHOOL PEDESTRIAN NOTE
+Leland Elementary sits 0.4 mi north. A 2-day walk audit (school arrival
+window) counted 9 students using the Leland Ave west sidewalk adjacent to
+the site. There is no recorded pedestrian easement across the site itself;
+the informal desire path across the church lot is not a dedicated route.
+The sidewalk gap closure above completes the designated Safe Routes map.
+
+LIMITATIONS (for cross-examination honesty)
+- Counts taken in November (school in session) on Tue/Wed/Thu; no special-
+  event (church peak Sunday) analysis was scoped — Sunday church peak
+  overlaps retail peak and was NOT modeled.
+- BRT (2029) assumed operational in the build year; if BRT slips, the
+  transit reduction (8%) overstates relief by roughly 190 daily trips.

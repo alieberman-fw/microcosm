@@ -1,0 +1,47 @@
+BUCKEYE LOGISTICS PORTFOLIO — PROPERTY CONDITION ASSESSMENT (SUMMARY)
+Keystone Building Sciences · site visits January 2026 · Synthetic/demonstration
+Commissioned by prospective purchaser (NOT the seller's 2019 report)
+
+OVERALL
+Three functional 1980s shallow-bay buildings in fair-to-good condition with
+deferred capital in roofing and pavements. Structures sound; no ADA or
+environmental red flags beyond routine (see Phase I, separate cover).
+
+ROOFING — PRIMARY FINDING
+- Building A (148,000 SF): original 1984 ballasted EPDM, overlaid 2007.
+  Core cuts show saturated insulation across ~35% of field area. Active
+  leaks in 4 suites. RECOMMENDATION: full replacement within 12–18 months.
+  Budget $1,180,000 ($7.97/SF of roof area).
+- Building B (132,000 SF): 2007 overlay at end of service life; widespread
+  seam failures. Replacement within 24–36 months. Budget $1,020,000.
+- Building C (120,000 SF): 2016 TPO in serviceable condition; repairs and
+  preventive maintenance only. Budget $85,000 over the term.
+- The "professional maintenance contract" referenced by ownership is a
+  semi-annual inspection and patch program; it has extended service life
+  but does not alter end-of-life replacement timing for A and B.
+
+PAVEMENTS
+- Truck courts A & B: alligatored full-depth failures at dock approaches;
+  sealcoating (2024) is cosmetic. Reconstruction of 96,000 SF of heavy-duty
+  pavement: $410,000 within 24 months.
+- Auto parking: mill/overlay within 5 years: $145,000.
+
+OTHER SYSTEMS
+- Dock equipment: 61 positions; 17 levelers beyond service life: $127,000
+- HVAC (office areas): 14 RTUs original/aged: $98,000 over 3 years
+- Fire protection: wet systems OK; Building B main requires obstruction
+  investigation per NFPA 25: $18,000
+- Electrical: 1,200A services adequate for current tenancy; no EV provision
+
+CAPITAL SUMMARY (PURCHASER BUDGET BASIS)
+- Immediate–18 months: $1,735,000
+- 19–36 months: $1,105,000
+- TOTAL NEAR-TERM (36 mo): $2,840,000 ($7.10/SF portfolio-wide)
+- Years 4–7 reserve: $690,000 additional
+
+UNDERWRITING NOTE
+At the offered $41.2M, near-term capex brings effective basis to ~$110/SF
+before leasing costs on ~180,000 SF of 24-month rollover (TI/LC at $2.50–
+4.00/SF shallow-bay norms adds $450–720K). Purchasers should model NOI
+interruption during Building A roof replacement (phased, tenants in place,
+but two suites require temporary vacancy of ~60 days each).

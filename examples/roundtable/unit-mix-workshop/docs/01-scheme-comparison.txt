@@ -1,0 +1,43 @@
+SOLANO YARDS — UNIT MIX SCHEME COMPARISON (DESIGN TEAM WORKSHEET)
+Prepared by the development team with Corella Architects · Synthetic/demonstration
+Site: 3.1 ac, entitled 280 units (±10% administrative flex), 5-story wrap, Tempe AZ
+
+SCHEME A — "CAMPUS DENSITY" (296 units, uses +5.7% flex)
+  Micro-studio (380 SF): 64 · Studio (470 SF): 72 · 1BR (660 SF): 108
+  2BR (980 SF): 52 · 3BR: 0
+  Net rentable: 182,360 SF · Avg unit 616 SF
+  Parking: 0.85/unit (252 stalls, one podium level)
+  Underwriting assumptions (team draft): micro/studio premium $0.42/SF over
+  1BR; studio turn time 22 days; blended rent $2.31/SF
+  Projected stabilized NOI: $6.41M
+
+SCHEME B — "BALANCED" (280 units)
+  Studio (470 SF): 42 · 1BR (680 SF): 126 · 2BR (1,010 SF): 92 · 3BR (1,240 SF): 20
+  Net rentable: 231,700 SF · Avg unit 828 SF
+  Parking: 1.10/unit (308 stalls, podium + tuck-under)
+  Underwriting: blended rent $2.02/SF
+  Projected stabilized NOI: $6.28M
+
+SCHEME C — "FAMILY LEAN" (252 units)
+  Studio: 18 · 1BR (700 SF): 84 · 2BR (1,040 SF): 108 · 3BR (1,260 SF): 42
+  Net rentable: 247,220 SF · Avg unit 981 SF
+  Parking: 1.45/unit (365 stalls, 1.5 podium levels)
+  Underwriting: blended rent $1.86/SF; 3BR premium to comps justified by
+  "zero new 3BR competition within 3 miles"
+  Projected stabilized NOI: $6.19M
+
+COST NOTES (Q1-2026 pricing, Hensley Cost Consulting)
+- Podium parking: $34,500/stall; each deleted stall ≈ $31–36K of hard cost
+- Micro-unit kitchens/baths raise $/SF ~8% vs 1BR; total hard cost delta
+  Scheme A vs B: +$2.9M
+- Scheme C adds a podium half-level: +$4.1M vs Scheme B
+
+AMENITY OPTIONS (pick one package in the recommendation)
+  P1 "Commuter" ($1.4M): gym, co-work, bike shop, parcel room
+  P2 "Resort" ($3.2M): P1 + pool deck, spa, outdoor kitchens
+  P3 "Family+" ($2.3M): P1 + playground, study rooms, dog run, larger storage
+
+OPEN QUESTIONS FOR THE PANEL (from the design team)
+- Is the $0.42/SF micro/studio premium supportable post-2026 deliveries?
+- Does 0.85/unit parking pass lender committee even if the city allows it?
+- Are 42 three-bedrooms absorbable at $2,340/mo, or is 20 the ceiling?
