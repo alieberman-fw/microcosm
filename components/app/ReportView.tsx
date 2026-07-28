@@ -65,7 +65,11 @@ export default function ReportView({
     ...(spec.verification
       ? [{ label: "CLAIMS CHECKED", value: String(spec.verification.checks), sub: `${spec.verification.contradicted} CONTRADICTED` }]
       : []),
-    { label: "CONVERGENCE", value: m.converged ? "REACHED" : "OPEN", sub: `${spec.dissents.length} DISSENT${spec.dissents.length === 1 ? "" : "S"} PRESERVED` },
+    {
+      label: "HOW IT ENDED",
+      value: m.converged ? "CONVERGED" : m.stop === "choreography" ? "PHASES DONE" : m.stop === "budget" ? "BUDGET CAP" : m.stop === "rounds" ? "ALL ROUNDS" : "OPEN",
+      sub: `${spec.dissents.length} DISSENT${spec.dissents.length === 1 ? "" : "S"} PRESERVED`,
+    },
   ];
 
   return (
@@ -136,9 +140,9 @@ export default function ReportView({
         </div>
       )}
 
-      {/* findings per question */}
+      {/* findings per question + per success criterion */}
       <div style={{ marginTop: 36 }}>
-        <div style={label}>FINDINGS · ONE PER QUESTION TO RESOLVE</div>
+        <div style={label}>FINDINGS · YOUR QUESTIONS AND SUCCESS CRITERIA</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 14 }}>
           {spec.sections.map((sct, i) => (
             <div key={i} className="card" style={{ padding: "20px 24px" }}>
@@ -151,6 +155,22 @@ export default function ReportView({
           ))}
         </div>
       </div>
+
+      {/* success criteria — the delivery receipt */}
+      {(spec.criteria?.length ?? 0) > 0 && (
+        <div style={{ marginTop: 34 }}>
+          <div style={label}>SUCCESS CRITERIA · WHAT YOU ASKED FOR, WHERE IT'S DELIVERED</div>
+          <div className="card" style={{ marginTop: 14, padding: "18px 24px" }}>
+            {spec.criteria!.map((c, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 12, padding: "8px 0", borderBottom: i < spec.criteria!.length - 1 ? "1px solid var(--ln2)" : "none" }}>
+                <span style={{ ...mono, fontSize: 11, color: "var(--acc)", flex: "none" }}>✓</span>
+                <span style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--t2)", flex: 1, minWidth: 0 }}>{c.criterion}</span>
+                <span style={{ ...mono, fontSize: 9, letterSpacing: ".04em", color: "var(--t6)", flex: "none", maxWidth: 300, textAlign: "right" }}>{c.where.toUpperCase()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* risk register */}
       {spec.risks.length > 0 && (

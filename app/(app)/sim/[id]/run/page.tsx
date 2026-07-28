@@ -61,13 +61,18 @@ export default async function RunPage({ params, searchParams }: {
   const initialSentiments: LiveSentiment[] = (eventRows ?? []).map((e) => e.payload as unknown as LiveSentiment);
 
   const cfg: RunConfig = { ...RUN_DEFAULTS, ...(((sim.config as { run?: Partial<RunConfig> } | null)?.run) ?? {}) };
-  const mode = String(((sim.config as { casting?: { mode?: string } } | null)?.casting?.mode) ?? "Agora");
+  const configuredMode = String(((sim.config as { casting?: { mode?: string } } | null)?.casting?.mode) ?? "Agora");
+  // a persisted transcript displays under the mode that PRODUCED it — changing
+  // the configured mode never relabels an old run's posts
+  const lastRunMode = ((sim.config as { run_result?: { mode?: string } } | null)?.run_result?.mode) ?? null;
+  const displayMode = initialPosts.length > 0 && lastRunMode ? String(lastRunMode) : configuredMode;
 
   return (
     <LiveRun
       simId={sim.id}
       problem={problem}
-      mode={mode}
+      mode={displayMode}
+      configuredMode={configuredMode}
       leads={leads}
       crowdCount={crowdCount}
       crowdTarget={crowdTarget}

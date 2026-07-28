@@ -67,8 +67,15 @@ export function compilePersonaPrompt(spec: FrozenSpec, args: { mode: string; pro
     : args.temperature === "exploratory"
     ? "Chase tail risks and second-order effects others might miss."
     : "";
+  const seatRole = spec.seat?.role;
+  const seatDiffers = !!seatRole && seatRole.trim().toLowerCase() !== (spec.role ?? "").trim().toLowerCase();
   return [
-    `You are ${spec.name}, ${spec.seat?.role ?? spec.role}.`,
+    `You are ${spec.name}, ${seatRole ?? spec.role}.`,
+    // the seat is the MANDATE: a matched persona speaks to the seat it holds,
+    // with its own background as the source of authority — never disclaims it
+    seatDiffers
+      ? `The panel seated you as its ${seatRole}${spec.seat?.why ? ` — ${spec.seat.why}` : ""}. Speak with that seat's authority on every turn; your background below is how you earned the seat, not a reason to hedge or hand the question to someone else.`
+      : "",
     spec.tagline ? `In one line: ${spec.tagline}.` : "",
     spec.backstory ? `Background: ${spec.backstory}` : "",
     spec.stances?.length ? `Standing positions you argue from:\n${spec.stances.map((x) => `- ${x}`).join("\n")}` : "",
@@ -230,10 +237,14 @@ async function stabilityCheck(ctx: EngineContext, transcript: string): Promise<b
 
 export interface PostRec { name: string; role: string; content: string; tag: string; seq: number; agentKey: string; round: number }
 
+/** why the run stopped — the UI and the report must never claim convergence
+ *  for a mode that simply finished its fixed choreography */
+export type StopReason = "stability" | "rounds" | "budget" | "choreography";
+
 /** the seven §5 choreographies over shared primitives */
 export interface RunResume { posts: PostRec[]; seq: number; round: number }
 
-export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{ posts: number; converged: boolean; suspendedAtRound?: number }> {
+export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{ posts: number; converged: boolean; stopReason: StopReason; suspendedAtRound?: number }> {
   const posts: PostRec[] = resume?.posts ? [...resume.posts] : [];
   let seq = resume?.seq ?? 0;
   let currentRound = 0;
@@ -247,12 +258,14 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
   const budget = () => posts.length < ctx.cfg.max_posts && !ctx.isCancelled();
   const q = ctx.questions.length ? `Key questions: ${ctx.questions.join(" · ")}.` : "";
   let converged = false;
+  let stopReason: StopReason = "rounds";
   let stableStreak = 0; // stop only after TWO consecutive stable rounds (round ≥ 3)
 
-  const turn = async (lead: EngineLead, o: { round: number; thread: string; tag: string; reply_to?: number | null; instruction: string; phase?: string; side?: string }) => {
+  const turn = async (lead: EngineLead, o: { round: number; thread: string; tag: string; reply_to?: number | null; instruction: string; phase?: string; side?: string; transcript?: string }) => {
+    const { transcript, ...rest } = o;
     currentRound = o.round;
     seq += 1;
-    const r = await speak(ctx, lead, { seq, transcript: windowOf(posts), ...o });
+    const r = await speak(ctx, lead, { seq, transcript: transcript ?? windowOf(posts), ...rest });
     record(lead, o.tag, r.text);
     return r;
   };
@@ -263,7 +276,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       for (const lead of ctx.leads) {
         if (!budget()) break;
         if (did(lead.spec.name, `ROUND ${round}`, round)) continue; // resumed mid-round
-        if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: round };
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
         await turn(lead, {
           round, thread: "ROUNDTABLE", tag: `ROUND ${round}`,
           instruction: round === 1
@@ -274,7 +287,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       await pollCrowd(ctx, round, ctx.problem);
       if (ctx.cfg.convergence === "stability" && round >= 3) {
         stableStreak = (await stabilityCheck(ctx, windowOf(posts, 30))) ? stableStreak + 1 : 0;
-        if (stableStreak >= 2) { converged = true; break; }
+        if (stableStreak >= 2) { converged = true; stopReason = "stability"; break; }
       }
     }
   } else if (ctx.mode === "Tribunal") {
@@ -300,13 +313,13 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       for (const lead of bench(proSide, round)) {
         if (!budget()) break;
         if (did(lead.spec.name, "ARGUMENT", round)) continue;
-        if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: round };
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
         await turn(lead, { round, thread: "TRIBUNAL", tag: "ARGUMENT", side: "pro", instruction: `Round ${round}: argue FOR the thesis with your strongest specific evidence. ${q}` });
       }
       for (const lead of bench(residentSide, round)) {
         if (!budget()) break;
         if (did(lead.spec.name, "REBUTTAL", round)) continue;
-        if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: round };
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
         await turn(lead, { round, thread: "TRIBUNAL", tag: "REBUTTAL", side: "con", instruction: `Round ${round}: rebut the arguments just made — attack the weakest link with specifics.` });
       }
       if (did("The Judge", "JUDGE'S NOTE", round)) continue;
@@ -320,17 +333,18 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     for (const lead of ctx.leads) {
       if (!budget()) break;
       if (did(lead.spec.name, "INDEPENDENT TAKE")) continue;
-      if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: 1 };
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 1 };
       currentRound = 1;
       seq += 1;
       const r = await speak(ctx, lead, { seq, round: 1, thread: "CHAMBER", tag: "INDEPENDENT TAKE", phase: "takes", instruction: `Write your INDEPENDENT take — you have NOT seen anyone else's. ${q}`, transcript: "" });
       record(lead, "INDEPENDENT TAKE", r.text);
     }
+    await pollCrowd(ctx, 1, ctx.problem); // crowd reacts to the raw takes
     const takes = posts.filter((p) => p.tag === "INDEPENDENT TAKE");
     for (let i = 0; i < ctx.leads.length && budget(); i++) {
       const reviewer = ctx.leads[i];
       if (did(reviewer.spec.name, "BLIND REVIEW")) continue;
-      if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: 2 };
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 2 };
       currentRound = 2;
       const target = takes[(i + 1) % takes.length];
       seq += 1;
@@ -338,23 +352,72 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       record(reviewer, "BLIND REVIEW", r.text);
     }
     const chair = ctx.leads[0];
-    if (outOfTime() && !did(chair.spec.name, "CHAIR SYNTHESIS")) return { posts: posts.length, converged: false, suspendedAtRound: 3 };
+    if (outOfTime() && !did(chair.spec.name, "CHAIR SYNTHESIS")) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 3 };
     currentRound = 3;
     seq += 1;
     const r = await speak(ctx, chair, { seq, round: 3, thread: "CHAMBER", tag: "CHAIR SYNTHESIS", phase: "synthesis", instruction: `As chair, synthesize the takes and reviews into the panel's position: points of consensus, live disagreements, and the recommendation.`, transcript: windowOf(posts, 24), maxTokens: 1400 });
     record(chair, "CHAIR SYNTHESIS", r.text);
-    converged = true;
+    await pollCrowd(ctx, 3, ctx.problem); // and to the chair's recommendation
+    stopReason = "choreography"; // fixed shape complete — NOT convergence
   } else if (ctx.mode === "Jury") {
-    for (const lead of ctx.leads) {
-      if (!budget()) break;
-      if (did(lead.spec.name, "VERDICT")) continue;
-      if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: 1 };
-      currentRound = 1;
-      seq += 1;
-      const jr = await speak(ctx, lead, { seq, round: 1, thread: "JURY", tag: "VERDICT", instruction: `Independent verdict — you have NOT seen the others. Score the proposition 0–10 and defend it in 3–4 sentences. Start EXACTLY with "SCORE: <n>/10 — ". ${q}`, transcript: "" });
-      record(lead, "VERDICT", jr.text);
+    // §5 Jury = MixtureOfAgents; ROUNDS are the mixture's layers. Round 1 is
+    // blind; every later round the jurors see the tally + peer verdicts and
+    // re-score — hold or move. Convergence is computed in CODE from score
+    // movement (no judge call): stable = nobody moved a full point.
+    const scoreOf = (text: string): number | null => {
+      const m = text.match(/SCORE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i);
+      return m ? Math.min(Math.max(parseFloat(m[1]), 0), 10) : null;
+    };
+    const scoresAt = (round: number): Map<string, number> => {
+      const out = new Map<string, number>();
+      for (const p of posts) {
+        if (p.tag !== "VERDICT" || p.round !== round) continue;
+        const s = scoreOf(p.content);
+        if (s !== null) out.set(p.agentKey, s);
+      }
+      return out;
+    };
+    for (let round = startRound; round <= ctx.cfg.rounds && budget(); round++) {
+      for (const lead of ctx.leads) {
+        if (!budget()) break;
+        if (did(lead.spec.name, "VERDICT", round)) continue;
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+        await turn(lead, {
+          round, thread: "JURY", tag: "VERDICT",
+          transcript: round === 1 ? "" : windowOf(posts, ctx.leads.length + 3),
+          instruction: round === 1
+            ? `Independent verdict — you have NOT seen the others. Score the proposition 0–10 and defend it in 3–4 sentences. Start EXACTLY with "SCORE: <n>/10 — ". ${q}`
+            : `Deliberation round ${round} of ${ctx.cfg.rounds}. The tally and your peers' verdicts are above. Re-score: HOLD or MOVE — if you move, name exactly which argument moved you; if you hold against the majority, defend why they're wrong. Start EXACTLY with "SCORE: <n>/10 — ".`,
+        });
+      }
+      // the tally is pure arithmetic over the round's scores — no model call
+      const cur = scoresAt(round);
+      if (cur.size > 0 && !did("The Tally", "TALLY", round)) {
+        const vs = [...cur.values()];
+        const mean = vs.reduce((a, b) => a + b, 0) / vs.length;
+        const forN = vs.filter((x) => x >= 6).length;
+        const against = vs.filter((x) => x <= 4).length;
+        const prev = round > 1 ? scoresAt(round - 1) : new Map<string, number>();
+        const movers = [...cur].filter(([k, v]) => prev.has(k) && Math.abs(v - prev.get(k)!) >= 1).length;
+        const content =
+          `ROUND ${round} TALLY — mean ${mean.toFixed(1)}/10 · ${forN} FOR (≥6) · ${against} AGAINST (≤4) · ${vs.length - forN - against} ON THE FENCE · range ${Math.min(...vs)}–${Math.max(...vs)}` +
+          (round > 1 ? ` · ${movers === 0 ? "NO JUROR MOVED ≥1 POINT" : `${movers} JUROR${movers === 1 ? "" : "S"} MOVED ≥1 POINT`}` : "");
+        currentRound = round;
+        seq += 1;
+        await ctx.emit({
+          type: "post", seq, author: "agent", agent_key: "__tally",
+          name: "The Tally", role: "Score aggregation", initials: "Σ",
+          thread: "JURY", reply_to: null, tag: "TALLY", content, cites: [], round,
+        });
+        posts.push({ name: "The Tally", role: "Score aggregation", content, tag: "TALLY", seq, agentKey: "__tally", round });
+      }
+      await pollCrowd(ctx, round, ctx.problem);
+      if (ctx.cfg.convergence === "stability" && round >= 2) {
+        const prev = scoresAt(round - 1);
+        const movedOrNew = [...cur].filter(([k, v]) => !prev.has(k) || Math.abs(v - prev.get(k)!) >= 1).length;
+        if (cur.size > 0 && prev.size > 0 && movedOrNew === 0) { converged = true; stopReason = "stability"; break; }
+      }
     }
-    converged = true;
   } else if (ctx.mode === "Desk") {
     const director = ctx.leads[0];
     const workers = ctx.leads.slice(1);
@@ -365,7 +428,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     for (const w of workers) {
       if (!budget()) break;
       if (did(w.spec.name, "SECTION DRAFT")) continue;
-      if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: 2 };
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 2 };
       currentRound = 2;
       seq += 1;
       const r = await speak(ctx, w, { seq, round: 2, thread: "DESK", tag: "SECTION DRAFT", phase: "draft", instruction: `Draft YOUR assigned memo section per the director's assignment — findings first, evidence cited by document name.`, transcript: windowOf(posts, 6) });
@@ -374,7 +437,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     seq += 1;
     const merge = await speak(ctx, director, { seq, round: 3, thread: "DESK", tag: "DIRECTOR'S MEMO", phase: "merge", instruction: `Merge the sections into the memo's executive summary: verdict, the three numbers that matter, and open risks.`, transcript: windowOf(posts, 20), maxTokens: 1400 });
     record(director, "DIRECTOR'S MEMO", merge.text);
-    converged = true;
+    stopReason = "choreography";
   } else if (ctx.mode === "Expedition") {
     const phases: { name: string; instruction: string }[] = [
       { name: "QUESTIONS", instruction: "Phase 1 — sharpen the research questions: what must be true, what would kill it?" },
@@ -391,14 +454,14 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       for (const s of scouts) {
         if (!budget()) break;
         if (did(s.spec.name, ph.name)) continue;
-        if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: pi + 1 };
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: pi + 1 };
         currentRound = pi + 1;
         seq += 1;
         const r = await speak(ctx, s, { seq, round: pi + 1, thread: "EXPEDITION", tag: ph.name, phase: ph.name, instruction: `${ph.instruction} ${pi === 0 ? q : ""}`, transcript: windowOf(posts, 10) });
         record(s, ph.name, r.text);
       }
     }
-    converged = true;
+    stopReason = "choreography";
   } else {
     // Agora — the default open forum
     const router = async (last: PostRec | undefined): Promise<{ lead: EngineLead; replyTo: number | null }> => {
@@ -429,7 +492,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       const inRound = posts.filter((p) => p.round === round).length;
       const opener = ctx.leads[(round - 1) % ctx.leads.length];
       let postNo = posts.filter((p) => p.tag.startsWith("POST")).length + 1;
-      if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: round };
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
       if (inRound === 0) await turn(opener, {
         round, thread: opener.spec.seat?.discipline || "AGORA", tag: `POST ${postNo}`,
         instruction: round === 1
@@ -438,7 +501,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       });
       const repliesPerRound = Math.min(Math.max(ctx.leads.length - 1, 2), 6);
       for (let i = Math.max(inRound - 1, 0); i < repliesPerRound && budget(); i++) {
-        if (outOfTime()) return { posts: posts.length, converged: false, suspendedAtRound: round };
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
         const { lead, replyTo } = await router(posts[posts.length - 1]);
         await turn(lead, {
           round, thread: lead.spec.seat?.discipline || "AGORA", tag: "REPLY", reply_to: replyTo,
@@ -449,13 +512,16 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       await pollCrowd(ctx, round, ctx.problem);
       if (ctx.cfg.convergence === "stability" && round >= 3) {
         stableStreak = (await stabilityCheck(ctx, windowOf(posts, 30))) ? stableStreak + 1 : 0;
-        if (stableStreak >= 2) { converged = true; break; }
+        if (stableStreak >= 2) { converged = true; stopReason = "stability"; break; }
       }
     }
   }
 
+  // budget cap beats "rounds" as the honest label when it actually bit
+  if (!converged && stopReason === "rounds" && posts.length >= ctx.cfg.max_posts) stopReason = "budget";
+
   // convergence readout (§6.2): quick position census over the leads
   const aligned = Math.max(1, ctx.leads.length - (ctx.leads.some((l) => l.spec.seat?.adversarial) ? 1 : 0));
   await ctx.emit({ type: "convergence", aligned, total: ctx.leads.length, dissents: ctx.leads.length - aligned });
-  return { posts: posts.length, converged };
+  return { posts: posts.length, converged, stopReason };
 }

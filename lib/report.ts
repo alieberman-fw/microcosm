@@ -16,6 +16,8 @@ export interface ReportSpec {
   executive_summary: string;
   dimension_scores: { name: string; score: number; note: string }[];
   sections: { question: string; finding: string; cites: number[] }[];
+  /** success-criteria delivery map — the brief's bar, checked off explicitly */
+  criteria?: { criterion: string; where: string }[];
   risks: { risk: string; severity: "high" | "medium" | "low"; mitigation: string; watch_signal: string }[];
   dissents: { name: string; role: string; position: string; quote: string; seq: number }[];
   tripwires: string[];
@@ -28,6 +30,8 @@ export interface ReportSpec {
   methodology: {
     mode: string; rounds: number; leads: number; crowd: number; polls: number;
     posts: number; tier: string; models: string[]; converged: boolean;
+    /** why the run stopped: stability | rounds | budget | choreography */
+    stop?: string;
     docs: string[]; generated_at: string;
   };
   limitations: string;
@@ -41,7 +45,8 @@ export function reportSynthSystem(): string {
     `{"verdict": {"label": "THE ANSWER IN <=5 WORDS — 'GO'/'NO-GO' for feasibility briefs; NAME THE WINNING OPTION for choose-between briefs (e.g. 'INTERIOR FINISHES — NOT THE POOL')", "tone": "go|conditional|no-go|split", "headline": "one sentence — the answer, committed"},\n` +
     ` "executive_summary": "4-6 sentences a decision-maker reads first — concrete, numbers included",\n` +
     ` "dimension_scores": [{"name": "...", "score": 0-10, "note": "one line"}],   // 4-6 dimensions THIS brief actually turns on\n` +
-    ` "sections": [{"question": "...", "finding": "3-5 sentences answering it", "cites": [seq, ...]}],  // EXACTLY one per question-to-resolve, in order\n` +
+    ` "sections": [{"question": "...", "finding": "3-5 sentences answering it", "cites": [seq, ...]}],  // one per question-to-resolve IN ORDER, THEN one per success criterion the question sections don't already fully deliver (title it after the criterion, e.g. "PROS & CONS OF BOTH OPTIONS", "TIME ON MARKET")\n` +
+    ` "criteria": [{"criterion": "the success criterion verbatim (shortened ok)", "where": "one line: which section/part of this report delivers it"}],  // one entry per success criterion — this is the delivery receipt\n` +
     ` "risks": [{"risk": "...", "severity": "high|medium|low", "mitigation": "...", "watch_signal": "the observable that says it's happening"}],\n` +
     ` "dissents": [{"name": "...", "role": "...", "position": "one line", "quote": "VERBATIM sentence from their post", "seq": N}],\n` +
     ` "tripwires": ["what would change this answer", ...]}\n\n` +
@@ -52,7 +57,7 @@ export function reportSynthSystem(): string {
     `- Dissent is a feature: preserve real disagreement verbatim — never average it away. A committed verdict WITH preserved dissents is the goal; dissent is not a reason to soften the verdict.\n` +
     `- Every "cites" seq must be a post that actually supports the finding. Every number in findings must appear in the transcript or the brief.\n` +
     `- The adversarial voice gets representation in dissents or risks — always.\n` +
-    `- Address every success criterion somewhere in the report.\n` +
+    `- SUCCESS CRITERIA ARE THE CONTRACT: every criterion must be deliverably present — if the question sections don't cover one (pros/cons, value drivers, time-on-market, whatever the user listed), ADD a section for it. The "criteria" array is the receipt; never mark a criterion delivered by a section that doesn't actually contain it.\n` +
     `- Write like the panel's chief of staff: specific, quantified, zero filler.`
   );
 }
