@@ -236,7 +236,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 system: `Casting fit check for an expert panel. Reply ONLY "yes" or "no": could this person credibly hold this seat and speak with first-hand authority on it? A neighboring trade or generic overlap is "no".`,
                 messages: [{ role: "user", content: `SEAT: ${seat.role}${seat.why ? ` — ${seat.why}` : ""}\nPERSON: ${spec.role}${spec.tagline ? ` — ${spec.tagline}` : ""}` }],
               });
-              await logCall("casting.fit", CROWD_MODEL, res.usage, tf);
+              await logCall("casting.fit", CROWD_MODEL, res.usage, tf, undefined, { seat: seat.role, candidate: spec.role });
               const verdict = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").toLowerCase();
               return verdict.includes("yes");
             } catch (e) {
@@ -344,7 +344,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
               ? { ...prevCasting, last_addition: guidance, cast_at: new Date().toISOString() }
               : {
                   composition: plan.composition, rationale: plan.rationale, rationaleSummary: plan.rationaleSummary, scale: plan.scale,
-                  mode: plan.mode, modeRationale: plan.modeRationale, modeSummary: plan.modeSummary,
+                  // mode is CHOSEN in run config; the director's pick seeds it and
+                  // recommended_mode survives user changes so the card stays tagged
+                  mode: plan.mode, recommended_mode: plan.mode, modeRationale: plan.modeRationale, modeSummary: plan.modeSummary,
                   guidance: guidance || null, cast_at: new Date().toISOString(),
                 },
           },

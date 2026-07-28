@@ -50,7 +50,7 @@ export interface EngineContext {
   deadline: number;                                     // ms epoch — suspend at the next safe boundary after this
   polledRounds: Set<number>;                            // sentiment polls already run (resume safety)
   emit: (e: EngineEvent) => Promise<void>;              // persists + streams
-  logCall: (surface: string, model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string) => Promise<void>;
+  logCall: (surface: string, model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string, detail?: Record<string, unknown>) => Promise<void>;
   isCancelled: () => boolean;
 }
 
@@ -84,6 +84,8 @@ export function compilePersonaPrompt(spec: FrozenSpec, args: { mode: string; pro
     `Reference documents by name when you use them. Address colleagues by first name. ` +
     `Start directly with your point — never prefix your post with your own name, a greeting, or markdown headers. ` +
     `Never break character, never mention being an AI, never summarize the whole discussion — advance it. ` +
+    `Never open with stock contrarian framing ("Everybody's chasing…", "Before anyone gets excited…", "Everyone's ` +
+    `missing…", "Here's the thing…") — open with a specific number, name, place, or mechanism from YOUR domain. ` +
     `Do NOT rush to consensus: hold your position until the evidence genuinely moves you, surface what the panel ` +
     `has not addressed yet, and quantify disagreements instead of smoothing them over.`,
     styleBits.join(" "),
@@ -141,13 +143,15 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
           }
         }
       }
-      await ctx.logCall("engine.turn", model, res.usage as { input_tokens: number; output_tokens: number }, ta);
+      await ctx.logCall("engine.turn", model, res.usage as { input_tokens: number; output_tokens: number }, ta, undefined,
+        { agent: lead.spec.name, seat: lead.spec.seat?.role ?? lead.spec.role, mode: ctx.mode, round: opts.round, tag: opts.tag });
       // a successful call with no prose = the model spent the budget thinking
       // (Sonnet 5 adaptive thinking) or refused — record why and retry bigger
       if (!text) lastErr = `empty response (stop_reason: ${res.stop_reason})`;
     } catch (e) {
       lastErr = e instanceof Error ? e.message : "turn failed";
-      await ctx.logCall("engine.turn", model, null, ta, lastErr);
+      await ctx.logCall("engine.turn", model, null, ta, lastErr,
+        { agent: lead.spec.name, seat: lead.spec.seat?.role ?? lead.spec.role, mode: ctx.mode, round: opts.round, tag: opts.tag });
       if (attempt === 0) await new Promise((r) => setTimeout(r, 600));
     }
   }
@@ -197,7 +201,7 @@ async function pollCrowd(ctx: EngineContext, round: number, topic: string): Prom
           content: batch.map((m) => `- ${m.spec.name}: ${m.spec.seat?.role ?? m.spec.role}${m.spec.tagline ? ` — ${m.spec.tagline}` : ""}${m.spec.stances?.[0] ? ` — stance: ${m.spec.stances[0]}` : ""}`).join("\n"),
         }],
       });
-      await ctx.logCall("engine.poll", model, res.usage, t0);
+      await ctx.logCall("engine.poll", model, res.usage, t0, undefined, { mode: ctx.mode, round, batch: batch.length, crowd: ctx.crowd.length });
       const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
       const rows = (parseLooseArray(text) ?? []) as { name?: string; stance?: string; quote?: string }[];
       for (const r of rows) {
@@ -227,7 +231,7 @@ async function stabilityCheck(ctx: EngineContext, transcript: string): Promise<b
         `if any thread is unresolved. When in ANY doubt, reply "moving".`,
       messages: [{ role: "user", content: transcript.slice(-12000) }],
     });
-    await ctx.logCall("engine.converge", model, res.usage, t0);
+    await ctx.logCall("engine.converge", model, res.usage, t0, undefined, { mode: ctx.mode, check: "stability judge" });
     const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
     return text.toLowerCase().includes("stable");
   } catch {
@@ -330,13 +334,24 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       await pollCrowd(ctx, round, ctx.problem);
     }
   } else if (ctx.mode === "Chamber") {
-    for (const lead of ctx.leads) {
+    // blind takes drift into ONE rhetorical mold ("Everybody's chasing…" ×10)
+    // when every prompt is identical — rotate the opening angle per seat
+    const angles = [
+      "Open with the single most decisive NUMBER from your domain and build from it.",
+      "Open with a specific place, project, or deal you know first-hand and what it proves here.",
+      "Open with the failure mode you'd bet on — what breaks first, and at what threshold.",
+      "Open with the question the brief should have asked but didn't, then answer it.",
+      "Open with the strongest point AGAINST your own instinct, then say why you still land where you land.",
+      "Open with a timeline — what has to happen by when, and where the calendar kills the plan.",
+    ];
+    for (let li = 0; li < ctx.leads.length; li++) {
+      const lead = ctx.leads[li];
       if (!budget()) break;
       if (did(lead.spec.name, "INDEPENDENT TAKE")) continue;
       if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 1 };
       currentRound = 1;
       seq += 1;
-      const r = await speak(ctx, lead, { seq, round: 1, thread: "CHAMBER", tag: "INDEPENDENT TAKE", phase: "takes", instruction: `Write your INDEPENDENT take — you have NOT seen anyone else's. ${q}`, transcript: "" });
+      const r = await speak(ctx, lead, { seq, round: 1, thread: "CHAMBER", tag: "INDEPENDENT TAKE", phase: "takes", instruction: `Write your INDEPENDENT take — you have NOT seen anyone else's. ${angles[li % angles.length]} ${q}`, transcript: "" });
       record(lead, "INDEPENDENT TAKE", r.text);
     }
     await pollCrowd(ctx, 1, ctx.problem); // crowd reacts to the raw takes
@@ -480,7 +495,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
           system: `Given the last post, reply ONLY the full name of the panelist who should speak next (not the last author). Panel: ${ctx.leads.map((l) => `${l.spec.name} (${l.spec.seat?.role ?? l.spec.role})`).join("; ")}`,
           messages: [{ role: "user", content: `${last.name}: ${last.content}` }],
         });
-        await ctx.logCall("engine.router", model, res.usage, t0);
+        await ctx.logCall("engine.router", model, res.usage, t0, undefined, { mode: ctx.mode, picks: "next speaker", after: last.name });
         const name = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
         const pick = ctx.leads.find((l) => name.includes(l.spec.name.split(" ")[0]) && l.key !== last.agentKey);
         if (pick) return { lead: pick, replyTo: last.seq };

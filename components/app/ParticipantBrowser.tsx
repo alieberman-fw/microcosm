@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * Full-page participant browser for starting a conversation — the answer to
- * "the little dialog can't do justice to 1,800+ personas." Same smart search
- * + filter rail + pagination as the Agent Library, plus multi-select cards
- * and a sticky bar that launches the room (up to 20 voices).
+ * Full-page participant browser — the answer to "the little dialog can't do
+ * justice to 1,800+ personas." Same smart search + filter rail + pagination
+ * as the Agent Library, plus multi-select cards and a sticky launch bar.
+ * Two homes: starting a CONVERSATION (default), and hand-picking a
+ * simulation PANEL (`panel` prop — seats the picks via the agents API).
  */
 
 import { CSSProperties, useEffect, useState } from "react";
@@ -37,14 +38,18 @@ function demoLine(spec: PersonaSpec) {
 }
 
 export default function ParticipantBrowser({
-  custom, library, libraryCount, facets,
+  custom, library, libraryCount, facets, panel = null,
 }: {
   custom: BrowserCustomRow[];
   library: LibraryRow[];
   libraryCount: number;
   facets: LibraryFacets;
+  /** hand-pick a simulation panel instead of starting a conversation */
+  panel?: { simId: string; seated: number } | null;
 }) {
   const router = useRouter();
+  const maxPicks = panel ? Math.max(0, MAX_PARTICIPANTS - panel.seated) : MAX_PARTICIPANTS;
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [openFilter, setOpenFilter] = useState<string | null>(null);
@@ -88,27 +93,46 @@ export default function ParticipantBrowser({
   const toggle = (c: { key: string; spec: PersonaSpec }) => {
     setPicks((ps) => {
       if (ps.some((p) => p.key === c.key)) return ps.filter((p) => p.key !== c.key);
-      if (ps.length >= MAX_PARTICIPANTS) return ps;
+      if (ps.length >= maxPicks) return ps;
       return [...ps, { key: c.key, name: c.spec.name, initials: c.spec.initials }];
     });
   };
 
-  const start = () => {
+  const start = async () => {
     if (!picks.length || launching) return;
     setLaunching(true);
-    router.push(`/conversations?draft=${picks.map((p) => p.key).join(",")}`);
+    if (!panel) {
+      router.push(`/conversations?draft=${picks.map((p) => p.key).join(",")}`);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/simulations/${panel.simId}/agents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personaIds: picks.map((p) => p.key) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "Could not seat the panel");
+      router.refresh();
+      router.push(`/sim/${panel.simId}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not seat the panel");
+      setLaunching(false);
+    }
   };
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "44px 40px 140px" }}>
-      <Link href="/conversations" style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)" }}>
-        ← CONVERSATIONS
+      <Link href={panel ? `/sim/${panel.simId}` : "/conversations"} style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)" }}>
+        {panel ? "← BACK TO THE SIMULATION" : "← CONVERSATIONS"}
       </Link>
       <div style={{ marginTop: 18 }}>
-        <div className="kicker">New conversation</div>
-        <h1 style={{ margin: "12px 0 0", fontSize: "clamp(26px,3vw,36px)", fontWeight: 600, letterSpacing: "-.03em" }}>Build the room</h1>
+        <div className="kicker">{panel ? "Hand-pick the panel" : "New conversation"}</div>
+        <h1 style={{ margin: "12px 0 0", fontSize: "clamp(26px,3vw,36px)", fontWeight: 600, letterSpacing: "-.03em" }}>{panel ? "Cast the room yourself" : "Build the room"}</h1>
         <p style={{ margin: "12px 0 0", maxWidth: 620, fontSize: 14, lineHeight: 1.6, color: "var(--t5)" }}>
-          Pick anyone from {libraryCount.toLocaleString()} personas — one expert or a room of {MAX_PARTICIPANTS}. Search in plain language, filter, click cards to add them, then start the conversation.
+          {panel
+            ? <>Pick lead seats from {libraryCount.toLocaleString()} personas — search in plain language, filter, click cards to select, then seat them on the panel. {panel.seated > 0 ? `${panel.seated} already seated · ` : ""}up to {maxPicks} more. No model calls.</>
+            : <>Pick anyone from {libraryCount.toLocaleString()} personas — one expert or a room of {MAX_PARTICIPANTS}. Search in plain language, filter, click cards to add them, then start the conversation.</>}
         </p>
       </div>
 
@@ -213,14 +237,19 @@ export default function ParticipantBrowser({
               )}
             </span>
             <span style={{ ...mono, fontSize: 10, letterSpacing: ".07em", color: "var(--t5)" }}>
-              {picks.length} / {MAX_PARTICIPANTS} IN THE ROOM
+              {picks.length} / {maxPicks} {panel ? "SELECTED FOR THE PANEL" : "IN THE ROOM"}
             </span>
             <button onClick={() => setPicks([])} style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer" }}>
               CLEAR
             </button>
+            {error && <span style={{ ...mono, fontSize: 9.5, color: "var(--warn)" }}>{error.toUpperCase().slice(0, 80)}</span>}
             <span style={{ flex: 1 }} />
-            <button onClick={start} disabled={launching} className="btnAcc" style={{ padding: "12px 26px", fontSize: 14, opacity: launching ? 0.6 : 1 }}>
-              {launching ? "Opening…" : picks.length === 1 ? `Start with ${picks[0].name.split(" ")[0]}` : `Start group with ${picks.length}`}
+            <button onClick={() => void start()} disabled={launching} className="btnAcc" style={{ padding: "12px 26px", fontSize: 14, opacity: launching ? 0.6 : 1 }}>
+              {launching
+                ? panel ? "Seating…" : "Opening…"
+                : panel
+                ? `Seat ${picks.length} on the panel →`
+                : picks.length === 1 ? `Start with ${picks[0].name.split(" ")[0]}` : `Start group with ${picks.length}`}
             </button>
           </div>
         </div>

@@ -377,8 +377,27 @@ export default function MonitoringClient({ rows, conversations }: { rows: Intera
                               {!c?.loading && !c?.asked && !c?.replied && r.conversation_id && (
                                 <span style={{ ...mono, fontSize: 10, color: "var(--t7)" }}>NO MESSAGE CONTEXT (ROUTER/SEARCH CALL)</span>
                               )}
-                              {!r.conversation_id && (
-                                <span style={{ ...mono, fontSize: 10, color: "var(--t7)" }}>NOT TIED TO A CONVERSATION</span>
+                              {/* non-conversation calls (engine turns, polls, casting, reports)
+                                  show their full context payload as labeled key-values */}
+                              {!r.conversation_id && r.detail && Object.keys(r.detail).length > 0 && (
+                                <div>
+                                  <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t7)" }}>CALL CONTEXT</div>
+                                  <div style={{ ...mono, fontSize: 10.5, color: "var(--t4)", marginTop: 6, lineHeight: 2, borderLeft: "2px solid var(--ln5)", paddingLeft: 12 }}>
+                                    {Object.entries(r.detail)
+                                      .filter(([, v]) => v !== null && v !== undefined && String(v).length > 0 && typeof v !== "object")
+                                      .slice(0, 8)
+                                      .map(([k, v]) => (
+                                        <div key={k}>
+                                          <span style={{ color: "var(--t6)" }}>{k.replace(/_/g, " ").toUpperCase()}</span>
+                                          {" · "}
+                                          <span style={{ color: "var(--t3)" }}>{String(v).slice(0, 160)}</span>
+                                        </div>
+                                      ))}
+                                  </div>
+                                </div>
+                              )}
+                              {!r.conversation_id && (!r.detail || Object.keys(r.detail).length === 0) && (
+                                <span style={{ ...mono, fontSize: 10, color: "var(--t7)" }}>NO CALL CONTEXT RECORDED — OLDER ROW, BEFORE DETAIL LOGGING</span>
                               )}
                             </div>
                           </div>

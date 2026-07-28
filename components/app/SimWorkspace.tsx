@@ -80,6 +80,8 @@ export default function SimWorkspace({
   const [editing, setEditing] = useState(false);
   const [populationCount, setPopulationCount] = useState(initialSeats.length);
   const [castingBusy, setCastingBusy] = useState(false);
+  // the mode is CHOSEN in run config; a fresh cast re-seeds it to the director's pick
+  const [modeSel, setModeSel] = useState<string | null>(initialCasting?.mode ?? null);
   const [docs, setDocs] = useState<DocRow[]>(initialDocs);
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -240,17 +242,27 @@ export default function SimWorkspace({
             CREATED {new Date(sim.created_at).toLocaleDateString()} · {sim.status.toUpperCase()}
           </div>
           {brief.questions?.length > 0 && (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
-              {brief.questions.map((q) => (
-                <span
-                  key={q.label}
-                  title={q.detail}
-                  style={{ ...mono, fontSize: 11, padding: "7px 14px", borderRadius: 100, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)", cursor: q.detail ? "help" : "default" }}
-                >
-                  {q.label}
-                </span>
-              ))}
-            </div>
+            brief.questions.some((q) => q.detail) ? (
+              // any question carrying a framing renders as readable rows — never clipped
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16, maxWidth: 860 }}>
+                {brief.questions.map((q) => (
+                  <div key={q.label} style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+                    <span style={{ ...mono, fontSize: 11, padding: "6px 14px", borderRadius: 100, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)", flex: "none" }}>
+                      {q.label}
+                    </span>
+                    {q.detail && <span style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--t5)", minWidth: 0 }}>{q.detail}</span>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
+                {brief.questions.map((q) => (
+                  <span key={q.label} style={{ ...mono, fontSize: 11, padding: "7px 14px", borderRadius: 100, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)" }}>
+                    {q.label}
+                  </span>
+                ))}
+              </div>
+            )
           )}
           {brief.success.length > 0 && (
             <div style={{ marginTop: 18, maxWidth: 720 }}>
@@ -555,6 +567,7 @@ export default function SimWorkspace({
         initialCasting={initialCasting}
         onCountChange={setPopulationCount}
         onCastingChange={setCastingBusy}
+        onModeChange={setModeSel}
       />
 
       {/* stage 4 — run configuration (§4.1); LAUNCH activates with the engine */}
@@ -565,9 +578,10 @@ export default function SimWorkspace({
         const crowd = Math.max(scale.experts - expertSide, 0) + Math.max(scale.residents - residentSide, 0);
         return (
           <RunConfigStage
-            key={`${initialCasting?.mode ?? "none"}-${initialSeats.length}`}
+            key={`${modeSel ?? "none"}-${initialSeats.length}`}
             simId={sim.id}
-            mode={initialCasting?.mode ?? null}
+            mode={modeSel}
+            recommendedMode={initialCasting?.recommended_mode ?? (initialCasting?.user_set?.mode ? null : initialCasting?.mode ?? null)}
             leads={initialSeats.length}
             expertSide={expertSide}
             residentSide={residentSide}

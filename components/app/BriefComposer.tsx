@@ -103,10 +103,18 @@ export default function BriefComposer({
   useEffect(autosize, [problem]);
   const longProblem = problem.length > 280;
 
+  // typed questions keep their FULL text: the chip gets a word-boundary label,
+  // the rest rides in `detail` (same shape the AI suggestions use)
   const addQuestion = (raw: string) => {
-    const label = raw.trim().toUpperCase().slice(0, 40);
+    const full = raw.trim();
+    if (!full) return;
+    let label = full.toUpperCase();
+    if (label.length > 40) {
+      const cut = label.slice(0, 40);
+      label = (cut.includes(" ") ? cut.slice(0, cut.lastIndexOf(" ")) : cut).trim();
+    }
     if (!label || questions.some((q) => q.label === label) || questions.length >= 12) return;
-    setQuestions((prev) => [...prev, { label }]);
+    setQuestions((prev) => [...prev, { label, ...(full.length > label.length ? { detail: full } : {}) }]);
   };
 
   const addCriterion = (raw: string) => {
@@ -256,7 +264,8 @@ export default function BriefComposer({
               >
                 {q.label}
               </span>
-              <span style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--t5)", minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {/* the framing must be READABLE — wrap, never ellipsize */}
+              <span style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--t5)", minWidth: 0, flex: 1 }}>
                 {q.detail ?? ""}
               </span>
               <button
