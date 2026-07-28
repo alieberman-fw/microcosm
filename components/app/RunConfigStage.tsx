@@ -266,7 +266,7 @@ export default function RunConfigStage({
               <Pill key={v} on={cfg.density === v} onClick={() => set("density", v)} title={HELP.density}>{v.toUpperCase()}</Pill>
             ))}
             <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t7)", alignSelf: "center" }}>
-              {cfg.density === "focused" ? "Tight rounds — the v1 rhythm" : cfg.density === "lively" ? "Reply chains ~1.5× the panel + crowd interjections" : "Full melee — ~2× replies, counter-volleys, six interjectors"}
+              {cfg.density === "focused" ? "Tight rounds — votes at the round close only" : cfg.density === "lively" ? "Reply chains ~1.5× the panel · crowd interjections · votes land live" : "Full melee — ~2× replies, counter-volleys, six interjectors, live votes"}
             </span>
           </div>
         )}

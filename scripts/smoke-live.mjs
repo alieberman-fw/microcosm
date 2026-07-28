@@ -267,13 +267,23 @@ async function livingForumCheck(personas) {
     }
   }
 
+  // forum-quality invariants (the Benjamin K. regression suite, live)
+  const leadOnly = postEvents.filter((p) => p.tag !== "INTERJECTION");
+  const distinctAuthors = new Set(leadOnly.map((p) => p.agent_key)).size;
+  let consecutiveDupes = 0;
+  for (let i = 1; i < leadOnly.length; i++) {
+    if (leadOnly[i].agent_key === leadOnly[i - 1].agent_key) consecutiveDupes += 1;
+  }
+
   const problems = [];
   if (!finished) problems.push("never finished");
   if (leadPosts < 14) problems.push(`lead posts ${leadPosts} (want ≥14: 2×(1+6))`);
   if (maxDepth < 2) problems.push(`max chain depth ${maxDepth} (want ≥2)`);
   if (interjections < 3) problems.push(`interjections ${interjections} (want ≥3)`);
-  if (voteEvents < 1) problems.push("no vote events");
+  if (voteEvents < 2) problems.push(`vote events ${voteEvents} (want ≥2: realtime micro + close)`);
   if (floorReplies < 1) problems.push(`floor got ${floorReplies} replies (want ≥1)`);
+  if (distinctAuthors < 4) problems.push(`only ${distinctAuthors}/4 leads spoke`);
+  if (consecutiveDupes > 0) problems.push(`${consecutiveDupes} consecutive same-author posts`);
   const secs = Math.round((Date.now() - t0) / 1000);
   if (problems.length) {
     failures.push({ mode: "living-forum", problems });
