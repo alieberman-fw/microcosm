@@ -28,7 +28,19 @@ export interface BrowserCustomRow {
   spec: PersonaSpec;
 }
 
-interface Pick_ { key: string; name: string; initials: string }
+interface Pick_ {
+  key: string;
+  name: string;
+  initials: string;
+  role: string;
+  kind: string;
+  source: string;
+  spec: PersonaSpec;
+  /** panel mode: does this pick speak (lead) or get polled (crowd)? */
+  tier: "lead" | "crowd";
+}
+
+const MAX_MANUAL_CROWD = 200;
 
 function demoLine(spec: PersonaSpec) {
   const d = spec.demographics;
@@ -50,6 +62,7 @@ export default function ParticipantBrowser({
   const router = useRouter();
   const maxPicks = panel ? Math.max(0, MAX_PARTICIPANTS - panel.seated) : MAX_PARTICIPANTS;
   const [error, setError] = useState<string | null>(null);
+  const [rosterOpen, setRosterOpen] = useState(true);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [openFilter, setOpenFilter] = useState<string | null>(null);
@@ -90,11 +103,23 @@ export default function ParticipantBrowser({
   ];
 
   const picked = (key: string) => picks.some((p) => p.key === key);
-  const toggle = (c: { key: string; spec: PersonaSpec }) => {
+  const leadPicks = picks.filter((p) => p.tier === "lead");
+  const crowdPicks = picks.filter((p) => p.tier === "crowd");
+  const toggle = (c: { key: string; kind: string; source: string; spec: PersonaSpec }) => {
     setPicks((ps) => {
       if (ps.some((p) => p.key === c.key)) return ps.filter((p) => p.key !== c.key);
-      if (ps.length >= maxPicks) return ps;
-      return [...ps, { key: c.key, name: c.spec.name, initials: c.spec.initials }];
+      const leads = ps.filter((p) => p.tier === "lead").length;
+      // new picks land as LEADS while capacity lasts, then flow into the crowd
+      const tier: Pick_["tier"] = !panel || leads < maxPicks ? "lead" : "crowd";
+      if (!panel && ps.length >= maxPicks) return ps;
+      if (panel && tier === "crowd" && ps.length - leads >= MAX_MANUAL_CROWD) return ps;
+      return [...ps, { key: c.key, name: c.spec.name, initials: c.spec.initials, role: c.spec.role, kind: c.kind, source: c.source, spec: c.spec, tier }];
+    });
+  };
+  const setTier = (key: string, tier: Pick_["tier"]) => {
+    setPicks((ps) => {
+      if (tier === "lead" && ps.filter((p) => p.tier === "lead").length >= maxPicks) return ps;
+      return ps.map((p) => (p.key === key ? { ...p, tier } : p));
     });
   };
 
@@ -109,7 +134,10 @@ export default function ParticipantBrowser({
       const res = await fetch(`/api/simulations/${panel.simId}/agents`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ personaIds: picks.map((p) => p.key) }),
+        body: JSON.stringify({
+          personaIds: leadPicks.map((p) => p.key),
+          crowdPersonaIds: crowdPicks.map((p) => p.key),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error((data as { error?: string }).error ?? "Could not seat the panel");
@@ -237,8 +265,16 @@ export default function ParticipantBrowser({
               )}
             </span>
             <span style={{ ...mono, fontSize: 10, letterSpacing: ".07em", color: "var(--t5)" }}>
-              {picks.length} / {maxPicks} {panel ? "SELECTED FOR THE PANEL" : "IN THE ROOM"}
+              {panel
+                ? `${leadPicks.length}/${maxPicks} LEADS${crowdPicks.length ? ` · ${crowdPicks.length} CROWD` : ""}`
+                : `${picks.length} / ${maxPicks} IN THE ROOM`}
             </span>
+            <button
+              onClick={() => setRosterOpen((v) => !v)}
+              style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", background: "none", border: "1px solid var(--ln5)", borderRadius: 100, padding: "4px 12px", color: rosterOpen ? "var(--acc)" : "var(--t5)", cursor: "pointer" }}
+            >
+              {rosterOpen ? "HIDE ROSTER →" : "← SHOW ROSTER"}
+            </button>
             <button onClick={() => setPicks([])} style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer" }}>
               CLEAR
             </button>
@@ -248,9 +284,74 @@ export default function ParticipantBrowser({
               {launching
                 ? panel ? "Seating…" : "Opening…"
                 : panel
-                ? `Seat ${picks.length} on the panel →`
+                ? `Seat ${leadPicks.length} lead${leadPicks.length === 1 ? "" : "s"}${crowdPicks.length ? ` + ${crowdPicks.length} crowd` : ""} →`
                 : picks.length === 1 ? `Start with ${picks[0].name.split(" ")[0]}` : `Start group with ${picks.length}`}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* collapsible selected-roster rail: everyone you've picked, clickable
+          for the full profile; panel mode adds the LEAD / CROWD assignment */}
+      {picks.length > 0 && rosterOpen && (
+        <div style={{
+          position: "fixed", top: 0, right: 0, bottom: picks.length > 0 ? 72 : 0, zIndex: 65, width: 300,
+          background: "var(--sf)", borderLeft: "1px solid var(--ln3)", display: "flex", flexDirection: "column",
+          animation: "fadeUp .2s ease both",
+        }}>
+          <div style={{ padding: "18px 20px 12px", borderBottom: "1px solid var(--ln2)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".1em", color: "var(--t6)" }}>
+              YOUR SELECTION · {picks.length}
+            </span>
+            <button onClick={() => setRosterOpen(false)} aria-label="Collapse roster" style={{ background: "none", border: "none", color: "var(--t5)", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>→</button>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px" }}>
+            {panel && (
+              <div style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)", lineHeight: 1.7, padding: "4px 6px 10px" }}>
+                LEADS SPEAK IN THE DELIBERATION · CROWD MEMBERS ARE POLLED FOR SENTIMENT EVERY ROUND
+              </div>
+            )}
+            {picks.map((p) => (
+              <div key={p.key} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 6px", borderBottom: "1px solid var(--ln2)" }}>
+                <span style={{ ...mono, width: 28, height: 28, borderRadius: "50%", flex: "none", background: p.tier === "crowd" ? "var(--sf2)" : "var(--acc-dim)", border: `1px solid ${p.tier === "crowd" ? "var(--ln5)" : "var(--acc)"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9.5, color: p.tier === "crowd" ? "var(--t4)" : "var(--acc)" }}>
+                  {p.initials}
+                </span>
+                <button
+                  onClick={() => setProfile({ kind: p.kind, spec: p.spec, chatKey: p.key, source: p.source })}
+                  style={{ minWidth: 0, flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                  title="View profile"
+                >
+                  <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "var(--font-sans), sans-serif" }}>{p.name}</span>
+                  <span style={{ display: "block", fontSize: 10, color: "var(--t6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "var(--font-sans), sans-serif" }}>{p.role}</span>
+                </button>
+                {panel && (
+                  <span style={{ display: "inline-flex", gap: 3, flex: "none" }}>
+                    {(["lead", "crowd"] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setTier(p.key, t)}
+                        title={t === "lead" ? "Speaks in the deliberation" : "Polled for sentiment"}
+                        style={{
+                          ...mono, fontSize: 7.5, letterSpacing: ".04em", padding: "2px 7px", borderRadius: 100, cursor: "pointer",
+                          background: p.tier === t ? "var(--acc-dim)" : "transparent",
+                          border: `1px solid ${p.tier === t ? "var(--acc)" : "var(--ln4)"}`,
+                          color: p.tier === t ? "var(--acc)" : "var(--t6)",
+                        }}
+                      >
+                        {t.toUpperCase()}
+                      </button>
+                    ))}
+                  </span>
+                )}
+                <button
+                  onClick={() => setPicks((ps) => ps.filter((x) => x.key !== p.key))}
+                  aria-label={`Remove ${p.name}`}
+                  style={{ background: "none", border: "none", color: "var(--t7)", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0, flex: "none" }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       )}

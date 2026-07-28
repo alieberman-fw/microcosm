@@ -35,6 +35,7 @@ const HELP: Record<string, string> = {
   temperature: "How loose agents think — exploratory finds tail risks, repeats less",
   tier: "Which models power the run — standard is the workhorse; frontier when the decision dwarfs the cost",
   verifier: "A fact-checker behind the deliberation — claims tested against your documents",
+  report_length: "How deep the report goes — auto matches the transcript; dense writes the long-form memo",
 };
 
 export default function RunConfigStage({
@@ -195,10 +196,14 @@ export default function RunConfigStage({
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: on ? "var(--acc)" : "var(--t2)", fontFamily: "var(--font-sans), sans-serif" }}>{m}</span>
-                <span style={{ display: "inline-flex", gap: 5, alignItems: "baseline" }}>
+                <span style={{ display: "inline-flex", gap: 6, alignItems: "baseline" }}>
+                  {/* the director's pick is a single ✦ — hover for the story */}
                   {m === recommendedMode && (
-                    <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: on ? "var(--acc)" : "var(--t6)", border: `1px solid ${on ? "var(--acc)" : "var(--ln5)"}`, borderRadius: 100, padding: "1px 6px" }}>
-                      ✦ DIRECTOR&apos;S PICK
+                    <span
+                      title="Director's pick — the Casting Director recommended this mode for your brief"
+                      style={{ fontSize: 13, lineHeight: 1, color: "var(--acc)", cursor: "help" }}
+                    >
+                      ✦
                     </span>
                   )}
                   {on && <span style={{ ...mono, fontSize: 8, color: "var(--acc)" }}>SELECTED</span>}
@@ -282,6 +287,15 @@ export default function RunConfigStage({
           {(["conservative", "balanced", "exploratory"] as const).map((v) => (
             <Pill key={v} on={cfg.temperature === v} onClick={() => set("temperature", v)} title={HELP.temperature}>{v.toUpperCase()}</Pill>
           ))}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={label}>REPORT LENGTH</span>
+          {(["auto", "brief", "standard", "dense"] as const).map((v) => (
+            <Pill key={v} on={cfg.report_length === v} onClick={() => set("report_length", v)} title={HELP.report_length}>
+              {v === "auto" ? "✦ AUTO" : v.toUpperCase()}
+            </Pill>
+          ))}
+          <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t7)", alignSelf: "center" }}>{HELP.report_length}</span>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <span style={label}>MODEL TIER</span>

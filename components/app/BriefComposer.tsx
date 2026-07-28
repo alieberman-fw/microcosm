@@ -103,8 +103,10 @@ export default function BriefComposer({
   useEffect(autosize, [problem]);
   const longProblem = problem.length > 280;
 
-  // typed questions keep their FULL text: the chip gets a word-boundary label,
-  // the rest rides in `detail` (same shape the AI suggestions use)
+  // typed questions keep their FULL text as the framing; the chip label is
+  // AI-SUMMARIZED into the same 2-4 word grammar the suggestions use. The
+  // chip lands instantly with a word-boundary label, then the summary
+  // patches in — a failed call just keeps the provisional label.
   const addQuestion = (raw: string) => {
     const full = raw.trim();
     if (!full) return;
@@ -114,7 +116,26 @@ export default function BriefComposer({
       label = (cut.includes(" ") ? cut.slice(0, cut.lastIndexOf(" ")) : cut).trim();
     }
     if (!label || questions.some((q) => q.label === label) || questions.length >= 12) return;
-    setQuestions((prev) => [...prev, { label, ...(full.length > label.length ? { detail: full } : {}) }]);
+    const provisional = label;
+    setQuestions((prev) => [...prev, { label: provisional, ...(full.length > 20 ? { detail: full } : {}) }]);
+    if (full.length > 20) {
+      void fetch("/api/brief/label", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: full }),
+      })
+        .then((r) => r.json())
+        .then((d: { label?: string }) => {
+          const smart = (d.label ?? "").trim();
+          if (!smart) return;
+          setQuestions((prev) =>
+            prev.some((q) => q.label === smart)
+              ? prev // summary collides with an existing chip — keep the provisional
+              : prev.map((q) => (q.label === provisional && q.detail === full ? { ...q, label: smart } : q)),
+          );
+        })
+        .catch(() => {});
+    }
   };
 
   const addCriterion = (raw: string) => {
@@ -255,23 +276,28 @@ export default function BriefComposer({
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 13 }}>
           {questions.map((q) => (
-            <div key={q.label} style={{ display: "flex", alignItems: "center", gap: 12, animation: "fadeUp .3s ease both" }}>
-              <span
-                style={{
-                  ...mono, fontSize: 11, padding: "6px 14px", borderRadius: 100, flex: "none",
-                  background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)",
-                }}
-              >
-                {q.label}
+            <div key={q.label} style={{ display: "flex", alignItems: "flex-start", gap: 14, animation: "fadeUp .3s ease both" }}>
+              {/* fixed label column — every framing sentence starts at the same x */}
+              <span style={{ width: 208, flex: "none", display: "flex" }}>
+                <span
+                  title={q.label}
+                  style={{
+                    ...mono, fontSize: 10.5, padding: "6px 13px", borderRadius: 100,
+                    background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)",
+                    maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}
+                >
+                  {q.label}
+                </span>
               </span>
               {/* the framing must be READABLE — wrap, never ellipsize */}
-              <span style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--t5)", minWidth: 0, flex: 1 }}>
+              <span style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--t5)", minWidth: 0, flex: 1, paddingTop: 6 }}>
                 {q.detail ?? ""}
               </span>
               <button
                 onClick={() => setQuestions((prev) => prev.filter((x) => x.label !== q.label))}
                 aria-label={`Remove ${q.label}`}
-                style={{ background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1, flex: "none" }}
+                style={{ background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0, marginTop: 6, fontSize: 14, lineHeight: 1, flex: "none" }}
               >
                 ×
               </button>

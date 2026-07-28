@@ -55,8 +55,8 @@ const PROVENANCE_LABEL: Record<string, string> = {
 
 const COMPOSITIONS: { key: Composition; label: string }[] = [
   { key: "experts", label: "EXPERTS ONLY" },
-  { key: "consumers", label: "RESIDENTS · CONSUMERS" },
-  { key: "mixed", label: "MIXED PANEL" },
+  { key: "consumers", label: "RESIDENTS" },
+  { key: "mixed", label: "MIXED" },
 ];
 
 const KIND_FILTERS = [
@@ -542,8 +542,9 @@ export default function PopulationStage({
               fills them from your personas and the 1,800-strong library, generates only the true gaps,
               and seeds a skeptic. Editable after.
             </p>
-            {/* one line, always — the row compresses and scrolls before it ever wraps */}
-            <div style={{ display: "flex", gap: 5, flexWrap: "nowrap", marginTop: 14, alignItems: "center", overflowX: "auto", paddingBottom: 2 }}>
+            {/* one visible line at normal widths — shorter labels + wider page;
+                wraps gracefully on narrow screens, NEVER a hidden scroll */}
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 14, alignItems: "center" }}>
               <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)", flex: "none" }}>COMPOSITION ·</span>
               {([{ key: "auto", label: "AUTO" }, ...COMPOSITIONS] as { key: "auto" | Composition; label: string }[]).map((c) => (
                 <button
@@ -630,6 +631,16 @@ export default function PopulationStage({
           <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
             THE VOICES THAT SPEAK IN THE FORUM — EXPERTS, RESIDENTS, OR BOTH · CLICK A CARD FOR THE FULL PROFILE
           </span>
+          {/* a hand-picked panel can always hand the job back to the director */}
+          {!castingInfo?.rationale && (
+            <button
+              onClick={() => void cast("recast")}
+              style={{ ...mono, marginLeft: "auto", fontSize: 9, letterSpacing: ".06em", padding: "5px 13px", borderRadius: 100, background: "transparent", border: "1px solid var(--acc)", color: "var(--acc)", cursor: "pointer" }}
+              title="Replaces this hand-picked panel with the Casting Director's cast"
+            >
+              ✦ AUTO-CAST INSTEAD
+            </button>
+          )}
         </div>
       )}
 

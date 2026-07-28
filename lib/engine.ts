@@ -174,11 +174,14 @@ function windowOf(posts: { name: string; role: string; content: string; tag: str
   return posts.slice(-n).map((p) => `[${p.tag}] ${p.name} (${p.role}): ${p.content}`).join("\n");
 }
 
-/** crowd sentiment poll (§5 — our custom layer): batched Haiku calls between rounds */
+/** crowd sentiment poll (§5 — our custom layer): batched Haiku calls between
+ *  rounds. Batches run 3-CONCURRENT (a 169-member poll was ~9 serial calls —
+ *  minutes of wall-clock that blew slices past the serverless window) and the
+ *  poll is DEADLINE-AWARE: when time runs out mid-poll it emits the partial
+ *  tally honestly instead of dragging the run into a hard kill. */
 async function pollCrowd(ctx: EngineContext, round: number, topic: string): Promise<void> {
   if (ctx.crowd.length === 0) return;
   if (ctx.polledRounds.has(round)) return; // already polled before a suspension
-  ctx.polledRounds.add(round);
   await ctx.emit({ type: "polling", round, count: ctx.crowd.length }); // canvas animates WHILE the poll runs
   const model = TIER_MODELS[ctx.cfg.tier].crowd;
   const BATCH = 20;
@@ -186,35 +189,45 @@ async function pollCrowd(ctx: EngineContext, round: number, topic: string): Prom
   const quotes: { name: string; stance: string; quote: string }[] = [];
   const batches: EngineCrowdMember[][] = [];
   for (let i = 0; i < ctx.crowd.length; i += BATCH) batches.push(ctx.crowd.slice(i, i + BATCH));
-  for (const batch of batches) {
-    if (ctx.isCancelled()) return;
-    const t0 = Date.now();
-    try {
-      const res = await ctx.anthropic.messages.create({
-        model,
-        max_tokens: 130 * batch.length + 300,
-        system:
-          `You simulate a sentiment poll of crowd members on: "${topic}". For EACH member listed, answer AS THEM. ` +
-          `Reply ONLY a JSON array in the same order: [{"name": "...", "stance": "support|conditional|oppose|disengaged", "quote": "one short in-character sentence"}]`,
-        messages: [{
-          role: "user",
-          content: batch.map((m) => `- ${m.spec.name}: ${m.spec.seat?.role ?? m.spec.role}${m.spec.tagline ? ` — ${m.spec.tagline}` : ""}${m.spec.stances?.[0] ? ` — stance: ${m.spec.stances[0]}` : ""}`).join("\n"),
-        }],
-      });
-      await ctx.logCall("engine.poll", model, res.usage, t0, undefined, { mode: ctx.mode, round, batch: batch.length, crowd: ctx.crowd.length });
-      const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-      const rows = (parseLooseArray(text) ?? []) as { name?: string; stance?: string; quote?: string }[];
-      for (const r of rows) {
-        const stance = ["support", "conditional", "oppose", "disengaged"].includes(String(r.stance)) ? String(r.stance) : "disengaged";
-        dist[stance] += 1;
-        if (r.quote && quotes.length < 6) quotes.push({ name: String(r.name ?? "Crowd member"), stance, quote: String(r.quote).slice(0, 160) });
+  let next = 0;
+  const worker = async () => {
+    while (next < batches.length) {
+      if (ctx.isCancelled() || Date.now() > ctx.deadline) return;
+      const batch = batches[next++];
+      const t0 = Date.now();
+      try {
+        const res = await ctx.anthropic.messages.create({
+          model,
+          max_tokens: 130 * batch.length + 300,
+          system:
+            `You simulate a sentiment poll of crowd members on: "${topic}". For EACH member listed, answer AS THEM. ` +
+            `Reply ONLY a JSON array in the same order: [{"name": "...", "stance": "support|conditional|oppose|disengaged", "quote": "one short in-character sentence"}]`,
+          messages: [{
+            role: "user",
+            content: batch.map((m) => `- ${m.spec.name}: ${m.spec.seat?.role ?? m.spec.role}${m.spec.tagline ? ` — ${m.spec.tagline}` : ""}${m.spec.stances?.[0] ? ` — stance: ${m.spec.stances[0]}` : ""}`).join("\n"),
+          }],
+        });
+        await ctx.logCall("engine.poll", model, res.usage, t0, undefined, { mode: ctx.mode, round, batch: batch.length, crowd: ctx.crowd.length });
+        const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+        const rows = (parseLooseArray(text) ?? []) as { name?: string; stance?: string; quote?: string }[];
+        for (const r of rows) {
+          const stance = ["support", "conditional", "oppose", "disengaged"].includes(String(r.stance)) ? String(r.stance) : "disengaged";
+          dist[stance] += 1;
+          if (r.quote && quotes.length < 6) quotes.push({ name: String(r.name ?? "Crowd member"), stance, quote: String(r.quote).slice(0, 160) });
+        }
+      } catch (e) {
+        await ctx.logCall("engine.poll", model, null, t0, e instanceof Error ? e.message : "poll failed");
       }
-    } catch (e) {
-      await ctx.logCall("engine.poll", model, null, t0, e instanceof Error ? e.message : "poll failed");
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, batches.length) }, worker));
   const polled = Object.values(dist).reduce((a, b) => a + b, 0);
-  if (polled > 0) await ctx.emit({ type: "sentiment", round, polled, dist, quotes });
+  // the round counts as polled only once results actually shipped — an
+  // aborted poll gets re-run in full on the next slice
+  if (polled > 0) {
+    ctx.polledRounds.add(round);
+    await ctx.emit({ type: "sentiment", round, polled, dist, quotes });
+  }
 }
 
 /** convergence check (stability rule): cheap judge on whether positions still move */
@@ -288,6 +301,8 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
             : `Round ${round} of ${ctx.cfg.rounds}. React to the round so far — agree, refine, or push back. If your position changed, say so plainly.`,
         });
       }
+      // suspend at the round boundary rather than start a poll the slice can't finish
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
       await pollCrowd(ctx, round, ctx.problem);
       if (ctx.cfg.convergence === "stability" && round >= 3) {
         stableStreak = (await stabilityCheck(ctx, windowOf(posts, 30))) ? stableStreak + 1 : 0;
@@ -326,11 +341,16 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
         await turn(lead, { round, thread: "TRIBUNAL", tag: "REBUTTAL", side: "con", instruction: `Round ${round}: rebut the arguments just made — attack the weakest link with specifics.` });
       }
-      if (did("The Judge", "JUDGE'S NOTE", round)) continue;
-      currentRound = round;
-      seq += 1;
-      const jr = await speak(ctx, judge, { seq, round, thread: "TRIBUNAL", tag: "JUDGE'S NOTE", instruction: `As presiding judge, weigh THIS round only: who carried it and on what evidence? End with the scale: "Round to <side>, <x>–<y>".`, transcript: windowOf(posts), maxTokens: 800 });
-      record(judge, "JUDGE'S NOTE", jr.text);
+      // resume-skip covers ONLY the judge's turn — `continue` here used to
+      // jump the round's crowd poll on resume (the missing-poll bug)
+      if (!did("The Judge", "JUDGE'S NOTE", round)) {
+        currentRound = round;
+        seq += 1;
+        const jr = await speak(ctx, judge, { seq, round, thread: "TRIBUNAL", tag: "JUDGE'S NOTE", instruction: `As presiding judge, weigh THIS round only: who carried it and on what evidence? End with the scale: "Round to <side>, <x>–<y>".`, transcript: windowOf(posts), maxTokens: 800 });
+        record(judge, "JUDGE'S NOTE", jr.text);
+      }
+      // suspend at the round boundary rather than start a poll the slice can't finish
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
       await pollCrowd(ctx, round, ctx.problem);
     }
   } else if (ctx.mode === "Chamber") {
@@ -354,6 +374,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       const r = await speak(ctx, lead, { seq, round: 1, thread: "CHAMBER", tag: "INDEPENDENT TAKE", phase: "takes", instruction: `Write your INDEPENDENT take — you have NOT seen anyone else's. ${angles[li % angles.length]} ${q}`, transcript: "" });
       record(lead, "INDEPENDENT TAKE", r.text);
     }
+    if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 1 };
     await pollCrowd(ctx, 1, ctx.problem); // crowd reacts to the raw takes
     const takes = posts.filter((p) => p.tag === "INDEPENDENT TAKE");
     for (let i = 0; i < ctx.leads.length && budget(); i++) {
@@ -372,6 +393,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     seq += 1;
     const r = await speak(ctx, chair, { seq, round: 3, thread: "CHAMBER", tag: "CHAIR SYNTHESIS", phase: "synthesis", instruction: `As chair, synthesize the takes and reviews into the panel's position: points of consensus, live disagreements, and the recommendation.`, transcript: windowOf(posts, 24), maxTokens: 1400 });
     record(chair, "CHAIR SYNTHESIS", r.text);
+    if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 3 };
     await pollCrowd(ctx, 3, ctx.problem); // and to the chair's recommendation
     stopReason = "choreography"; // fixed shape complete — NOT convergence
   } else if (ctx.mode === "Jury") {
@@ -426,6 +448,8 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         });
         posts.push({ name: "The Tally", role: "Score aggregation", content, tag: "TALLY", seq, agentKey: "__tally", round });
       }
+      // suspend at the round boundary rather than start a poll the slice can't finish
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
       await pollCrowd(ctx, round, ctx.problem);
       if (ctx.cfg.convergence === "stability" && round >= 2) {
         const prev = scoresAt(round - 1);
@@ -524,6 +548,8 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         });
         postNo = posts.filter((p) => p.tag.startsWith("POST")).length;
       }
+      // suspend at the round boundary rather than start a poll the slice can't finish
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
       await pollCrowd(ctx, round, ctx.problem);
       if (ctx.cfg.convergence === "stability" && round >= 3) {
         stableStreak = (await stabilityCheck(ctx, windowOf(posts, 30))) ? stableStreak + 1 : 0;

@@ -241,6 +241,7 @@ Seeding data ≠ runtime tools (§7). The corpus below is **batch-curated into o
 | Adversarial seeds | 0–5 | 1 |
 | Model tier | Economy · Standard · Frontier — Anthropic lineup (§6.4) | Standard |
 | Verifier pass | on/off | on |
+| Report length | Auto · Brief · Standard · Dense | Auto |
 | Report template | per decision template, editable section list | template-driven |
 
 Cost estimate is computed and shown **before** launch (posts × mean tokens × model rates), like the demo's "compressed to ~2 minutes" line — no surprise bills. Large settings (500 experts × 100 rounds × 10K posts) are allowed but the estimator will show exactly what that costs before the user commits.
@@ -284,6 +285,8 @@ So no — consumers/residents aren't *only* census-derived (you can author a pur
 **Model tier** — which Anthropic models power which agent kinds (§6.4). Economy for drafts and big-crowd sentiment runs; Standard for real work; Frontier when the decision at stake dwarfs the run cost.
 
 **Verifier pass** — an independent fact-checking agent that runs *behind* the deliberation: every numeric or factual claim an agent makes is extracted and checked against the uploaded corpus and tool results; contradictions get flagged into the transcript and the report ("9 broker claims contradicted" in the demo is this feature). Why it matters: it's the difference between "agents said things" and "agents said things that survive an audit." Leave it on for anything decision-grade; turn it off only for cheap ideation runs.
+
+**Report length** — how deep the synthesized report goes: `brief` (the decision fast — tight findings, few risks), `standard`, `dense` (the long-form memo — full argument chains, every load-bearing number), or `auto` (scales to the transcript: short runs read brief, 40+ post runs read dense). Depth only — the verdict-commitment and criteria-receipt rules apply at every length.
 
 **Report template** — which sections the final report must contain (driven by the decision template + questions-to-resolve). Editable pre-run so the output lands in the shape your IC expects.
 
