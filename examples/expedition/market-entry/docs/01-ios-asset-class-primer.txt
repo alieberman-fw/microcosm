@@ -1,0 +1,46 @@
+INDUSTRIAL OUTDOOR STORAGE (IOS) — ASSET CLASS PRIMER
+Internal education memo · Copperline Analytics · Synthetic/demonstration
+
+WHAT IT IS
+Low-coverage industrial land (typically <20% building coverage) used for
+truck/trailer parking, container storage, equipment yards, and contractor
+laydown. Value is in the STABILIZED, ZONED, IMPROVED ACRE, not the shed:
+paving, drainage, lighting, fencing, and a small office/maintenance
+building. Institutional term of art since ~2020; national aggregate market
+estimated at $200B+ across ~500K parcels, overwhelmingly private-owned.
+
+WHY THE MOAT EXISTS
+- Cities rarely zone FOR outdoor storage; most districts prohibit or
+  condition it. Legal, conforming IOS is a shrinking set — municipalities
+  routinely upzone IOS land to "higher and better" uses, removing supply.
+- NIMBY dynamics run one way: yards get rezoned away; nobody rezones TO
+  truck parking next to anything.
+- Demand is structural: freight, e-commerce final-mile trailer pools,
+  utility/infrastructure contractors, equipment rental fleets.
+
+NATIONAL BENCHMARKS (2025, for calibration — verify locally)
+- Rents: $2,500–6,000/acre/month depending on metro, paving, and power;
+  coastal port markets at the top, interior metros $2,800–4,200
+- Rent growth 2021–2025: +30–60% cumulative in tier-1 IOS metros
+- Stabilized cap rates: 5.75–6.75% for credit-tenanted, paved sites in
+  major metros; low-improvement sites trade on $/acre, not cap
+- Yield-on-cost for buy-fix-lease (paving, power, fencing): 7.5–9.5%
+- Typical institutional site: 3–15 usable acres, 85%+ paved, near
+  interstate interchange or intermodal
+
+RISKS THE PANEL SHOULD PRESSURE-TEST
+1. CYCLICALITY: trailer-pool and construction-laydown demand both track
+   freight volumes and construction starts; a simultaneous freight
+   recession + construction slowdown can cut effective rents 15–25%
+   (observed in two metros, 2023).
+2. ZONING TWO-EDGED SWORD: the moat protects incumbents but blocks
+   improvements — repaving or adding power can trigger site-plan review
+   that reopens the nonconforming-use question.
+3. ENVIRONMENTAL: legacy yards carry recognized environmental conditions;
+   Phase II frequency in IOS diligence is roughly 3x warehouse deals.
+4. EXIT DEPTH: the institutional buyer pool, while growing, remains thin
+   in non-coastal metros — platform sales (20+ sites) have cleared better
+   than onesies.
+5. MEASUREMENT: "usable acres" vs. gross acres routinely differ 15–30%
+   after setbacks, detention, and fire lanes — rent quotes must be tied
+   to usable acres or comparisons are meaningless.

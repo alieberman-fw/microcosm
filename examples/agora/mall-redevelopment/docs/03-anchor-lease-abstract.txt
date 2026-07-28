@@ -1,0 +1,44 @@
+SOUTHGATE MALL — ANCHOR ENCUMBRANCE ABSTRACT (COUNSEL WORK PRODUCT)
+Prepared by Whitaker & Boone LLP for Southgate Acquisition LLC · Synthetic/demonstration
+
+A. RECIPROCAL EASEMENT AGREEMENT (REA), RECORDED 1977, AMENDED 1996
+- Parties: Mall owner + three anchor parcels (Hargrove's, Dillard-Mays,
+  GreenLeaf Market pad).
+- Term: runs with the land through 2037.
+- CONSENT RIGHTS: Any demolition of an anchor structure, any reduction of
+  shared parking below 4.5 stalls per 1,000 SF of retail GLA, and any
+  non-retail use exceeding 20% of total site GLA requires consent of ALL REA
+  parties then owning or leasing an anchor parcel. Consent may not be
+  unreasonably withheld EXCEPT as to parking ratio, where consent is absolute.
+- The Dillard-Mays liquidating trust has historically monetized REA consents:
+  in two other malls (2023, 2024) consent settlements ran $1.9M and $2.6M.
+
+B. HARGROVE'S LEASE (DARK ANCHOR, 118,000 SF)
+- Lease expiry: January 2033. Rent: $2.05/SF ($241,900/yr), absolute net.
+- The tenant (parent in bankruptcy; lease held by an assignee) has NO
+  operating covenant — it may remain dark indefinitely while paying rent.
+- Recapture: landlord may terminate on payment of the unamortized value of
+  tenant improvements plus 50% of remaining rent — counsel estimates a
+  termination cost of $1.6–2.1M as of mid-2026.
+- ROFR: the Hargrove's assignee holds a right of first refusal on any sale
+  of the anchor parcel itself (not the mall parcel).
+
+C. GREENLEAF MARKET (OPERATING GROCER)
+- Lease through 2031 + two 5-year options; $9.80/SF.
+- CO-TENANCY: if total mall GLA falls below 400,000 SF of operating retail
+  OR fewer than two anchors operate for 12 consecutive months, GreenLeaf may
+  pay 2% of gross sales in lieu of fixed rent, and may terminate after 24
+  months of the condition persisting. THE CO-TENANCY CONDITION HAS BEEN
+  TRIGGERED SINCE MARCH 2025 (only one anchor operating). GreenLeaf has not
+  yet elected alternate rent; its election window remains open.
+- EXCLUSIVE: no other food market exceeding 15,000 SF on the site.
+
+D. COUNSEL'S SUMMARY OF REDEVELOPMENT PATH
+A full redevelopment requires: (1) Hargrove's termination ($1.6–2.1M est.);
+(2) acquisition of the Dillard-Mays fee parcel from the trust (market
+estimate $3.5–4.0M) OR its REA consent (recent precedent $1.9–2.6M);
+(3) restructuring or waiver of the parking covenant, where the trust's
+consent right is ABSOLUTE and cannot be compelled as unreasonable;
+(4) a negotiated amendment with GreenLeaf resolving co-tenancy and the
+exclusive before construction staging removes parking. Items (3) and (4)
+are the schedule risks: neither has a contractual clock.

@@ -1,0 +1,36 @@
+building,suite,tenant,leased_sf,rent_psf_nnn,annual_base_rent,lease_expiry,renewal_options,notes
+A,100,Midwest Fastener Supply Co.,22400,6.10,136640,2027-03-31,1x5yr @ FMV,Original 2017 lease; below market
+A,110,Scioto Packaging LLC,18700,6.75,126225,2028-11-30,1x3yr @ +12%,
+A,120,Buckeye Battery Distributors,15200,7.40,112480,2030-06-30,none,2023 renewal
+A,130,Crown City HVAC Supply,12800,5.90,75520,2026-09-30,1x5yr @ FMV,1986 vintage tenant; 3rd generation
+A,140,Olentangy Medical Couriers,9600,8.20,78720,2029-04-30,none,2024 lease at market
+A,150,Vantage Point Logistics (3PL),26100,6.40,167040,2027-01-31,2x3yr @ CPI,Largest tenant bldg A
+A,160,Hilltop Sign & Graphics,7400,7.10,52540,2028-05-31,none,
+A,170,VACANT,13500,,,,,Marketed at $8.50 NNN
+A,180,Rustbelt Coffee Roasters,8200,7.85,64370,2029-10-31,1x5yr @ +10%,
+A,190,Capital City Event Rentals,14100,6.05,85305,2026-12-31,none,Month-to-month risk per mgr
+B,200,Eastland Auto Parts Warehouse,21800,5.75,125350,2026-07-31,1x5yr @ FMV,2011 lease; deepest below-market
+B,210,Freight & Field Co. (3PL),19400,7.30,141620,2030-02-28,none,2024 expansion
+B,220,Nationwide Uniform Services,11200,6.85,76720,2027-08-31,1x3yr @ +8%,
+B,230,Marble Cliff Cabinet Co.,16700,6.20,103540,2027-05-31,none,
+B,240,Two Rivers Beverage Dist.,23500,6.95,163325,2031-03-31,2x5yr @ FMV,Credit tenant; 2021 lease
+B,250,VACANT,9800,,,,,Marketed at $8.25 NNN
+B,260,Precision Gauge & Tool,6900,7.60,52440,2028-09-30,none,
+B,270,Loyal Order Print Fulfillment,12300,7.05,86715,2029-01-31,1x3yr @ CPI,
+B,280,Central Ohio Restoration,10400,6.55,68120,2026-11-30,none,Requested early renewal talks
+C,300,Kestrel Aerospace Components,17800,7.90,140620,2031-08-31,1x5yr @ +10%,Best credit in portfolio
+C,310,Buckeye State Moving & Storage,15600,6.15,95940,2027-02-28,none,
+C,320,Glacial Ridge Foods (dry goods),13900,7.20,100080,2029-07-31,1x5yr @ FMV,
+C,330,Metro Fire Protection Services,8800,7.75,68200,2030-11-30,none,2025 lease at market
+C,340,Whitehall Electrical Supply,11600,6.45,74820,2027-10-31,1x3yr @ +9%,
+C,350,VACANT,8400,,,,,Longest-vacant suite (14 mo)
+C,360,Sandusky Bay Outfitters (ecom),9200,7.50,69000,2028-03-31,none,
+C,370,Iron Gate Fitness Equipment,7700,6.90,53130,2026-05-31,none,At-risk per mgr interview
+C,380,Columbus Stage & Lighting,10900,6.70,73030,2028-08-31,1x3yr @ FMV,
+C,390,Heartland Janitorial Supply,6500,7.25,47125,2029-12-31,none,
+C,395,Pinnacle Sample Warehouse,5300,8.05,42665,2027-06-30,none,Shortest remaining term suite C
+C,398,Norwich Auto Glass Dist.,4300,7.35,31605,2028-01-31,none,
+
+TOTALS,,31 suites / 28 tenants,400000,,,,,
+LEASED,,28 suites,368300,6.82,2512885,,,occupancy 92.1%
+EXPIRING <= JAN 2028,,13 leases,180000,,1136395,,,45.2% of base rent

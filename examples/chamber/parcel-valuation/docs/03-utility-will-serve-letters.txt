@@ -1,0 +1,49 @@
+UTILITY STATUS FILE — COYOTE FLATS (38.2 AC, SARIVAL AVE)
+Compiled by Meridian Civil Group for the buyer · February 2026
+Synthetic/demonstration
+
+1. CITY OF GOODYEAR WATER — CONDITIONAL WILL-SERVE (Jan 2026)
+"The City confirms an existing 16-inch potable main in the Sarival Ave
+alignment fronting the referenced parcel with capacity adequate for the
+described 550,000 SF industrial use, subject to standard development
+agreement terms and payment of water resource acquisition fees (currently
+$4,860/acre-foot of assured supply). A hydraulic study is required for
+fire-flow above 4,000 gpm."
+STATUS: GREEN. Estimated fees for subject program: $610,000.
+
+2. CITY OF GOODYEAR WASTEWATER — CAPACITY-LIMITED RESPONSE (Jan 2026)
+"The parcel lies within the Rainbow Wash Basin service area, tributary to
+the 157th Ave Water Reclamation Facility. THE BASIN'S CONVEYANCE AND
+TREATMENT ALLOCATION IS FULLY COMMITTED to projects with executed capacity
+reservations. The City's Basin Relief Program — a parallel 21-inch trunk
+line and plant expansion — has a construction completion target of
+Q3-2027 (14–18 months from this letter). The City is not issuing new
+capacity reservations in this basin until Relief Program milestone 2
+(estimated Q1-2027). Interim service via private lift station and force
+main to the Estrella interceptor MAY be considered; preliminary engineering
+by the applicant's engineer estimates $1.9M for the 1.4-mile force main,
+subject to two private easement acquisitions."
+STATUS: RED for near-term vertical. The site can close and grade, but no
+building permit will issue without a sewer capacity reservation or the
+interim force-main path.
+
+3. APS (POWER) — PRELIMINARY (Dec 2025)
+12kV distribution on Sarival adequate for ~1.5 MVA (shell + office). The
+described 550K SF facility at typical logistics loads (3.5–5 MVA with EV
+fleet provisions) requires a new feeder from the Perryville substation:
+30–36 week lead time from executed line-extension agreement, refundable
+advances ~$740,000. No transmission-level constraint identified.
+STATUS: YELLOW — schedulable, not free.
+
+4. SOUTHWEST GAS / FIBER
+Gas: 4" HP main at Sarival & Thomas, 0.5 mi extension required (~$210K).
+Fiber: two carriers within 0.25 mi; standard build-to-suit terms.
+
+MERIDIAN CIVIL SUMMARY FOR UNDERWRITING
+The marketing description "all utilities to the site / shovel-ready" is
+accurate ONLY for water. A vertical start before Q1-2027 requires the
+interim sewer path (+$1.9M, easement risk) plus the APS feeder program
+started at closing. Realistic permit-ready timeline without interim
+sewer: 14–18 months post-closing, assuming the Relief Program holds
+schedule — a program that has already slipped once (original target
+Q1-2027, rebaselined to Q3-2027 in the city's November CIP update).

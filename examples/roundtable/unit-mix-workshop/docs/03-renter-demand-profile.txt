@@ -1,0 +1,39 @@
+SOLANO YARDS PMA — RENTER DEMAND PROFILE
+Copperline Analytics · February 2026 · Synthetic/demonstration
+Sources: synthetic ACS-style tabulations + 350-respondent intercept survey
+
+WHO RENTS WITHIN 2 MILES (household tabulation)
+- 41% single-person households (median age 27, median income $58K)
+- 24% roommate households, 2+ unrelated adults (median combined $92K)
+- 19% couples without children (median $101K)
+- 11% families with children (median $84K)
+- 5% other
+ASU affiliation: 31% of renter households contain at least one enrolled
+student; graduate students skew to 1BRs, undergrads to roommate 2BR/3BR.
+
+STATED PREFERENCES (intercept survey, new-delivery renters only, n=350)
+- "Would consider a 380–420 SF micro at $1,300": 22% yes overall;
+  38% yes among under-25s; 6% among 30+
+- Top three amenities by willingness-to-pay:
+  1. In-unit W/D (cited 81%) 2. Reserved parking stall (63%)
+  3. Fast gym (44%) — pool ranked 5th at 31%
+- Deal-breakers: no parking option available (41% would not lease),
+  no guest parking (18%)
+- Roommate households: 71% prefer 2BR/2BA with equal bedrooms; 3BR interest
+  concentrated among undergrad groups (58% of 3BR interest)
+
+DEMAND FORECAST (PMA, annual, 2026–2029)
+- New renter household formation: +2,050/year
+- Segment growth: single-person +4.1%/yr · roommate +2.6%/yr ·
+  family renters +1.2%/yr
+- Family renters at this node cite school assignment uncertainty and
+  freeway noise as reasons to prefer nodes 2+ miles south — the family
+  segment here is thinner than metro averages suggest.
+
+PRICE SENSITIVITY CHECKS
+- Studio demand is deep to $1,550; above $1,600 conversion drops 34%
+- 3BR at $2,340/mo: clears for roommate groups ($780/bed) but competes
+  against 3BR single-family rentals averaging $2,510 with garages —
+  the roommate segment, not families, is the realistic 3BR buyer here
+- Every $100 of rent above comp-set average extends projected lease-up
+  ~1.8 units/month slower in this submarket's historical data

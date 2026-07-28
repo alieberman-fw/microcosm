@@ -1,0 +1,48 @@
+JUNIPER ROW — TRAILING OPERATING STATEMENT & LEASING DETAIL
+Seller-prepared (10 months actual, Apr 2025–Jan 2026, 2 months budget)
+Synthetic/demonstration · buyer to re-underwrite
+
+REVENUE (annualized at current occupancy trajectory)
+Gross potential rent (146 homes @ blended $2,214):        $3,878,000
+Less: vacancy/lease-up (actual trailing):                  ($884,000)
+Less: concessions granted (trailing 10 mo actual):         ($196,000)
+Less: bad debt (0.4% — early portfolio):                    ($15,000)
+Other income (pet rent, smart-home fee, late fees):         $118,000
+EFFECTIVE GROSS INCOME (trailing basis):                  $2,901,000
+
+EXPENSES (trailing annualized)
+Property management (3.0% EGI, affiliate contract):          $87,000
+Payroll (2.5 FTE on site):                                  $196,000
+Repairs & maintenance + turnover:                            $94,000
+Landscaping & common area (28.4 ac):                        $167,000
+Utilities (common + vacant):                                 $88,000
+Insurance:                                                  $173,000
+Property taxes (2025 actual, PRE-REASSESSMENT):             $348,000
+Marketing & leasing:                                        $102,000
+G&A / technology:                                            $61,000
+TOTAL EXPENSES:                                           $1,316,000
+
+NOI (TRAILING, LEASE-UP BASIS):                           $1,585,000
+NOI (SELLER "IN-PLACE ANNUALIZED" AT 78%):                $2,420,000
+NOI (SELLER STABILIZED PRO FORMA):                        $3,050,000
+
+BUYER DILIGENCE FLAGS (from our analyst's first pass)
+1. TAXES: 2025 taxes reflect the land+partial-completion assessment. At a
+   $52.5M sale, county practice reassesses near sale price: estimated
+   $52.5M × 0.72 assessment ratio × 1.28% rate ≈ $484,000 — a $136K/yr
+   step-up the seller pro forma does NOT carry.
+2. MANAGEMENT FEE: 3.0% affiliate contract terminates at sale; third-party
+   BTR management quotes for 146 homes run 5.5–6.5% EGI (scattered-home
+   servicing) — a further $70–100K/yr expense understatement.
+3. CONCESSION BURN: seller stabilization assumes concessions end at 95%;
+   competing lease-ups (see market report) suggest 6+ months more.
+4. INSURANCE: quote is builder's wrap carryover; standalone renewal
+   indications for NC BTR are running 12–18% higher.
+5. The 11.4 homes/month pace includes opening-quarter pent-up demand;
+   trailing-3-month pace is 7.7 homes/month.
+
+LEASING DETAIL (trailing 3 months)
+Nov: 9 leases (1.0 mo free avg) · Dec: 6 (1.0 mo) · Jan: 8 (0.5 mo)
+Traffic→lease conversion: 22% · Top objections logged by site team:
+rent vs. own-with-FHA math (41 mentions), distance to I-77 park-and-ride
+(18), no garages on 2BR cottages (16)

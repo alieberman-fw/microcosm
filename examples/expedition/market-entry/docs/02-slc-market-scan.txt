@@ -1,0 +1,53 @@
+SALT LAKE CITY METRO — IOS MARKET SCAN (DESK RESEARCH)
+Copperline Analytics · February 2026 · Synthetic/demonstration
+NOTE: figures compiled from recorded documents, municipal codes, and listing
+services; broker-sourced items flagged as such.
+
+GEOGRAPHY & DEMAND DRIVERS
+- Crossroads-of-the-West freight position: I-15/I-80 junction, UP intermodal
+  terminal (Salt Lake City Intermodal, ~180K lifts/yr), inland-port-driven
+  distribution growth in the Northwest Quadrant.
+- Major demand pools: trailer pools for the 60M SF Class A warehouse base
+  (vacancy 5.4%), utility & data-center contractors (three hyperscale sites
+  under construction in the metro), equipment rental (five national chains
+  with yards), and aggregates/construction laydown.
+
+ZONING REALITY (the moat map)
+- SLC city: outdoor storage BY RIGHT only in M-2 (General Industrial) —
+  approx. 3,900 acres, heavily built; CONDITIONAL in M-1 (5,600 acres).
+- Northwest Quadrant overlay: outdoor storage restricted near the inland
+  port's "employment density" subareas — a 2024 text amendment REMOVED
+  by-right outdoor storage from ~1,100 acres.
+- West Valley City: by-right in M (2,700 acres); moratorium on new truck
+  parking CUPs enacted March 2025, extended once, currently through
+  June 2026 — city council minutes show staff drafting PERMANENT
+  restrictions near residential transitions.
+- Salt Lake County unincorporated (Magna area): M-2 equivalent ~1,400
+  acres; CUP required, 4–7 month timeline, 70% historical approval.
+- NO RECORD FOUND of any pending upzone/expansion of outdoor-storage
+  districts in Northpoint or any other subarea (checked planning agendas
+  through Jan 2026) — treat contrary claims as rumor until documented.
+
+SUPPLY & VACANCY (usable-acre basis, compiled inventory)
+- Identified legal IOS inventory metro-wide: ~2,150 usable acres across
+  ~340 sites; institutional-grade (3+ ac, paved, fenced, power): ~480 acres
+- Observed vacancy on institutional-grade sites: 4.1%
+- 2025 removals: 62 acres rezoned/redeveloped to buildings (net shrinkage)
+
+RENTS & RECENT TRADES (verified unless flagged)
+- Verified leases (7 comps, 2024–2025): $3,200–4,100/usable acre/month for
+  paved+fenced+lit; unpaved/gravel: $1,900–2,600
+- Broker-quoted asking on two current listings: $4,800–5,500 (FLAG:
+  unverified, both sat >200 days)
+- Recorded sales: 6.1 ac Magna paved yard, Aug 2025, $4.36M ($715K/ac,
+  in-place 6.4% cap) · 3.8 ac SLC M-2, Feb 2025, $2.93M ($771K/ac, vacant,
+  buyer improved) · 11.2 ac WVC, Nov 2024, $7.17M ($640K/ac, 7.1% on
+  below-market lease)
+- Implied stabilized yield-on-cost for buy-improve at current pricing:
+  7.3–8.6% depending on paving scope
+
+OWNERSHIP FRAGMENTATION (entry-strategy input)
+Top 10 owners control ~19% of institutional-grade acres; largest single
+portfolio: 9 sites / 61 acres (family office, no known sale process).
+Median site: 4.7 acres, individually owned. A $75M program at observed
+pricing ≈ 100–115 usable acres ≈ 18–25 sites if aggregated.
