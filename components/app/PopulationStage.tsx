@@ -18,7 +18,7 @@ import PersonaProfile from "@/components/app/PersonaProfile";
 import CastingTheater, { CrowdBand, MiniSwarm } from "@/components/app/CastingTheater";
 import CrowdRoster from "@/components/app/CrowdRoster";
 import SeatPicker from "@/components/app/SeatPicker";
-import { CROWD_SAMPLE_CAP, FrozenSpec, MAX_SEATS, PANEL_SIZES, SIM_MODES } from "@/lib/casting";
+import { CROWD_SAMPLE_CAP, FrozenSpec, MAX_SEATS, PANEL_SIZES } from "@/lib/casting";
 import { PersonaSpec } from "@/lib/personas";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -35,6 +35,8 @@ export interface CastingInfo {
   rationaleSummary?: string;
   scale: { experts: number; residents: number };
   mode: string;
+  /** the director's original pick — survives user mode changes (tags the run-config card) */
+  recommended_mode?: string;
   modeRationale: string;
   modeSummary?: string;
   user_set?: { mode?: boolean; scale?: boolean };
@@ -86,6 +88,7 @@ export default function PopulationStage({
   initialCasting,
   onCountChange,
   onCastingChange,
+  onModeChange,
 }: {
   simId: string;
   initialSeats: WorkspaceSeat[];
@@ -93,6 +96,8 @@ export default function PopulationStage({
   initialCasting: CastingInfo | null;
   onCountChange?: (n: number) => void;
   onCastingChange?: (busy: boolean) => void;
+  /** a fresh cast plan landed — the run-config mode picker re-seeds from it */
+  onModeChange?: (mode: string) => void;
 }) {
   const router = useRouter();
   const [seats, setSeats] = useState<WorkspaceSeat[]>(initialSeats);
@@ -165,7 +170,8 @@ export default function PopulationStage({
         if (evt.type === "plan") {
           const p = evt as unknown as CastingInfo & { seats: PendingSeat[]; add?: boolean };
           if (!p.add) {
-            setCastingInfo({ composition: p.composition, rationale: p.rationale, rationaleSummary: p.rationaleSummary, scale: p.scale, mode: p.mode, modeRationale: p.modeRationale, modeSummary: p.modeSummary });
+            setCastingInfo({ composition: p.composition, rationale: p.rationale, rationaleSummary: p.rationaleSummary, scale: p.scale, mode: p.mode, recommended_mode: p.mode, modeRationale: p.modeRationale, modeSummary: p.modeSummary });
+            onModeChange?.(p.mode); // the run-config picker re-seeds to the director's pick
             setExpertsDraft(null);
             setResidentsDraft(null);
           }
@@ -394,7 +400,7 @@ export default function PopulationStage({
               <span style={{ color: "var(--acc)" }}>{castingInfo.composition.toUpperCase()}</span>
               {" · MODE "}
               <span style={{ color: "var(--acc)" }}>{castingInfo.mode.toUpperCase()}</span>
-              {" "}({castingInfo.user_set?.mode ? "YOURS" : "RECOMMENDED"})
+              {" — CHOSEN IN CONFIGURE THE RUN ↓"}
             </div>
           </div>
         )}
@@ -414,7 +420,7 @@ export default function PopulationStage({
           {castingInfo.user_set?.mode && (
             <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.65, color: "var(--t6)" }}>
               <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--acc)" }}>MODE {castingInfo.mode.toUpperCase()} · </span>
-              Set by you — the recommendation was based on the brief; change it back any time below.
+              Set by you in CONFIGURE THE RUN — the director&apos;s pick stays tagged on its card down there.
             </p>
           )}
           {/* summaries above are user-facing; the director's full reasoning chain lives behind this toggle */}
@@ -470,14 +476,6 @@ export default function PopulationStage({
                 RE-CAST AS {COMPOSITIONS.find((c) => c.key === pendingComp)?.label} →
               </button>
             )}
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)", width: 92, flex: "none" }}>MODE</span>
-            {SIM_MODES.map((m) => (
-              <FilterPill key={m} on={castingInfo.mode === m} onClick={() => { if (castingInfo.mode !== m) void patchConfig({ mode: m }); }}>
-                {m.toUpperCase()}
-              </FilterPill>
-            ))}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -544,15 +542,16 @@ export default function PopulationStage({
               fills them from your personas and the 1,800-strong library, generates only the true gaps,
               and seeds a skeptic. Editable after.
             </p>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 14, alignItems: "center" }}>
-              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>COMPOSITION ·</span>
+            {/* one line, always — the row compresses and scrolls before it ever wraps */}
+            <div style={{ display: "flex", gap: 5, flexWrap: "nowrap", marginTop: 14, alignItems: "center", overflowX: "auto", paddingBottom: 2 }}>
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)", flex: "none" }}>COMPOSITION ·</span>
               {([{ key: "auto", label: "AUTO" }, ...COMPOSITIONS] as { key: "auto" | Composition; label: string }[]).map((c) => (
                 <button
                   key={c.key}
                   onClick={() => setPreComp(c.key)}
                   style={{
-                    ...mono, fontSize: 9, letterSpacing: ".05em", padding: "4px 10px", borderRadius: 100,
-                    cursor: "pointer",
+                    ...mono, fontSize: 8.5, letterSpacing: ".03em", padding: "4px 9px", borderRadius: 100,
+                    cursor: "pointer", whiteSpace: "nowrap", flex: "none",
                     background: preComp === c.key ? "var(--acc)" : "transparent",
                     border: `1px solid ${preComp === c.key ? "var(--acc)" : "var(--ln5)"}`,
                     color: preComp === c.key ? "var(--acc-c)" : "var(--t5)",
@@ -611,6 +610,11 @@ export default function PopulationStage({
             >
               Pick from the library →
             </button>
+            <div style={{ marginTop: 10 }}>
+              <a href={`/sim/${simId}/cast`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)" }}>
+                OR BROWSE THE FULL LIBRARY WITH FILTERS & MULTI-SELECT →
+              </a>
+            </div>
           </div>
         </div>
       )}

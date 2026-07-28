@@ -112,11 +112,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           await supabase.from("events").insert({ sim_id: id, seq: evSeq, type: e.type, payload: e });
         }
       };
-      const logCall = async (surface: string, model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string) => {
+      const logCall = async (surface: string, model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string, detail?: Record<string, unknown>) => {
         await supabase.from("agent_interactions").insert({
           org_id: orgId, user_id: user.id, surface, model, sim_id: id,
           input_tokens: usage?.input_tokens ?? null, output_tokens: usage?.output_tokens ?? null,
-          latency_ms: Date.now() - t0, status: error ? "error" : "ok", error: error ?? null, detail: null,
+          latency_ms: Date.now() - t0, status: error ? "error" : "ok", error: error ?? null, detail: detail ?? null,
         });
       };
       try {

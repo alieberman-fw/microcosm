@@ -136,11 +136,16 @@ export default function SeatPicker({
         style={{ width: "min(860px, 100%)", maxHeight: "86vh", display: "flex", flexDirection: "column", background: "var(--sf)", border: "1px solid var(--ln5)", borderRadius: 18, overflow: "hidden" }}
       >
         <div style={{ padding: "22px 26px 16px", borderBottom: "1px solid var(--ln3)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div style={{ ...mono, fontSize: 11, letterSpacing: ".1em", color: "var(--t6)" }}>
               HAND-PICK THE PANEL · {picked.size}/{remaining} SELECTED
             </div>
-            <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "var(--t5)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 14 }}>
+              <a href={`/sim/${simId}/cast`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)" }}>
+                BROWSE ALL WITH FILTERS →
+              </a>
+              <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "var(--t5)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+            </span>
           </div>
           <input
             autoFocus

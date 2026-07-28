@@ -40,6 +40,7 @@ const HELP: Record<string, string> = {
 export default function RunConfigStage({
   simId,
   mode: initialMode,
+  recommendedMode = null,
   leads,
   expertSide,
   residentSide,
@@ -48,6 +49,8 @@ export default function RunConfigStage({
 }: {
   simId: string;
   mode: string | null;
+  /** the Casting Director's pick — tags its card so the recommendation survives changes */
+  recommendedMode?: string | null;
   leads: number;
   expertSide: number;
   residentSide: number;
@@ -190,9 +193,16 @@ export default function RunConfigStage({
                 transition: "all .15s",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: on ? "var(--acc)" : "var(--t2)", fontFamily: "var(--font-sans), sans-serif" }}>{m}</span>
-                {on && <span style={{ ...mono, fontSize: 8, color: "var(--acc)" }}>SELECTED</span>}
+                <span style={{ display: "inline-flex", gap: 5, alignItems: "baseline" }}>
+                  {m === recommendedMode && (
+                    <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: on ? "var(--acc)" : "var(--t6)", border: `1px solid ${on ? "var(--acc)" : "var(--ln5)"}`, borderRadius: 100, padding: "1px 6px" }}>
+                      ✦ DIRECTOR&apos;S PICK
+                    </span>
+                  )}
+                  {on && <span style={{ ...mono, fontSize: 8, color: "var(--acc)" }}>SELECTED</span>}
+                </span>
               </div>
               <div style={{ borderRadius: 8, overflow: "hidden", background: "var(--sf2)", marginTop: 8 }}>
                 <ModeDiagram mode={m.toLowerCase() as ModeKey} height={64} />
