@@ -39,6 +39,40 @@ export interface ReportSpec {
 
 export type ReportLength = "brief" | "standard" | "dense";
 
+/** Completeness gate for a synthesized spec. Truncation salvage can close the
+ *  brackets on a PARTIAL JSON (a max_tokens draft once shipped a report with
+ *  no findings, no criteria, no risks) — a spec that fails this gate must be
+ *  RETRIED at a bigger budget, never accepted. Returns the failure reason, or
+ *  null when the spec is decision-grade complete. Exported PURE for tests. */
+export function reportSpecIncomplete(
+  raw: Record<string, unknown>,
+  expected: { questions: number; criteria: number },
+): string | null {
+  const verdict = raw.verdict as { label?: unknown; headline?: unknown } | undefined;
+  if (!verdict || typeof verdict.label !== "string" || verdict.label.trim().length === 0) return "missing verdict";
+  if (typeof raw.executive_summary !== "string" || raw.executive_summary.trim().length < 40) return "missing executive summary";
+  const scores = raw.dimension_scores;
+  if (!Array.isArray(scores) || scores.length < 3) return "missing dimension scores";
+  const sections = raw.sections;
+  const wantSections = Math.min(Math.max(expected.questions, 1), 8);
+  if (!Array.isArray(sections) || sections.length < wantSections) {
+    return `findings cover ${Array.isArray(sections) ? sections.length : 0}/${wantSections} questions`;
+  }
+  if (expected.criteria > 0) {
+    const criteria = raw.criteria;
+    if (!Array.isArray(criteria) || criteria.length === 0) return "missing success-criteria receipt";
+  }
+  if (!Array.isArray(raw.risks) || raw.risks.length === 0) return "missing risk register";
+  if (!Array.isArray(raw.tripwires) || raw.tripwires.length === 0) return "missing tripwires";
+  return null;
+}
+
+/** synthesis output ceiling per depth — a STARTING budget; the route escalates
+ *  on max_tokens because adaptive thinking bills against the same ceiling */
+export function synthBudgetFor(length: ReportLength): number {
+  return length === "brief" ? 8_000 : length === "dense" ? 24_000 : 16_000;
+}
+
 /** structured-outputs schema for the synthesis — the API constrains the reply
  *  to this shape, so "unparseable synthesis" is structurally impossible
  *  (assistant prefill is NOT supported on Opus 4.8/Sonnet 5 — this is the way) */

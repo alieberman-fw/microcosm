@@ -3,10 +3,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
-import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, reportSynthSystem, verifierSystem } from "@/lib/report";
+import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, reportSpecIncomplete, reportSynthSystem, synthBudgetFor, verifierSystem } from "@/lib/report";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 
-export const maxDuration = 300;
+export const maxDuration = 800; // the synthesis ladder may run a dense Opus pass more than once
 
 const FILES_BETA = "files-api-2025-04-14";
 
@@ -92,7 +92,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     : cfg.report_length;
   // budgets are CEILINGS with headroom for the model's internal reasoning
   // (which counts against max_tokens) — the depth rules control actual length
-  const synthBudget = effLength === "brief" ? 6000 : effLength === "dense" ? 14_000 : 9000;
+  const synthBudget = synthBudgetFor(effLength);
   const findingClamp = effLength === "dense" ? 4500 : 2500;
   const anthropic = new Anthropic();
   const encoder = new TextEncoder();
@@ -111,26 +111,61 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       const send = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
       try {
         // ---- 1 · compile: director synthesizes the structured report ----
-        // stage notes are user-facing copy — models stay in Monitoring
-        send({ type: "stage", value: "compile", note: `READING ${postRows.length} POSTS · COMPILING VERDICT, FINDINGS & DISSENTS…` });
+        // stage notes are user-facing copy — models stay in Monitoring.
+        // ESCALATION LADDER (same medicine as engine turns): adaptive thinking
+        // bills against max_tokens, so a hard 78-post dense synthesis can run
+        // past a fixed ceiling — each retry raises it. STREAMING keeps long
+        // outputs inside HTTP limits and feeds live progress to the strip.
+        // COMPLETENESS GATE: truncation salvage once closed the brackets on a
+        // partial JSON and shipped a report with no findings — a spec that
+        // fails the gate is retried bigger, never accepted.
+        send({ type: "stage", value: "compile", note: `READING ${postRows.length} POSTS · COMPILING VERDICT, FINDINGS & DISSENTS…${effLength === "dense" ? " (DENSE REPORT — TYPICALLY 1–3 MINUTES)" : ""}` });
+        const budgets = [synthBudget, synthBudget * 2, Math.min(synthBudget * 3, 48_000)];
         let raw: Record<string, unknown> | null = null;
         let lastErr = "";
-        for (let attempt = 0; attempt < 2 && !raw; attempt++) {
+        for (let attempt = 0; attempt < budgets.length && !raw; attempt++) {
           const t0 = Date.now();
           try {
-            const res = await anthropic.messages.create({
+            const ms = anthropic.messages.stream({
               model: synthModel,
-              max_tokens: synthBudget,
+              max_tokens: budgets[attempt],
               system: reportSynthSystem(effLength),
               messages: [{ role: "user", content: `${briefText}\nTRANSCRIPT:\n${transcript.slice(0, 160_000)}` }],
               // structured outputs pin the reply to the report schema — a
               // prose-wrapped response killed a live synthesis ("unparseable")
               output_config: { format: { type: "json_schema", schema: REPORT_JSON_SCHEMA } },
             });
-            await logCall("report.synthesize", synthModel, res.usage, t0, undefined, { mode, posts: postRows.length, length: effLength });
+            let written = 0;
+            let lastNote = Date.now();
+            ms.on("text", (t) => {
+              written += t.length;
+              if (Date.now() - lastNote > 2000) {
+                lastNote = Date.now();
+                send({ type: "stage", value: "compile", note: `COMPILING… ~${Math.round(written / 6).toLocaleString()} WORDS DRAFTED${attempt > 0 ? ` · PASS ${attempt + 1}` : ""}` });
+              }
+            });
+            const res = await ms.finalMessage();
+            await logCall("report.synthesize", synthModel, res.usage as { input_tokens: number; output_tokens: number }, t0, undefined,
+              { mode, posts: postRows.length, length: effLength, budget: budgets[attempt], stop: res.stop_reason });
+            if (res.stop_reason === "max_tokens") {
+              // a truncated draft is NEVER parsed — salvage would gut the report
+              lastErr = `synthesis outran the ${budgets[attempt].toLocaleString()}-token ceiling`;
+              send({ type: "stage", value: "compile", note: `DRAFT RAN LONG — RECOMPILING WITH MORE ROOM (PASS ${attempt + 2})…` });
+              continue;
+            }
             const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-            raw = parseLooseObject(text);
-            if (!raw) lastErr = `unparseable synthesis (stop: ${res.stop_reason})`;
+            const parsed = parseLooseObject(text);
+            if (!parsed) {
+              lastErr = `unparseable synthesis (stop: ${res.stop_reason})`;
+              continue;
+            }
+            const incomplete = reportSpecIncomplete(parsed, { questions: questions.length, criteria: success.length });
+            if (incomplete) {
+              lastErr = `incomplete synthesis — ${incomplete}`;
+              send({ type: "stage", value: "compile", note: `DRAFT CAME BACK INCOMPLETE (${incomplete.toUpperCase()}) — RECOMPILING…` });
+              continue;
+            }
+            raw = parsed;
           } catch (e) {
             lastErr = e instanceof Error ? e.message : "synthesis failed";
             await logCall("report.synthesize", synthModel, null, t0, lastErr);
@@ -159,7 +194,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             try {
               const vres = await anthropic.beta.messages.create({
                 model: verifyModel,
-                max_tokens: 3000,
+                max_tokens: 5000, // verifier fails soft, but thinking headroom keeps its check list complete
                 system: verifierSystem(),
                 messages: [{ role: "user", content: [...corpusBlocks, { type: "text", text: `PANEL POSTS:\n${transcript.slice(0, 100_000)}` }] }],
                 betas: [FILES_BETA],
