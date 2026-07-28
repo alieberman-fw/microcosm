@@ -49,7 +49,10 @@ export default function RunScreen({ stream }: { stream: RunStream }) {
         const ang = (i / 8) * Math.PI * 2 - Math.PI / 2;
         const gx = cx + Math.cos(ang) * R, gy = cy + Math.sin(ang) * R;
         const a = AGENTS[k];
-        const lead: Node = { x: gx, y: gy, lead: true, label: a.name.split(" ")[0].toUpperCase() + " · " + (a.tag ?? "").split(" ")[0] };
+        // first name + last initial, matching the feed byline
+        const parts = a.name.trim().split(/\s+/);
+        const short = parts.length < 2 ? parts[0] : `${parts[0]} ${parts[parts.length - 1][0]}.`;
+        const lead: Node = { x: gx, y: gy, lead: true, label: short.toUpperCase() + " · " + (a.tag ?? "").split(" ")[0] };
         leads[k] = lead; experts.push(lead); members[k] = [];
         for (let j = 0; j < 5; j++) {
           const a2 = (j / 5) * Math.PI * 2 + i, r2 = (0.055 + (j % 3) * 0.02) * Math.min(w, h);

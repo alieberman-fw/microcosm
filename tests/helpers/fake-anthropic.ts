@@ -1,0 +1,224 @@
+/**
+ * FakeAnthropic — the offline seam for the Phase-1 engine matrix
+ * (docs/next-level-plan.md §1a). EngineContext takes its client by injection,
+ * so this fake runs every choreography with zero tokens in milliseconds.
+ *
+ * It classifies each call by its system prompt (turn · poll · router ·
+ * stability judge), answers deterministically, ADVANCES A MOCKED CLOCK per
+ * call (so deadline/suspend paths are exactly controllable), and records a
+ * call log for assertions. Failure injection covers empty responses, thrown
+ * API errors, and malformed JSON.
+ */
+
+import { vi } from "vitest";
+import type Anthropic from "@anthropic-ai/sdk";
+import type { EngineContext, EngineEvent, EngineLead, PostRec, RunResume } from "@/lib/engine";
+import type { FrozenSpec } from "@/lib/casting";
+import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
+
+/* ------------------------------- clock ---------------------------------- */
+
+export class FakeClock {
+  now = 1_700_000_000_000;
+  constructor() {
+    vi.spyOn(Date, "now").mockImplementation(() => this.now);
+  }
+  tick(ms: number) { this.now += ms; }
+}
+
+/* ---------------------------- call classification ------------------------ */
+
+export type CallKind = "turn" | "poll" | "router" | "judge" | "unknown";
+
+export function classify(system: string): CallKind {
+  if (system.includes("Forum rules")) return "turn";
+  if (system.includes("sentiment poll")) return "poll";
+  if (system.includes("full name of the panelist")) return "router";
+  if (system.includes('"stable" or "moving"')) return "judge";
+  return "unknown";
+}
+
+export interface FakeCall { kind: CallKind; system: string; user: string; model: string; maxTokens: number }
+
+export interface FakeOptions {
+  /** ms the mocked clock advances per model call (drives deadline paths) */
+  tickMs?: number;
+  /** stability judge script: verdict for the Nth judge call (1-based); default all "moving" */
+  judgeScript?: (n: number) => "stable" | "moving";
+  /** juror score for (agentName, round) — drives Jury arithmetic */
+  juryScore?: (name: string, round: number) => number;
+  /** turn text override; return undefined for the default */
+  turnText?: (call: FakeCall, n: number) => string | undefined;
+  /** inject failures: called per call — "empty" | "throw" | "garbage" | undefined */
+  failure?: (kind: CallKind, n: number) => "empty" | "throw" | "garbage" | undefined;
+}
+
+/* ------------------------------ the fake --------------------------------- */
+
+export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
+  const calls: FakeCall[] = [];
+  let judgeN = 0;
+  let turnRound = 0; // parsed from instruction when present
+
+  const respond = (params: { model: string; system?: unknown; max_tokens: number; messages: { role: string; content: unknown }[] }) => {
+    clock.tick(opts.tickMs ?? 1000);
+    const system = String(params.system ?? "");
+    const userBlocks = params.messages[params.messages.length - 1]?.content;
+    const user = typeof userBlocks === "string"
+      ? userBlocks
+      : (userBlocks as { type: string; text?: string }[]).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+    const kind = classify(system);
+    const call: FakeCall = { kind, system, user, model: params.model, maxTokens: params.max_tokens };
+    calls.push(call);
+    const n = calls.length;
+
+    const failure = opts.failure?.(kind, n);
+    if (failure === "throw") throw new Error(`fake API error (call ${n})`);
+
+    let text = "";
+    if (failure === "empty") {
+      text = "";
+    } else if (failure === "garbage") {
+      text = "not json at all {{{";
+    } else if (kind === "poll") {
+      // answer AS each listed member, echoing their names back
+      const names = user.split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).split(":")[0]);
+      text = JSON.stringify(names.map((name, i) => ({
+        name, stance: ["support", "conditional", "oppose", "disengaged"][i % 4], quote: `as ${name} says`,
+      })));
+    } else if (kind === "router") {
+      // pick the second panelist listed (never the last author by construction)
+      const m = system.match(/Panel: ([^;]+); ([^ ]+ [^ ]+?) \(/);
+      text = m?.[2] ?? "Bea B.";
+    } else if (kind === "judge") {
+      judgeN += 1;
+      text = (opts.judgeScript?.(judgeN) ?? "moving");
+    } else {
+      // turn — jury verdicts get scripted scores, everything else prose.
+      // Round comes from the Jury INSTRUCTION ("Deliberation round N of M"),
+      // never from a bare /round \d/ scan — the transcript above the
+      // instruction quotes earlier rounds and would match first.
+      const rm = user.match(/Deliberation round (\d+) of/);
+      turnRound = rm ? Number(rm[1]) : 1;
+      const nameM = system.match(/^You are ([^,]+),/);
+      const name = nameM?.[1] ?? "Agent";
+      const override = opts.turnText?.(call, n);
+      if (override !== undefined) {
+        text = override;
+      } else if (user.includes('Start EXACTLY with "SCORE:')) {
+        const score = opts.juryScore?.(name, turnRound) ?? 5;
+        text = `SCORE: ${score}/10 — ${name} verdict for round ${turnRound}.`;
+      } else {
+        text = `${name} argues point ${n} with a concrete number ($${n}00K).`;
+      }
+    }
+
+    return {
+      content: text ? [{ type: "text", text }] : [],
+      usage: { input_tokens: 100, output_tokens: 50 },
+      stop_reason: text ? "end_turn" : "max_tokens",
+    };
+  };
+
+  const client = {
+    messages: { create: async (p: never) => respond(p) },
+    beta: { messages: { create: async (p: never) => respond(p) } },
+  } as unknown as Anthropic;
+
+  return { client, calls };
+}
+
+/* ------------------------------ cast builders ---------------------------- */
+
+export function makeLead(name: string, over: Partial<FrozenSpec> & { seatRole?: string; adversarial?: boolean } = {}): EngineLead {
+  const initials = name.split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+  const spec: FrozenSpec = {
+    name,
+    initials,
+    role: over.role ?? `${name} role`,
+    kind: over.kind ?? "expert",
+    backstory: `Backstory of ${name}.`,
+    stances: [`${name} stance`],
+    seat: {
+      role: over.seatRole ?? over.role ?? `${name} seat`,
+      why: "test seat",
+      discipline: "TEST",
+      adversarial: over.adversarial ?? false,
+      provenance: "library",
+    },
+    ...over,
+  } as FrozenSpec;
+  return { key: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), spec };
+}
+
+export function makeLeads(n: number, residents = 0): EngineLead[] {
+  const first = ["Al", "Bea", "Cy", "Dee", "Ed", "Fay", "Gus", "Hal", "Ida", "Jo", "Kai", "Lu", "Mo", "Nia", "Ora", "Pip"];
+  return Array.from({ length: n }, (_, i) =>
+    makeLead(`${first[i % first.length]} ${String.fromCharCode(66 + i)}.`, {
+      kind: i < residents ? "consumer" : "expert",
+    }));
+}
+
+export function makeCrowd(n: number) {
+  return Array.from({ length: n }, (_, i) => {
+    const lead = makeLead(`Crowd ${i + 1} Z.`, { kind: "consumer" });
+    (lead.spec.seat as { tier?: string }).tier = "crowd";
+    return { key: `crowd-${i + 1}`, spec: lead.spec };
+  });
+}
+
+/* ------------------------------ ctx builder ------------------------------ */
+
+export interface Harness {
+  ctx: EngineContext;
+  events: EngineEvent[];
+  calls: FakeCall[];
+  clock: FakeClock;
+  /** posts as PostRec (mirrors the launch route's resume reconstruction) */
+  postRecs: () => PostRec[];
+  sentimentRounds: () => number[];
+  /** build the RunResume the launch route would build from persisted state */
+  resume: (round: number) => RunResume;
+}
+
+export function makeHarness(args: {
+  mode: string;
+  leads: EngineLead[];
+  crowd?: ReturnType<typeof makeCrowd>;
+  cfg?: Partial<RunConfig>;
+  deadlineInMs?: number;          // relative to clock start; default: effectively infinite
+  fake?: FakeOptions;
+  polledRounds?: Set<number>;
+  clock?: FakeClock;
+}): Harness {
+  const clock = args.clock ?? new FakeClock();
+  const { client, calls } = makeFakeAnthropic(clock, args.fake ?? {});
+  const events: EngineEvent[] = [];
+  const ctx: EngineContext = {
+    anthropic: client,
+    cfg: { ...RUN_DEFAULTS, convergence: "fixed", ...args.cfg } as RunConfig,
+    mode: args.mode,
+    problem: "Test problem — pool or finishes?",
+    questions: ["Q ONE", "Q TWO"],
+    leads: args.leads,
+    crowd: args.crowd ?? [],
+    corpusBlocks: [],
+    temperature: 0.7,
+    deadline: clock.now + (args.deadlineInMs ?? 10 ** 12),
+    polledRounds: args.polledRounds ?? new Set<number>(),
+    emit: async (e) => { events.push(e); },
+    logCall: async () => {},
+    isCancelled: () => false,
+  };
+  const postRecs = () => events
+    .filter((e): e is Extract<EngineEvent, { type: "post" }> => e.type === "post")
+    .map((e) => ({ name: e.name, role: e.role, content: e.content, tag: e.tag, seq: e.seq, agentKey: e.agent_key, round: e.round }));
+  const sentimentRounds = () => events
+    .filter((e): e is Extract<EngineEvent, { type: "sentiment" }> => e.type === "sentiment")
+    .map((e) => e.round);
+  const resume = (round: number): RunResume => {
+    const recs = postRecs();
+    return { posts: recs, seq: recs.reduce((m, r) => Math.max(m, r.seq), 0), round };
+  };
+  return { ctx, events, calls, clock, postRecs, sentimentRounds, resume };
+}

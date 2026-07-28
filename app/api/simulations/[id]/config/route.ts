@@ -56,7 +56,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     config.run = {
       rounds: num(r.rounds, RUN_RANGES.rounds.min, RUN_RANGES.rounds.max, prev.rounds),
       max_posts: num(r.max_posts, RUN_RANGES.max_posts.min, RUN_RANGES.max_posts.max, prev.max_posts),
-      duration_days: num(r.duration_days, RUN_RANGES.duration_days.min, RUN_RANGES.duration_days.max, prev.duration_days),
       speaker: pick(r.speaker ?? prev.speaker, ["priority", "round-robin", "random", "mention-driven"] as const, "priority"),
       convergence: pick(r.convergence ?? prev.convergence, ["stability", "fixed", "budget"] as const, "stability"),
       temperature: pick(r.temperature ?? prev.temperature, ["conservative", "balanced", "exploratory"] as const, "balanced"),
