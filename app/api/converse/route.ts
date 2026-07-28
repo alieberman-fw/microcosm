@@ -279,7 +279,9 @@ export async function POST(request: Request) {
         try {
           const resp = await anthropic.messages.create({
             model,
-            max_tokens: 900,
+            // per-participant tiers reach Sonnet 5/Opus 4.8, whose adaptive
+            // thinking bills against this ceiling — prose-sized caps starve it
+            max_tokens: 2400,
             system: compilePersonaPrompt(p) + groupNote + attNote,
             messages: [{
               role: "user",

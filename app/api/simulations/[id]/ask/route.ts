@@ -96,7 +96,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const res = await anthropic.beta.messages.create({
       model,
-      max_tokens: 1500,
+      max_tokens: 4000, // thinking bills against the ceiling on Sonnet-class models — prose-sized caps clip answers
       betas: [FILES_BETA],
       system:
         `You are the corpus analyst for a Microcosm real-estate simulation. The user's research problem: "${(brief.problem ?? "").slice(0, 500)}".\n` +
