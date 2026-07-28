@@ -1,6 +1,6 @@
 import { createServerSupabase, getLocalUser } from "@/lib/supabase/server";
 import HomeClient, {
-  ChecklistState, HomeActivityDay, HomeConversation, HomePersona, HomeReport, HomeSim, HomeStats,
+  ChecklistState, HomeActivityDay, HomeConversation, HomePersona, HomeReport, HomeSeries, HomeSim, HomeStats,
 } from "@/components/app/HomeClient";
 import { PersonaSpec } from "@/lib/personas";
 import { ReportSpec } from "@/lib/report";
@@ -15,6 +15,7 @@ export default async function HomePage() {
     .from("users").select("org_id, prefs").eq("id", user!.id).single();
   const prefs = (userRow?.prefs ?? {}) as { hide_onboarding?: boolean };
   const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
 
   const [
     { data: convRows, count: convCount },
@@ -25,6 +26,10 @@ export default async function HomePage() {
     { count: runCount },
     { data: reportRows, count: reportCount },
     { data: activityRows },
+    { data: simDates },
+    { data: msgDates },
+    { data: toneRows },
+    { data: modeRows },
   ] = await Promise.all([
     supabase!
       .from("conversations")
@@ -56,6 +61,10 @@ export default async function HomePage() {
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(5000),
+    supabase!.from("simulations").select("created_at").gte("created_at", since30).limit(2000),
+    supabase!.from("conversation_messages").select("created_at").gte("created_at", since30).limit(5000),
+    supabase!.from("reports").select("tone:spec->verdict->>tone").limit(500),
+    supabase!.from("simulations").select("mode:config->run_result->>mode").limit(1000),
   ]);
 
   const convs = (convRows ?? []).map((c) => ({
@@ -104,6 +113,32 @@ export default async function HomePage() {
   }
   const activity: HomeActivityDay[] = [...byDay.entries()].map(([day, v]) => ({ day, ...v }));
 
+  // 30-day creation series (simulations · conversation messages), one slot per day
+  const series30 = (rows: { created_at: string }[] | null): HomeSeries[] => {
+    const m = new Map<string, number>();
+    for (let i = 29; i >= 0; i--) m.set(dayKey(new Date(Date.now() - i * 86_400_000).toISOString()), 0);
+    for (const r of rows ?? []) {
+      const k = dayKey(r.created_at);
+      if (m.has(k)) m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return [...m.entries()].map(([day, value]) => ({ day, value }));
+  };
+  const sims30 = series30(simDates as { created_at: string }[] | null);
+  const msgs30 = series30(msgDates as { created_at: string }[] | null);
+
+  // outcomes: verdict tones across every report + which modes actually ran
+  const verdictMix: Record<string, number> = {};
+  for (const r of (toneRows ?? []) as { tone: string | null }[]) {
+    if (r.tone) verdictMix[r.tone] = (verdictMix[r.tone] ?? 0) + 1;
+  }
+  const modeCounts = new Map<string, number>();
+  for (const r of (modeRows ?? []) as { mode: string | null }[]) {
+    if (r.mode) modeCounts.set(r.mode, (modeCounts.get(r.mode) ?? 0) + 1);
+  }
+  const modeMix = [...modeCounts.entries()]
+    .map(([mode, count]) => ({ mode, count }))
+    .sort((a, b) => b.count - a.count);
+
   const stats: HomeStats = {
     sims: simCount ?? 0,
     runs: runCount ?? 0,
@@ -134,6 +169,10 @@ export default async function HomePage() {
       reports={reports}
       stats={stats}
       activity={activity}
+      sims30={sims30}
+      msgs30={msgs30}
+      verdictMix={verdictMix}
+      modeMix={modeMix}
     />
   );
 }

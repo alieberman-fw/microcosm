@@ -63,6 +63,11 @@ export interface HomeActivityDay {
   tokens: number;
 }
 
+export interface HomeSeries {
+  day: string;    // YYYY-MM-DD
+  value: number;
+}
+
 export interface ChecklistState {
   conversation: boolean;
   group: boolean;
@@ -93,14 +98,60 @@ const STEPS: { key: keyof ChecklistState; title: string; desc: string; href: str
   { key: "simulate", title: "Run your first simulation", desc: "Brief → corpus → cast → live deliberation → decision-grade report.", href: "/sim/new", cta: "OPEN THE BRIEF COMPOSER →" },
 ];
 
-function QuickAction({ href, title, sub }: { href: string; title: string; sub: string }) {
+/** small day-bar chart used by every 30-day series card: hover pins the day,
+ *  the whole strip clicks through — one visual language across the dashboard */
+function MiniBars({ data, unit, href, onNavigate }: {
+  data: HomeSeries[];
+  unit: string;
+  href: string;
+  onNavigate: (href: string) => void;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const max = Math.max(1, ...data.map((d) => d.value));
+  const total = data.reduce((s, d) => s + d.value, 0);
   return (
-    <Link href={href} className="card cardHoverQuiet" style={{ padding: "20px 22px", display: "block" }}>
-      <div style={{ fontSize: 15, fontWeight: 600 }}>{title}</div>
-      <div style={{ ...mono, marginTop: 6, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)" }}>{sub}</div>
-    </Link>
+    <div>
+      <div style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: hover !== null ? "var(--acc)" : "var(--t7)", marginTop: 10, minHeight: 14 }}>
+        {hover !== null
+          ? `${data[hover].day.slice(5).replace("-", "/")} · ${data[hover].value.toLocaleString()} ${unit}`
+          : `${total.toLocaleString()} ${unit} · 30 DAYS`}
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 56, marginTop: 8 }} onMouseLeave={() => setHover(null)}>
+        {data.map((d, i) => {
+          const hot = hover === i;
+          return (
+            <div
+              key={d.day}
+              onMouseEnter={() => setHover(i)}
+              onClick={() => onNavigate(href)}
+              style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%", cursor: "pointer" }}
+            >
+              <div style={{
+                height: `${Math.max(d.value > 0 ? 8 : 3, (d.value / max) * 100)}%`,
+                borderRadius: 2,
+                background: d.value > 0 ? "var(--acc)" : "var(--sf2)",
+                opacity: hot ? 1 : d.value > 0 ? 0.35 + 0.55 * (d.value / max) : 1,
+                transition: "opacity .12s",
+                animation: "grow .6s ease both", transformOrigin: "bottom",
+              }} />
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+        <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: "var(--t7)" }}>{data[0]?.day.slice(5).replace("-", "/")}</span>
+        <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: "var(--t7)" }}>{data[data.length - 1]?.day.slice(5).replace("-", "/")}</span>
+      </div>
+    </div>
   );
 }
+
+const VERDICT_ORDER: { key: string; label: string; color: string }[] = [
+  { key: "go", label: "GO", color: "var(--acc)" },
+  { key: "conditional", label: "CONDITIONAL", color: "var(--warn)" },
+  { key: "no-go", label: "NO-GO", color: "var(--warn)" },
+  { key: "split", label: "SPLIT", color: "var(--t5)" },
+];
 
 function SectionHead({ label, href, cta }: { label: string; href?: string; cta?: string }) {
   return (
@@ -113,6 +164,7 @@ function SectionHead({ label, href, cta }: { label: string; href?: string; cta?:
 
 export default function HomeClient({
   email, checklist, hideChecklist, conversations, personas, sims, reports, stats, activity,
+  sims30 = [], msgs30 = [], verdictMix = {}, modeMix = [],
 }: {
   email: string;
   checklist: ChecklistState;
@@ -123,6 +175,10 @@ export default function HomeClient({
   reports: HomeReport[];
   stats: HomeStats;
   activity: HomeActivityDay[];
+  sims30?: HomeSeries[];
+  msgs30?: HomeSeries[];
+  verdictMix?: Record<string, number>;
+  modeMix?: { mode: string; count: number }[];
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -161,17 +217,9 @@ export default function HomeClient({
           : "A rehearsal room for real estate's hardest decisions — start by talking to the people who live in it."}
       </p>
 
-      {/* quick actions */}
-      <div className="grid4" style={{ marginTop: 30 }}>
-        <QuickAction href="/sim/new" title="Start a simulation" sub="BRIEF → CAST → RUN → REPORT" />
-        <QuickAction href="/conversations/new" title="New conversation" sub="1:1 OR A ROOM OF 20" />
-        <QuickAction href="/personas" title="Browse the library" sub="1,800+ PERSONAS" />
-        <QuickAction href="/reports" title="Read your reports" sub="VERDICTS & DISSENTS" />
-      </div>
-
-      {/* stat tiles — the operation at a glance */}
+      {/* stat tiles — the operation at a glance (creation lives in the sidebar) */}
       {hasActivity && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginTop: 26 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginTop: 30 }}>
           {tiles.map((t) => (
             <Link key={t.label} href={t.href} className="card cardHoverQuiet" style={{ padding: "16px 18px", display: "block" }}>
               <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t6)" }}>{t.label}</div>
@@ -254,6 +302,69 @@ export default function HomeClient({
             <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>{activity[0]?.day.slice(5).replace("-", "/")}</span>
             <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>EACH BAR = ONE DAY · CLICK THROUGH FOR THE CALL LOG</span>
             <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>{activity[activity.length - 1]?.day.slice(5).replace("-", "/")}</span>
+          </div>
+        </div>
+      )}
+
+      {/* trend charts: what you've been building and where it landed */}
+      {hasActivity && (
+        <div className="grid3" style={{ marginTop: 14, alignItems: "start" }}>
+          <div className="card" style={{ padding: "20px 24px", minWidth: 0 }}>
+            <SectionHead label="SIMULATIONS · 30 DAYS" href="/dashboard" cta="ALL →" />
+            <MiniBars data={sims30} unit="CREATED" href="/dashboard" onNavigate={(h) => router.push(h)} />
+          </div>
+          <div className="card" style={{ padding: "20px 24px", minWidth: 0 }}>
+            <SectionHead label="MESSAGES · 30 DAYS" href="/conversations" cta="OPEN →" />
+            <MiniBars data={msgs30} unit="MESSAGES" href="/conversations" onNavigate={(h) => router.push(h)} />
+          </div>
+          <div className="card" style={{ padding: "20px 24px", minWidth: 0 }}>
+            <SectionHead label="OUTCOMES · ALL REPORTS" href="/reports" cta="ALL →" />
+            {(() => {
+              const total = VERDICT_ORDER.reduce((s, v) => s + (verdictMix[v.key] ?? 0), 0);
+              if (total === 0) {
+                return (
+                  <p style={{ margin: "12px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "var(--t6)" }}>
+                    No verdicts yet — every synthesized report lands its verdict here.
+                  </p>
+                );
+              }
+              return (
+                <div>
+                  {/* verdict mix — one stacked bar, the honest split of every call made */}
+                  <div style={{ display: "flex", gap: 3, height: 10, borderRadius: 100, overflow: "hidden", marginTop: 14 }}>
+                    {VERDICT_ORDER.filter((v) => (verdictMix[v.key] ?? 0) > 0).map((v) => (
+                      <span
+                        key={v.key}
+                        title={`${v.label} · ${verdictMix[v.key]}`}
+                        style={{ width: `${((verdictMix[v.key] ?? 0) / total) * 100}%`, background: v.color, opacity: v.key === "no-go" ? 0.55 : 1 }}
+                      />
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 12 }}>
+                    {VERDICT_ORDER.filter((v) => (verdictMix[v.key] ?? 0) > 0).map((v) => (
+                      <div key={v.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: v.color, opacity: v.key === "no-go" ? 0.55 : 1, flex: "none" }} />
+                        <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t5)", flex: 1 }}>{v.label}</span>
+                        <span style={{ ...mono, fontSize: 9.5, color: "var(--t3)" }}>{verdictMix[v.key]}</span>
+                        <span style={{ ...mono, fontSize: 8.5, color: "var(--t7)", width: 34, textAlign: "right" }}>{Math.round(((verdictMix[v.key] ?? 0) / total) * 100)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                  {modeMix.length > 0 && (
+                    <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--ln2)" }}>
+                      <div style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t7)" }}>MODES RUN</div>
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 8 }}>
+                        {modeMix.slice(0, 5).map((m) => (
+                          <span key={m.mode} style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", padding: "3px 9px", borderRadius: 100, border: "1px solid var(--ln4)", color: "var(--t5)" }}>
+                            {m.mode.toUpperCase()} · {m.count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
