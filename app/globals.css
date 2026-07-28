@@ -115,6 +115,12 @@ button { font-family: var(--font-grotesk), sans-serif; }
 /* conversation rows + sim cards: ⋯ actions reveal on hover (or while focused) */
 .convRow .rowActions, .simCard .rowActions { opacity: 0; transition: opacity 0.15s; }
 .convRow:hover .rowActions, .simCard:hover .rowActions, .rowActions:focus-within { opacity: 1; }
+
+/* home dashboard table rows: quiet until hovered, actions reveal on the right */
+.homeRow { transition: background 0.12s; }
+.homeRow:hover { background: var(--sf2); }
+.homeRow .rowGo { opacity: 0; transition: opacity 0.12s; }
+.homeRow:hover .rowGo { opacity: 1; }
 .menuItem {
   display: block; width: 100%; text-align: left; background: none; border: none;
   cursor: pointer; border-radius: 8px; padding: 8px 11px; font-size: 12.5px;

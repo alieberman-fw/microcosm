@@ -10,6 +10,7 @@
 
 import { CSSProperties, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PersonaSpec } from "@/lib/personas";
 
@@ -124,12 +125,15 @@ export default function HomeClient({
   activity: HomeActivityDay[];
 }) {
   const supabase = createClient();
+  const router = useRouter();
   const [hidden, setHidden] = useState(hideChecklist);
+  const [metric, setMetric] = useState<"calls" | "tokens">("calls");
+  const [hoverDay, setHoverDay] = useState<number | null>(null);
   const doneCount = Object.values(checklist).filter(Boolean).length;
   const hasActivity = checklist.conversation || checklist.persona || checklist.simulate;
   const firstName = email.split("@")[0].split(/[._-]/)[0];
   const inProgress = sims.filter((s) => s.status === "running");
-  const maxCalls = Math.max(1, ...activity.map((d) => d.calls));
+  const maxVal = Math.max(1, ...activity.map((d) => d[metric]));
 
   const clearChecklist = async () => {
     setHidden(true);
@@ -195,32 +199,60 @@ export default function HomeClient({
         </div>
       )}
 
-      {/* 14-day activity strip */}
+      {/* 14-day activity — interactive: hover any bar for the day's numbers, toggle the metric */}
       {hasActivity && stats.calls14 > 0 && (
         <div className="card" style={{ marginTop: 20, padding: "20px 24px" }}>
-          <SectionHead label="ACTIVITY · LAST 14 DAYS" href="/monitoring" cta="FULL DETAIL IN MONITORING →" />
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 74, marginTop: 16 }}>
-            {activity.map((d) => (
-              <div
-                key={d.day}
-                title={`${d.day} · ${d.calls.toLocaleString()} calls · ${fmtK(d.tokens)} tokens`}
-                style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%", cursor: "default" }}
-              >
-                <div style={{
-                  height: `${Math.max(d.calls > 0 ? 6 : 2, (d.calls / maxCalls) * 100)}%`,
-                  borderRadius: 3,
-                  background: d.calls > 0 ? "var(--acc)" : "var(--sf2)",
-                  opacity: d.calls > 0 ? 0.4 + 0.6 * (d.calls / maxCalls) : 1,
-                  animation: "grow .6s ease both", transformOrigin: "bottom",
-                }} />
-              </div>
-            ))}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ ...mono, fontSize: 10, letterSpacing: ".12em", color: "var(--t6)" }}>ACTIVITY · LAST 14 DAYS</div>
+            <span style={{ display: "inline-flex", gap: 5 }}>
+              {(["calls", "tokens"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMetric(m)}
+                  style={{
+                    ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "3px 10px", borderRadius: 100, cursor: "pointer",
+                    background: metric === m ? "var(--acc-dim)" : "transparent",
+                    border: `1px solid ${metric === m ? "var(--acc)" : "var(--ln4)"}`,
+                    color: metric === m ? "var(--acc)" : "var(--t6)", transition: "all .15s",
+                  }}
+                >
+                  {m.toUpperCase()}
+                </button>
+              ))}
+            </span>
+            <span style={{ ...mono, marginLeft: "auto", fontSize: 9, letterSpacing: ".06em", color: hoverDay !== null ? "var(--acc)" : "var(--t7)" }}>
+              {hoverDay !== null
+                ? `${activity[hoverDay].day.slice(5).replace("-", "/")} · ${activity[hoverDay].calls.toLocaleString()} CALLS · ${fmtK(activity[hoverDay].tokens)} TOKENS`
+                : `${stats.calls14.toLocaleString()} CALLS · ${fmtK(stats.tokens14)} TOKENS`}
+            </span>
+            <Link href="/monitoring" style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--acc)" }}>MONITORING →</Link>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 84, marginTop: 16 }} onMouseLeave={() => setHoverDay(null)}>
+            {activity.map((d, i) => {
+              const hot = hoverDay === i;
+              return (
+                <div
+                  key={d.day}
+                  onMouseEnter={() => setHoverDay(i)}
+                  onClick={() => router.push("/monitoring")}
+                  style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%", cursor: "pointer" }}
+                >
+                  <div style={{
+                    height: `${Math.max(d[metric] > 0 ? 6 : 2, (d[metric] / maxVal) * 100)}%`,
+                    borderRadius: 3,
+                    background: d[metric] > 0 ? "var(--acc)" : "var(--sf2)",
+                    opacity: hot ? 1 : d[metric] > 0 ? 0.35 + 0.55 * (d[metric] / maxVal) : 1,
+                    outline: hot && d[metric] > 0 ? "1px solid var(--acc)" : "none",
+                    transition: "opacity .12s, height .3s ease",
+                    animation: "grow .6s ease both", transformOrigin: "bottom",
+                  }} />
+                </div>
+              );
+            })}
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
             <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>{activity[0]?.day.slice(5).replace("-", "/")}</span>
-            <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>
-              {stats.calls14.toLocaleString()} MODEL CALLS · {fmtK(stats.tokens14)} TOKENS
-            </span>
+            <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>EACH BAR = ONE DAY · CLICK THROUGH FOR THE CALL LOG</span>
             <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>{activity[activity.length - 1]?.day.slice(5).replace("-", "/")}</span>
           </div>
         </div>
@@ -262,103 +294,144 @@ export default function HomeClient({
         </div>
       )}
 
-      {/* recent work */}
-      <div className="splitCol" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 14, marginTop: 26, alignItems: "start" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div className="card" style={{ padding: "24px 26px" }}>
-            <SectionHead label="RECENT SIMULATIONS" href="/dashboard" cta={sims.length > 0 ? "SEE ALL →" : undefined} />
-            <div style={{ display: "flex", flexDirection: "column", marginTop: 8 }}>
-              {sims.length === 0 && (
-                <p style={{ margin: "14px 0 4px", fontSize: 13, lineHeight: 1.6, color: "var(--t6)" }}>
-                  Nothing yet — <Link href="/sim/new" style={{ color: "var(--acc)" }}>state your first hard question</Link> and cast the room.
-                </p>
-              )}
-              {sims.map((s) => (
-                <Link key={s.id} href={`/sim/${s.id}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: "1px solid var(--ln2)" }}>
-                  <span style={{ minWidth: 0, flex: 1, fontSize: 13.5, fontWeight: 600, color: "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {s.problem}
-                  </span>
-                  <span style={{ ...mono, flex: "none", fontSize: 8.5, letterSpacing: ".05em", padding: "2px 9px", borderRadius: 100, border: `1px solid ${s.status === "complete" ? "var(--acc)" : s.status === "running" ? "var(--acc)" : "var(--ln5)"}`, color: s.status === "complete" || s.status === "running" ? "var(--acc)" : "var(--t6)" }}>
-                    {s.status === "complete" ? `RAN · ${s.mode?.toUpperCase() ?? ""} · ${s.posts}P` : s.status.toUpperCase()}
-                  </span>
-                  <span style={{ ...mono, flex: "none", fontSize: 9, letterSpacing: ".05em", color: "var(--t7)", width: 58, textAlign: "right" }}>
-                    {timeAgo(s.created_at).toUpperCase()}
-                  </span>
-                </Link>
-              ))}
-            </div>
+      {/* recent simulations — a real table (§10 grammar): scan, hover, click through */}
+      <div className="card" style={{ marginTop: 26, padding: "24px 26px", overflow: "hidden" }}>
+        <SectionHead label="RECENT SIMULATIONS" href="/dashboard" cta={sims.length > 0 ? "SEE ALL →" : undefined} />
+        {sims.length === 0 ? (
+          <p style={{ margin: "14px 0 4px", fontSize: 13, lineHeight: 1.6, color: "var(--t6)" }}>
+            Nothing yet — <Link href="/sim/new" style={{ color: "var(--acc)" }}>state your first hard question</Link> and cast the room.
+          </p>
+        ) : (
+          <div style={{ overflowX: "auto", marginTop: 10 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+              <thead>
+                <tr>
+                  {["THE QUESTION", "STATUS", "MODE", "POSTS", "WHEN", ""].map((h, i) => (
+                    <th key={h || "go"} style={{
+                      ...mono, textAlign: i >= 3 && i <= 4 ? "right" : "left", fontSize: 8.5, letterSpacing: ".1em",
+                      color: "var(--t7)", fontWeight: 500, padding: "8px 10px 8px 0",
+                      borderBottom: "1px solid var(--ln3)",
+                      width: i === 0 ? "auto" : i === 1 ? 96 : i === 2 ? 96 : i === 3 ? 58 : i === 4 ? 68 : 64,
+                    }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sims.map((s) => (
+                  <tr
+                    key={s.id}
+                    className="homeRow"
+                    onClick={() => router.push(`/sim/${s.id}`)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <td style={{ padding: "12px 10px 12px 0", borderBottom: "1px solid var(--ln2)", fontSize: 13, fontWeight: 600, color: "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {s.problem}
+                    </td>
+                    <td style={{ padding: "12px 10px 12px 0", borderBottom: "1px solid var(--ln2)" }}>
+                      <span style={{
+                        ...mono, fontSize: 8, letterSpacing: ".06em", padding: "2px 8px", borderRadius: 100, whiteSpace: "nowrap",
+                        border: `1px solid ${s.status === "complete" || s.status === "running" ? "var(--acc)" : "var(--ln5)"}`,
+                        color: s.status === "complete" || s.status === "running" ? "var(--acc)" : "var(--t6)",
+                        background: s.status === "running" ? "var(--acc-dim)" : "transparent",
+                      }}>
+                        {s.status === "complete" ? "RAN" : s.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td style={{ ...mono, padding: "12px 10px 12px 0", borderBottom: "1px solid var(--ln2)", fontSize: 10, letterSpacing: ".05em", color: "var(--t5)", whiteSpace: "nowrap" }}>
+                      {s.mode ? s.mode.toUpperCase() : "—"}
+                    </td>
+                    <td style={{ ...mono, padding: "12px 10px 12px 0", borderBottom: "1px solid var(--ln2)", fontSize: 10.5, color: "var(--t4)", textAlign: "right" }}>
+                      {s.posts > 0 ? s.posts : "—"}
+                    </td>
+                    <td style={{ ...mono, padding: "12px 10px 12px 0", borderBottom: "1px solid var(--ln2)", fontSize: 9, letterSpacing: ".04em", color: "var(--t7)", textAlign: "right", whiteSpace: "nowrap" }}>
+                      {timeAgo(s.created_at).toUpperCase()}
+                    </td>
+                    <td style={{ padding: "12px 0", borderBottom: "1px solid var(--ln2)", textAlign: "right" }}>
+                      <span className="rowGo" style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--acc)", whiteSpace: "nowrap" }}>
+                        OPEN →
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
+      </div>
 
-          <div className="card" style={{ padding: "24px 26px" }}>
-            <SectionHead label="RECENT CONVERSATIONS" href="/conversations/history" cta={conversations.length > 0 ? "SEE ALL →" : undefined} />
-            <div style={{ display: "flex", flexDirection: "column", marginTop: 8 }}>
-              {conversations.length === 0 && (
-                <p style={{ margin: "14px 0 4px", fontSize: 13, lineHeight: 1.6, color: "var(--t6)" }}>
-                  Nothing yet — <Link href="/conversations/new" style={{ color: "var(--acc)" }}>build your first room</Link> and ask a hard question.
-                </p>
-              )}
-              {conversations.map((c) => (
-                <Link key={c.id} href={`/conversations?open=${c.id}`} style={{ display: "flex", alignItems: "baseline", gap: 12, padding: "12px 0", borderBottom: "1px solid var(--ln2)" }}>
-                  <span style={{ minWidth: 0, flex: 1, fontSize: 13.5, fontWeight: 600, color: "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {c.title}
+      {/* reports · personas · conversations — three lanes, every child clamped */}
+      <div className="grid3" style={{ marginTop: 14, alignItems: "start" }}>
+        <div className="card" style={{ padding: "24px 26px", minWidth: 0 }}>
+          <SectionHead label="LATEST REPORTS" href="/reports" cta={reports.length > 0 ? "ALL →" : undefined} />
+          <div style={{ display: "flex", flexDirection: "column", marginTop: 8, minWidth: 0 }}>
+            {reports.length === 0 && (
+              <p style={{ margin: "14px 0 4px", fontSize: 13, lineHeight: 1.6, color: "var(--t6)" }}>
+                None yet — run a simulation, then hit “Synthesize the report” on the run screen.
+              </p>
+            )}
+            {reports.map((r, i) => (
+              <Link key={`${r.sim_id}-${i}`} href={`/sim/${r.sim_id}/report`} style={{ display: "block", padding: "12px 0", borderBottom: "1px solid var(--ln2)", minWidth: 0 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "3px 10px", borderRadius: 100, border: `1px solid ${toneColor(r.tone)}`, color: toneColor(r.tone), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+                    {r.label}
                   </span>
-                  <span style={{ ...mono, flex: "none", fontSize: 9, letterSpacing: ".05em", color: "var(--t7)" }}>
-                    {c.participants} IN · {c.messages} MSGS · {timeAgo(c.updated_at).toUpperCase()}
-                  </span>
-                </Link>
-              ))}
-            </div>
+                </span>
+                <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", fontSize: 12, lineHeight: 1.55, color: "var(--t5)", marginTop: 7 }}>
+                  {r.headline}
+                </span>
+                <span style={{ ...mono, display: "block", fontSize: 8, letterSpacing: ".06em", color: "var(--t7)", marginTop: 5 }}>
+                  {timeAgo(r.created_at).toUpperCase()}
+                </span>
+              </Link>
+            ))}
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div className="card" style={{ padding: "24px 26px" }}>
-            <SectionHead label="LATEST REPORTS" href="/reports" cta={reports.length > 0 ? "ALL REPORTS →" : undefined} />
-            <div style={{ display: "flex", flexDirection: "column", marginTop: 8 }}>
-              {reports.length === 0 && (
-                <p style={{ margin: "14px 0 4px", fontSize: 13, lineHeight: 1.6, color: "var(--t6)" }}>
-                  None yet — run a simulation, then hit “Synthesize the report” on the run screen.
-                </p>
-              )}
-              {reports.map((r, i) => (
-                <Link key={`${r.sim_id}-${i}`} href={`/sim/${r.sim_id}/report`} style={{ display: "block", padding: "12px 0", borderBottom: "1px solid var(--ln2)" }}>
-                  <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "3px 10px", borderRadius: 100, border: `1px solid ${toneColor(r.tone)}`, color: toneColor(r.tone) }}>
-                    {r.label}
-                  </span>
-                  <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", fontSize: 12, lineHeight: 1.55, color: "var(--t5)", marginTop: 7 }}>
-                    {r.headline}
-                  </span>
-                  <span style={{ ...mono, display: "block", fontSize: 8, letterSpacing: ".06em", color: "var(--t7)", marginTop: 5 }}>
-                    {timeAgo(r.created_at).toUpperCase()}
-                  </span>
-                </Link>
-              ))}
-            </div>
+        <div className="card" style={{ padding: "24px 26px", minWidth: 0 }}>
+          <SectionHead label="YOUR PERSONAS" href="/personas" cta="LIBRARY →" />
+          <div style={{ display: "flex", flexDirection: "column", marginTop: 8, minWidth: 0 }}>
+            {personas.length === 0 && (
+              <p style={{ margin: "14px 0 4px", fontSize: 13, lineHeight: 1.6, color: "var(--t6)" }}>
+                None yet — remix a library expert to make them yours.
+              </p>
+            )}
+            {personas.map((p) => (
+              <Link key={p.id} href={`/conversations?with=${p.id}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--ln2)", minWidth: 0 }}>
+                <span style={{ ...mono, width: 28, height: 28, borderRadius: "50%", flex: "none", background: "var(--acc-dim)", border: "1px solid var(--acc)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9.5, color: "var(--acc)" }}>
+                  {p.spec.initials}
+                </span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.spec.name}</span>
+                  <span style={{ display: "block", fontSize: 10.5, color: "var(--t6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.spec.role}</span>
+                </span>
+                {(p.spec.lineage?.length ?? 0) > 0 && (
+                  <span style={{ ...mono, flex: "none", fontSize: 8, letterSpacing: ".06em", color: "var(--acc)" }}>⑂</span>
+                )}
+              </Link>
+            ))}
           </div>
+        </div>
 
-          <div className="card" style={{ padding: "24px 26px" }}>
-            <SectionHead label="YOUR PERSONAS" href="/personas" cta="LIBRARY →" />
-            <div style={{ display: "flex", flexDirection: "column", marginTop: 8 }}>
-              {personas.length === 0 && (
-                <p style={{ margin: "14px 0 4px", fontSize: 13, lineHeight: 1.6, color: "var(--t6)" }}>
-                  None yet — remix a library expert to make them yours.
-                </p>
-              )}
-              {personas.map((p) => (
-                <Link key={p.id} href={`/conversations?with=${p.id}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--ln2)" }}>
-                  <span style={{ ...mono, width: 28, height: 28, borderRadius: "50%", flex: "none", background: "var(--acc-dim)", border: "1px solid var(--acc)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9.5, color: "var(--acc)" }}>
-                    {p.spec.initials}
-                  </span>
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.spec.name}</span>
-                    <span style={{ display: "block", fontSize: 10.5, color: "var(--t6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.spec.role}</span>
-                  </span>
-                  {(p.spec.lineage?.length ?? 0) > 0 && (
-                    <span style={{ ...mono, flex: "none", fontSize: 8, letterSpacing: ".06em", color: "var(--acc)" }}>⑂</span>
-                  )}
-                </Link>
-              ))}
-            </div>
+        <div className="card" style={{ padding: "24px 26px", minWidth: 0 }}>
+          <SectionHead label="RECENT CONVERSATIONS" href="/conversations/history" cta={conversations.length > 0 ? "ALL →" : undefined} />
+          <div style={{ display: "flex", flexDirection: "column", marginTop: 8, minWidth: 0 }}>
+            {conversations.length === 0 && (
+              <p style={{ margin: "14px 0 4px", fontSize: 13, lineHeight: 1.6, color: "var(--t6)" }}>
+                Nothing yet — <Link href="/conversations/new" style={{ color: "var(--acc)" }}>build your first room</Link> and ask a hard question.
+              </p>
+            )}
+            {conversations.slice(0, 5).map((c) => (
+              <Link key={c.id} href={`/conversations?open=${c.id}`} style={{ display: "block", padding: "11px 0", borderBottom: "1px solid var(--ln2)", minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {c.title}
+                </span>
+                <span style={{ ...mono, display: "block", fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)", marginTop: 3 }}>
+                  {c.participants} IN · {c.messages} MSGS · {timeAgo(c.updated_at).toUpperCase()}
+                </span>
+              </Link>
+            ))}
           </div>
         </div>
       </div>
