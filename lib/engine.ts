@@ -100,6 +100,17 @@ const clampWords = (s: string, max = 220) => {
   return w.length <= max ? s.trim() : w.slice(0, max).join(" ") + "…";
 };
 
+/** cheap token-overlap similarity (0–1) — the duplicate-post detector.
+ *  Exported PURE so tests pin the threshold behavior. */
+export function textSimilarity(a: string, b: string): number {
+  const tok = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2));
+  const A = tok(a), B = tok(b);
+  if (A.size === 0 || B.size === 0) return 0;
+  let inter = 0;
+  for (const w of A) if (B.has(w)) inter += 1;
+  return inter / Math.min(A.size, B.size);
+}
+
 /** models love opening with "**Their Name.**" — strip any self-prefix */
 export function stripSelfPrefix(text: string, name: string): string {
   const first = name.split(/\s+/)[0];
@@ -113,62 +124,84 @@ export function stripSelfPrefix(text: string, name: string): string {
 async function speak(ctx: EngineContext, lead: EngineLead, opts: {
   seq: number; round: number; thread: string; tag: string; reply_to?: number | null;
   instruction: string; transcript: string; phase?: string; side?: string; maxTokens?: number;
+  /** this speaker's earlier posts this round — a near-duplicate draft gets ONE
+   *  do-not-restate retry (the "Benjamin K. said it twice" fix) */
+  dedupeAgainst?: string[];
 }): Promise<{ seq: number; text: string }> {
   const model = TIER_MODELS[ctx.cfg.tier].leads;
   await ctx.emit({ type: "presence", agent_key: lead.key, name: lead.spec.name, state: "thinking" });
   const system = compilePersonaPrompt(lead.spec, { mode: ctx.mode, problem: ctx.problem, temperature: ctx.cfg.temperature });
-  const userContent: Anthropic.Beta.BetaContentBlockParam[] = [
-    ...ctx.corpusBlocks,
-    { type: "text", text: `${opts.transcript ? `TRANSCRIPT SO FAR (most recent last):\n${opts.transcript}\n\n` : ""}${opts.instruction}` },
-  ];
-  let text = "";
-  const cites: { title: string; quote: string }[] = [];
   // NOTE: no `temperature` param — deprecated on Sonnet 5+ (400s the call);
   // the §4.1 temperature band steers style through the prompt instead.
-  let lastErr = "";
   // escalating output budgets: adaptive-thinking models (Sonnet 5+) can spend
   // the ENTIRE budget thinking on a hard turn and return zero prose with
   // stop_reason max_tokens — retrying at the same ceiling fails identically
   // (the "Angela F.'s turn failed twice" run). Each retry must raise the
   // ceiling; only actual output tokens are billed, so headroom is free.
-  const base = opts.maxTokens ?? 2000;
-  const budgets = [base, Math.max(base * 3, 6_000), Math.max(base * 6, 12_000)];
-  for (let attempt = 0; attempt < budgets.length && !text; attempt++) {
-    const ta = Date.now();
-    try {
-      const res = await ctx.anthropic.beta.messages.create({
-        model,
-        max_tokens: budgets[attempt],
-        system,
-        messages: [{ role: "user", content: userContent }],
-        betas: ["files-api-2025-04-14"],
-      });
-      for (const b of res.content) {
-        if (b.type === "text") {
-          text += b.text;
-          const withCites = b as { citations?: { document_title?: string | null; cited_text?: string }[] };
-          for (const c of withCites.citations ?? []) {
-            if (c.document_title) cites.push({ title: c.document_title, quote: (c.cited_text ?? "").slice(0, 160) });
+  const attempt = async (extra?: string): Promise<{ text: string; cites: { title: string; quote: string }[] }> => {
+    const userContent: Anthropic.Beta.BetaContentBlockParam[] = [
+      ...ctx.corpusBlocks,
+      { type: "text", text: `${opts.transcript ? `TRANSCRIPT SO FAR (most recent last):\n${opts.transcript}\n\n` : ""}${opts.instruction}${extra ? `\n\n${extra}` : ""}` },
+    ];
+    let text = "";
+    const cites: { title: string; quote: string }[] = [];
+    let lastErr = "";
+    const base = opts.maxTokens ?? 2000;
+    const budgets = [base, Math.max(base * 3, 6_000), Math.max(base * 6, 12_000)];
+    for (let i = 0; i < budgets.length && !text; i++) {
+      const ta = Date.now();
+      try {
+        const res = await ctx.anthropic.beta.messages.create({
+          model,
+          max_tokens: budgets[i],
+          system,
+          messages: [{ role: "user", content: userContent }],
+          betas: ["files-api-2025-04-14"],
+        });
+        for (const b of res.content) {
+          if (b.type === "text") {
+            text += b.text;
+            const withCites = b as { citations?: { document_title?: string | null; cited_text?: string }[] };
+            for (const c of withCites.citations ?? []) {
+              if (c.document_title) cites.push({ title: c.document_title, quote: (c.cited_text ?? "").slice(0, 160) });
+            }
           }
         }
+        await ctx.logCall("engine.turn", model, res.usage as { input_tokens: number; output_tokens: number }, ta, undefined,
+          { agent: lead.spec.name, seat: lead.spec.seat?.role ?? lead.spec.role, mode: ctx.mode, round: opts.round, tag: opts.tag });
+        // a successful call with no prose = the model spent the budget thinking
+        // (Sonnet 5 adaptive thinking) or refused — the next attempt runs with
+        // the escalated budget above
+        if (!text) lastErr = `empty response (stop_reason: ${res.stop_reason})`;
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : "turn failed";
+        await ctx.logCall("engine.turn", model, null, ta, lastErr,
+          { agent: lead.spec.name, seat: lead.spec.seat?.role ?? lead.spec.role, mode: ctx.mode, round: opts.round, tag: opts.tag });
+        if (i === 0) await new Promise((r) => setTimeout(r, 600));
       }
-      await ctx.logCall("engine.turn", model, res.usage as { input_tokens: number; output_tokens: number }, ta, undefined,
-        { agent: lead.spec.name, seat: lead.spec.seat?.role ?? lead.spec.role, mode: ctx.mode, round: opts.round, tag: opts.tag });
-      // a successful call with no prose = the model spent the budget thinking
-      // (Sonnet 5 adaptive thinking) or refused — the next attempt runs with
-      // the escalated budget above
-      if (!text) lastErr = `empty response (stop_reason: ${res.stop_reason})`;
-    } catch (e) {
-      lastErr = e instanceof Error ? e.message : "turn failed";
-      await ctx.logCall("engine.turn", model, null, ta, lastErr,
-        { agent: lead.spec.name, seat: lead.spec.seat?.role ?? lead.spec.role, mode: ctx.mode, round: opts.round, tag: opts.tag });
-      if (attempt === 0) await new Promise((r) => setTimeout(r, 600));
     }
+    // fail LOUD: a dead turn after the full escalation ladder means the run is
+    // broken — stop with the real API error instead of littering the feed with
+    // skipped posts (the escalation makes thinking-drain effectively impossible)
+    if (!text) throw new Error(`${lead.spec.name}'s turn failed ${budgets.length} times — ${lastErr}`);
+    return { text, cites };
+  };
+
+  let { text, cites } = await attempt();
+  // anti-repeat: a contested target can pull the same voice back in — if the
+  // draft substantially restates one of this speaker's earlier posts this
+  // round, retry ONCE with an explicit order; emit the retry either way
+  // (a slightly-similar post beats a hole in the choreography)
+  if (opts.dedupeAgainst?.some((prev) => textSimilarity(text, prev) >= 0.8)) {
+    try {
+      const redo = await attempt(
+        "IMPORTANT: Your draft repeated a post you already made this round. Do NOT restate it — " +
+        "contribute a NEW argument, a NEW number, or engage a DIFFERENT colleague's point directly."
+      );
+      text = redo.text;
+      cites = redo.cites;
+    } catch { /* keep the first draft rather than kill the run */ }
   }
-  // fail LOUD: a dead turn after the full escalation ladder means the run is
-  // broken — stop with the real API error instead of littering the feed with
-  // skipped posts (the escalation makes thinking-drain effectively impossible)
-  if (!text) throw new Error(`${lead.spec.name}'s turn failed ${budgets.length} times — ${lastErr}`);
   text = clampWords(stripSelfPrefix(text, lead.spec.name));
   await ctx.emit({
     type: "post", seq: opts.seq, author: "agent", agent_key: lead.key,
@@ -367,8 +400,13 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     const { transcript, ...rest } = o;
     currentRound = o.round;
     seq += 1;
-    const r = await speak(ctx, lead, { seq, transcript: transcript ?? windowOf(posts), ...rest });
+    // the speaker's own earlier posts this round feed the anti-repeat check
+    const dedupeAgainst = posts
+      .filter((p) => p.agentKey === lead.key && p.round === o.round)
+      .map((p) => p.content);
+    const r = await speak(ctx, lead, { seq, transcript: transcript ?? windowOf(posts), dedupeAgainst, ...rest });
     record(lead, o.tag, r.text, o.reply_to ?? null);
+    await microVotes(o.round);
     return r;
   };
   const startRound = resume?.round ?? 1;
@@ -427,16 +465,20 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     }
   };
 
-  /** §2b votes — after each polled round, ONE batched pass per ~20 voters:
-   *  every lead + a crowd sample endorses (▲) or rejects (▼) this round's
-   *  arguments in character. Emitted as a `votes` event; persisted by the
-   *  launch route into post_votes. Garnish: skipped when out of time. */
-  const voteRound = async (round: number) => {
-    if (ctx.votedRounds.has(round) || ctx.isCancelled() || Date.now() > ctx.deadline) return;
-    const targets = posts.filter((p) => p.round === round && p.tag !== "TALLY" && p.tag !== "INTERJECTION");
-    if (targets.length === 0) return;
-    const crowdSample = ctx.crowd.slice(0, 12);
-    const voters = [...ctx.leads, ...crowdSample].slice(0, 32);
+  /** §2b votes. Two layers share one pass (and one in-memory pair-dedupe):
+   *  - microVotes: REALTIME — every 3rd substantive post at lively/bustling, a
+   *    rotating 6-voter sample reacts to the last few posts, so ▲/▼ chips move
+   *    WHILE the round argues instead of only at the close.
+   *  - voteRound: the round close — every lead + a crowd sample sweeps the
+   *    whole round (pairs already cast mid-round are skipped).
+   *  Emitted as `votes` events; persisted to post_votes. Skipped when out of
+   *  time — garnish, never a suspension. */
+  const votedPairs = new Map<number, Set<string>>(); // round → "seq:voterKey"
+  const votePass = async (round: number, targets: PostRec[], voters: (EngineLead | EngineCrowdMember)[], micro: boolean) => {
+    if (ctx.isCancelled() || Date.now() > ctx.deadline) return;
+    if (targets.length === 0 || voters.length === 0) return;
+    const pairs = votedPairs.get(round) ?? new Set<string>();
+    votedPairs.set(round, pairs);
     const model = TIER_MODELS[ctx.cfg.tier].crowd;
     const all: { seq: number; voter_key: string; voter_name: string; voter_role: string; vote: 1 | -1 }[] = [];
     for (let i = 0; i < voters.length; i += 20) {
@@ -449,7 +491,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
           max_tokens: 90 * batch.length + 600,
           system:
             `You simulate panelists and crowd members casting votes on forum arguments about: "${ctx.problem}". ` +
-            `For EACH voter listed, decide IN CHARACTER which of this round's posts they would endorse (up) or reject (down) — up to 2 votes each, never on their own post. ` +
+            `For EACH voter listed, decide IN CHARACTER which of the posts they would endorse (up) or reject (down) — up to 2 votes each, never on their own post. ` +
             `Reply ONLY a JSON array: [{"voter": "...", "votes": [{"seq": <post number>, "vote": "up|down"}]}]`,
           messages: [{
             role: "user",
@@ -458,7 +500,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
               `VOTERS:\n${batch.map((v) => `- ${v.spec.name}: ${v.spec.seat?.role ?? v.spec.role}${v.spec.stances?.[0] ? ` — stance: ${v.spec.stances[0]}` : ""}`).join("\n")}`,
           }],
         });
-        await ctx.logCall("engine.votes", model, res.usage, t0, undefined, { mode: ctx.mode, round, voters: batch.length });
+        await ctx.logCall("engine.votes", model, res.usage, t0, undefined, { mode: ctx.mode, round, voters: batch.length, micro });
         const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
         const rows = (parseLooseArray(text) ?? []) as { voter?: string; votes?: { seq?: number; vote?: string }[] }[];
         const valid = new Map(targets.map((p) => [p.seq, p.agentKey]));
@@ -467,7 +509,9 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
           if (!voter) continue;
           for (const v of (r.votes ?? []).slice(0, 2)) {
             const s = Number(v.seq);
-            if (!valid.has(s) || valid.get(s) === voter.key) continue; // never on their own post
+            if (!valid.has(s) || valid.get(s) === voter.key) continue;   // never on their own post
+            if (pairs.has(`${s}:${voter.key}`)) continue;                // each voter votes a post once
+            pairs.add(`${s}:${voter.key}`);
             all.push({ seq: s, voter_key: voter.key, voter_name: voter.spec.name, voter_role: voter.spec.seat?.role ?? voter.spec.role, vote: v.vote === "down" ? -1 : 1 });
           }
         }
@@ -475,10 +519,29 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         await ctx.logCall("engine.votes", model, null, t0, e instanceof Error ? e.message : "votes failed");
       }
     }
-    if (all.length > 0) {
-      ctx.votedRounds.add(round);
-      await ctx.emit({ type: "votes", round, votes: all });
-    }
+    if (all.length > 0) await ctx.emit({ type: "votes", round, votes: all });
+    return all.length;
+  };
+  const substantive = (round: number) => posts.filter((p) => p.round === round && p.tag !== "TALLY" && p.tag !== "INTERJECTION");
+  const microVotes = async (round: number) => {
+    if (ctx.cfg.density === "focused") return;                       // realtime layer is a living-forum feature
+    if (ctx.mode === "Desk" || ctx.mode === "Expedition") return;    // research choreographies never vote
+    if (ctx.votedRounds.has(round)) return;                          // resumed past this round's close
+    const roundPosts = substantive(round);
+    if (roundPosts.length === 0 || roundPosts.length % 3 !== 0) return; // every 3rd post
+    const pool = [...ctx.leads, ...ctx.crowd.slice(0, 12)];
+    const start = (posts.length * 5) % pool.length;
+    const voters = [...pool.slice(start), ...pool.slice(0, start)].slice(0, 6);
+    await votePass(round, roundPosts.slice(-3), voters, true);
+  };
+  const voteRound = async (round: number) => {
+    if (ctx.votedRounds.has(round)) return;
+    const targets = substantive(round);
+    const voters = [...ctx.leads, ...ctx.crowd.slice(0, 12)].slice(0, 32);
+    const n = await votePass(round, targets, voters, false);
+    // the round is marked once the closing sweep actually shipped votes (or
+    // the realtime layer already covered every pair it tried)
+    if ((n ?? 0) > 0 || (votedPairs.get(round)?.size ?? 0) > 0) ctx.votedRounds.add(round);
   };
 
   /** the standard round close for polling modes: poll → interjections → votes */
@@ -760,10 +823,25 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       // bustling), and each reply targets ANY post from the round — weighted
       // toward recent + contested — so real chains form instead of a relay
       const repliesPerRound = agoraReplies(ctx.leads.length, ctx.cfg.density);
+      const spokenThisRound = (key: string) =>
+        posts.filter((p) => p.round === round && p.agentKey === key && (p.tag.startsWith("POST") || p.tag === "REPLY")).length;
       for (let i = Math.max(inRound - 1, 0); i < repliesPerRound && budget(); i++) {
         if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
         const target = pickReplyTarget(posts, round, posts.length) ?? posts[posts.length - 1];
-        const { lead } = await router(target as PostRec);
+        const lastAuthor = posts[posts.length - 1]?.agentKey;
+        let { lead } = await router(target as PostRec);
+        // speaker guardrails (the "Benjamin K. twice in a row" fix):
+        // 1. never the same voice back-to-back, never replying to yourself;
+        // 2. relevance yields to COVERAGE — a hot hand with 2+ posts this
+        //    round gives the mic to a lead who has not spoken yet.
+        const quiet = ctx.leads.filter((l) => spokenThisRound(l.key) === 0 && l.key !== target.agentKey && l.key !== lastAuthor);
+        if (lead.key === lastAuthor || lead.key === target.agentKey) {
+          lead = quiet[posts.length % Math.max(quiet.length, 1)]
+            ?? ctx.leads.filter((l) => l.key !== lastAuthor && l.key !== target.agentKey)[posts.length % Math.max(ctx.leads.length - 1, 1)]
+            ?? lead;
+        } else if (quiet.length > 0 && spokenThisRound(lead.key) >= 2) {
+          lead = quiet[posts.length % quiet.length];
+        }
         await turn(lead, {
           round, thread: lead.spec.seat?.discipline || "AGORA", tag: "REPLY", reply_to: target.seq,
           transcript: windowOf(posts, Math.max(16, repliesPerRound + 6)),

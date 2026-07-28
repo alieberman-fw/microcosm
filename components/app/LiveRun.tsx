@@ -456,9 +456,32 @@ export default function LiveRun({
     }
   };
 
-  useEffect(() => {
+  // scroll-position-aware autoscroll: follow the live feed only while the
+  // user is AT the bottom — scrolled up to read means stay put, count what
+  // lands below, and offer a one-click jump back to the live edge
+  const atBottomRef = useRef(true);
+  const prevItemCount = useRef(items.length);
+  const [newBelow, setNewBelow] = useState(0);
+  const jumpToLatest = () => {
     const el = feedEl.current;
     if (el) el.scrollTop = el.scrollHeight;
+    atBottomRef.current = true;
+    setNewBelow(0);
+  };
+  const onFeedScroll = () => {
+    const el = feedEl.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+    atBottomRef.current = nearBottom;
+    if (nearBottom) setNewBelow(0);
+  };
+  useEffect(() => {
+    const el = feedEl.current;
+    const added = items.length - prevItemCount.current;
+    prevItemCount.current = items.length;
+    if (!el) return;
+    if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+    else if (added > 0) setNewBelow((n) => n + added);
   }, [items.length, thinking]);
 
   // ---- Take the Floor: post into the forum, @mentioned agents answer ----
@@ -735,7 +758,21 @@ export default function LiveRun({
           <canvas ref={canvasEl} onClick={canvasClick} title="Click a lead for their full profile" style={{ flex: 1, width: "100%", minHeight: 0, marginTop: 10, cursor: "pointer" }} />
         </div>
 
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, background: "var(--sf)", overflow: "hidden" }}>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, background: "var(--sf)", overflow: "hidden", position: "relative" }}>
+          {newBelow > 0 && (
+            <button
+              onClick={jumpToLatest}
+              style={{
+                position: "absolute", left: "50%", transform: "translateX(-50%)",
+                bottom: items.length > 0 && status !== "running" ? 74 : 16, zIndex: 6,
+                ...mono, fontSize: 9, letterSpacing: ".06em", padding: "7px 16px", borderRadius: 100,
+                background: "var(--acc)", color: "var(--acc-c)", border: "none", cursor: "pointer",
+                boxShadow: "0 6px 22px rgba(0,0,0,.35)", animation: "fadeUp .2s ease both",
+              }}
+            >
+              ↓ {newBelow} NEW POST{newBelow === 1 ? "" : "S"} — JUMP TO LATEST
+            </button>
+          )}
           <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--ln2)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>
               {viewMode === "Jury" ? "VERDICTS" : viewMode === "Desk" ? "THE MEMO, ASSEMBLING" : viewMode === "Expedition" ? "FINDINGS LOG" : "FORUM FEED"}
@@ -755,7 +792,7 @@ export default function LiveRun({
               </button>
             )}
           </div>
-          <div ref={feedEl} style={{ flex: 1, overflowY: "auto", padding: "14px 18px" }}>
+          <div ref={feedEl} onScroll={onFeedScroll} style={{ flex: 1, overflowY: "auto", padding: "14px 18px" }}>
             {items.length === 0 && status !== "running" && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: "60px 24px", textAlign: "center" }}>
                 <div style={{ fontSize: 14, lineHeight: 1.7, color: "var(--t4)", maxWidth: 420 }}>
