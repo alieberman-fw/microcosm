@@ -84,7 +84,9 @@ export function castingPlanSystem(targetSeats?: number, composition?: "experts" 
     `- Seat kinds MUST match the composition: an "experts" panel has only expert/stakeholder/adversarial seats (no consumer or resident kinds); a "consumers" panel is mostly consumer/resident seats with a thin expert bench; "mixed" requires at least two consumer/resident seats.\n` +
     `- Seats are the deliberation LEADS. "scale" is the recommended full-run population (experts 4-500, residents 0-1000; residents 0 unless composition includes consumers/residents).\n` +
     `- discipline: short UPPERCASE cluster label (POWER, WATER, CAPITAL, ZONING, COMMUNITY, MARKET...).\n` +
+    `- why: ONE short clause, 12 words max — which question this seat owns.\n` +
     `- query: 2-4 lowercase keywords to find this person in a persona library (e.g. "grid interconnection utility").\n` +
+    `- Keep the seat list TIGHT so it always completes: no prose outside the JSON.\n` +
     `Mode guide: Agora = open deliberation (default); Roundtable = equals, every voice each round; Tribunal = genuinely two-sided dispute; ` +
     `Chamber = independent takes then blind peer review; Jury = independent scored verdicts; Desk = research memo; Expedition = deep background research.\nIf you recommend Tribunal, the seats MUST form two real benches: at least two seats whose stances argue FOR the thesis and at least two AGAINST (the adversarial seat counts as against).`
   );

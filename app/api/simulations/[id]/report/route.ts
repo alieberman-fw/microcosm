@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
-import { REPORT_VERSION, ReportSpec, reportSynthSystem, verifierSystem } from "@/lib/report";
+import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, reportSynthSystem, verifierSystem } from "@/lib/report";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 
 export const maxDuration = 300;
@@ -67,6 +67,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const synthModel = TIER_MODELS[cfg.tier].synth;
   const verifyModel = TIER_MODELS[cfg.tier].verifier;
+  // §4.1 REPORT LENGTH: auto scales depth to the transcript; explicit choices win
+  const effLength: ReportLength = cfg.report_length === "auto" || !cfg.report_length
+    ? (postRows.length >= 40 ? "dense" : postRows.length <= 12 ? "brief" : "standard")
+    : cfg.report_length;
+  // budgets are CEILINGS with headroom for the model's internal reasoning
+  // (which counts against max_tokens) — the depth rules control actual length
+  const synthBudget = effLength === "brief" ? 6000 : effLength === "dense" ? 14_000 : 9000;
+  const findingClamp = effLength === "dense" ? 4500 : 2500;
   const anthropic = new Anthropic();
   const encoder = new TextEncoder();
 
@@ -93,11 +101,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           try {
             const res = await anthropic.messages.create({
               model: synthModel,
-              max_tokens: 6000,
-              system: reportSynthSystem(),
+              max_tokens: synthBudget,
+              system: reportSynthSystem(effLength),
               messages: [{ role: "user", content: `${briefText}\nTRANSCRIPT:\n${transcript.slice(0, 160_000)}` }],
+              // structured outputs pin the reply to the report schema — a
+              // prose-wrapped response killed a live synthesis ("unparseable")
+              output_config: { format: { type: "json_schema", schema: REPORT_JSON_SCHEMA } },
             });
-            await logCall("report.synthesize", synthModel, res.usage, t0);
+            await logCall("report.synthesize", synthModel, res.usage, t0, undefined, { mode, posts: postRows.length, length: effLength });
             const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
             raw = parseLooseObject(text);
             if (!raw) lastErr = `unparseable synthesis (stop: ${res.stop_reason})`;
@@ -167,7 +178,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           dimension_scores: (Array.isArray(rawSpec.dimension_scores) ? rawSpec.dimension_scores : []).slice(0, 8)
             .map((d) => ({ name: String(d.name ?? "").slice(0, 60), score: num(d.score, 0, 10), note: String(d.note ?? "").slice(0, 200) })),
           sections: (Array.isArray(rawSpec.sections) ? rawSpec.sections : []).slice(0, 16)
-            .map((x) => ({ question: String(x.question ?? "").slice(0, 160), finding: String(x.finding ?? "").slice(0, 2500), cites: (Array.isArray(x.cites) ? x.cites : []).map((c) => Number(c) || 0).filter(Boolean).slice(0, 8) })),
+            .map((x) => ({ question: String(x.question ?? "").slice(0, 160), finding: String(x.finding ?? "").slice(0, findingClamp), cites: (Array.isArray(x.cites) ? x.cites : []).map((c) => Number(c) || 0).filter(Boolean).slice(0, 8) })),
           criteria: (Array.isArray(rawSpec.criteria) ? rawSpec.criteria : []).slice(0, 8)
             .map((c) => ({ criterion: String(c.criterion ?? "").slice(0, 220), where: String(c.where ?? "").slice(0, 220) })),
           risks: (Array.isArray(rawSpec.risks) ? rawSpec.risks : []).slice(0, 10)

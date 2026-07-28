@@ -113,12 +113,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const maxNew = Math.max(1, MAX_SEATS - existingRoles.length);
         if (addMode && existingRoles.length >= MAX_SEATS) throw new Error(`Lead seats are capped at ${MAX_SEATS}`);
 
+        // The plan must NEVER surface a truncation error to the user: a big
+        // budget makes truncation rare, and when a partial plan still lands
+        // short of the target, a CONTINUATION call asks for only the missing
+        // seats (same JSON shape) and the lists merge. Hard failure only when
+        // no seats can be produced at all.
         let raw: Record<string, unknown> & { seats?: unknown; scale?: { experts?: unknown; residents?: unknown }; composition?: unknown; mode?: unknown } = {};
         for (let attempt = 0; attempt < 2; attempt++) {
           const t0 = Date.now();
           const planRes = await anthropic.messages.create({
             model: CASTING_MODEL,
-            max_tokens: 5200, // 20 seats + reasoning + user-facing summaries — seats come last in the JSON, so truncation must be impossible
+            max_tokens: 9000, // 20 seats + reasoning + summaries with adaptive-thinking headroom
             system: addMode ? castingAddSystem(existingRoles, maxNew) : castingPlanSystem(targetSeats, compOverride),
             messages: [{ role: "user", content: briefText }],
           });
@@ -128,16 +133,37 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           });
           const planText = planRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
           const parsed = parseLooseObject(planText);
-          const seatCount = parsed && Array.isArray(parsed.seats) ? parsed.seats.length : 0;
-          // a truncated plan can salvage a PARTIAL seat list (4 of 10) — treat
-          // that as a failure worth retrying, never silently seat a short panel
-          const truncatedShort = planRes.stop_reason === "max_tokens" && targetSeats !== undefined && seatCount < targetSeats;
-          if (parsed && seatCount > 0 && (!truncatedShort || attempt === 1)) {
-            if (truncatedShort) throw new Error(`Casting truncated at ${seatCount}/${targetSeats} seats twice — try a smaller panel or re-cast`);
-            raw = parsed as typeof raw;
-            break;
-          }
+          if (parsed && Array.isArray(parsed.seats) && parsed.seats.length > 0) { raw = parsed as typeof raw; break; }
           if (attempt === 1) throw new Error(`Casting pass returned no usable plan (stop: ${planRes.stop_reason})`);
+        }
+
+        // continuation top-up: fill any remaining seat definitions (max 2 passes)
+        for (let topup = 0; topup < 2; topup++) {
+          const have = Array.isArray(raw.seats) ? (raw.seats as { role?: string; kind?: string }[]) : [];
+          const want = addMode ? undefined : targetSeats;
+          if (want === undefined || have.length >= want) break;
+          const missing = want - have.length;
+          const tt = Date.now();
+          try {
+            const contRes = await anthropic.messages.create({
+              model: CASTING_MODEL,
+              max_tokens: Math.min(9000, 600 * missing + 800),
+              system:
+                `You are completing a Casting Director seat list for a real-estate simulation panel. ` +
+                `Seats already defined: ${have.map((s) => `${s.role} (${s.kind})`).join("; ")}. ` +
+                `Produce ONLY a JSON array of EXACTLY ${missing} ADDITIONAL seats (no duplicates of the above, keep at most one adversarial across the whole panel${have.some((s) => s.kind === "adversarial") ? " — one already exists, so add NONE" : ""}): ` +
+                `[{"role": "...", "kind": "expert|consumer|resident|stakeholder|adversarial", "discipline": "SHORT UPPERCASE", "why": "one clause, <=12 words", "query": "2-4 lowercase keywords"}]`,
+              messages: [{ role: "user", content: briefText }],
+            });
+            await logCall("casting.plan", CASTING_MODEL, contRes.usage, tt, undefined, { mode: "seat-topup", missing });
+            const contText = contRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+            const more = parseLooseArray(contText);
+            if (Array.isArray(more) && more.length) raw.seats = [...have, ...more].slice(0, want);
+            else break;
+          } catch (e) {
+            await logCall("casting.plan", CASTING_MODEL, null, tt, e instanceof Error ? e.message : "seat topup failed", { mode: "seat-topup", missing });
+            break; // proceed with what we have — a slightly short panel beats an error
+          }
         }
 
         const keyOffset = existingRoles.length;
@@ -268,28 +294,49 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
 
         // ---- 3 · generate the true gaps, save them back to the org library ----
+        // gaps generate in CONCURRENT chunks of 4 — one giant serial call was
+        // the slow tail on big panels (10 gaps ≈ one 7K-token generation)
         const generated: { seat: CastSeat; personaId: string; spec: FrozenSpec }[] = [];
         if (gaps.length) {
           const avoid = [...(customRows ?? []).map((r) => (r.spec as PersonaSpec).name), ...resolved.map((r) => r.spec.name)]
             .filter(Boolean).slice(0, 60);
-          const t1 = Date.now();
-          const genRes = await anthropic.messages.create({
-            model: CASTING_MODEL,
-            max_tokens: 700 * gaps.length + 500,
-            system: castingGenerateSystem(),
-            messages: [{
-              role: "user",
-              content:
-                `BRIEF CONTEXT:\n${briefText}\nAVOID THESE NAMES: ${avoid.join(", ") || "none"}\n\nSEATS TO CREATE:\n` +
-                gaps.map((s) => `- seat_key ${s.key}: ${s.role} (kind ${s.kind}, discipline ${s.discipline}) — ${s.why}`).join("\n"),
-            }],
-          });
-          await logCall("casting.generate", CASTING_MODEL, genRes.usage, t1);
-          const genText = genRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-          const specs = (parseLooseArray(genText) ?? []) as (PersonaSpec & { seat_key?: string })[];
-          for (const seat of gaps) {
-            const genSpec = specs.find((s) => s.seat_key === seat.key) ?? specs[gaps.indexOf(seat)];
+          const CHUNK = 4;
+          const chunks: CastSeat[][] = [];
+          for (let i = 0; i < gaps.length; i += CHUNK) chunks.push(gaps.slice(i, i + CHUNK));
+          const chunkSpecs = await Promise.all(chunks.map(async (chunk) => {
+            const t1 = Date.now();
+            try {
+              const genRes = await anthropic.messages.create({
+                model: CASTING_MODEL,
+                max_tokens: 700 * chunk.length + 500,
+                system: castingGenerateSystem(),
+                messages: [{
+                  role: "user",
+                  content:
+                    `BRIEF CONTEXT:\n${briefText}\nAVOID THESE NAMES: ${avoid.join(", ") || "none"}\n\nSEATS TO CREATE:\n` +
+                    chunk.map((s) => `- seat_key ${s.key}: ${s.role} (kind ${s.kind}, discipline ${s.discipline}) — ${s.why}`).join("\n"),
+                }],
+              });
+              await logCall("casting.generate", CASTING_MODEL, genRes.usage, t1, undefined, { seats: chunk.length });
+              const genText = genRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+              return (parseLooseArray(genText) ?? []) as (PersonaSpec & { seat_key?: string })[];
+            } catch (e) {
+              await logCall("casting.generate", CASTING_MODEL, null, t1, e instanceof Error ? e.message : "generate failed", { seats: chunk.length });
+              return [] as (PersonaSpec & { seat_key?: string })[];
+            }
+          }));
+          // concurrent chunks can't see each other's names — de-collide here
+          const usedNames = new Set(avoid.map((n) => n.toLowerCase()));
+          for (let ci = 0; ci < chunks.length; ci++) {
+          const specsChunk = chunkSpecs[ci];
+          for (const seat of chunks[ci]) {
+            const genSpec = specsChunk.find((s) => s.seat_key === seat.key) ?? specsChunk[chunks[ci].indexOf(seat)];
             if (!genSpec?.name) { emit({ type: "seat", key: seat.key, provenance: "failed" }); continue; }
+            if (usedNames.has(String(genSpec.name).trim().toLowerCase())) {
+              const parts = String(genSpec.name).trim().split(/\s+/);
+              genSpec.name = [parts[0], `${String.fromCharCode(66 + ci)}.`, ...parts.slice(1)].join(" ");
+            }
+            usedNames.add(String(genSpec.name).trim().toLowerCase());
             const spec: PersonaSpec = {
               name: String(genSpec.name).trim(),
               initials: genSpec.initials || String(genSpec.name).split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2),
@@ -310,6 +357,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             const frozenGen = freeze(seat, spec, "generated");
             generated.push({ seat, personaId: inserted.id, spec: frozenGen });
             emit({ type: "seat", key: seat.key, provenance: "generated", spec: frozenGen });
+          }
           }
         }
 

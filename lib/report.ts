@@ -37,7 +37,61 @@ export interface ReportSpec {
   limitations: string;
 }
 
-export function reportSynthSystem(): string {
+export type ReportLength = "brief" | "standard" | "dense";
+
+/** structured-outputs schema for the synthesis — the API constrains the reply
+ *  to this shape, so "unparseable synthesis" is structurally impossible
+ *  (assistant prefill is NOT supported on Opus 4.8/Sonnet 5 — this is the way) */
+export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["verdict", "executive_summary", "dimension_scores", "sections", "criteria", "risks", "dissents", "tripwires"],
+  properties: {
+    verdict: {
+      type: "object", additionalProperties: false, required: ["label", "tone", "headline"],
+      properties: {
+        label: { type: "string" },
+        tone: { type: "string", enum: ["go", "conditional", "no-go", "split"] },
+        headline: { type: "string" },
+      },
+    },
+    executive_summary: { type: "string" },
+    dimension_scores: {
+      type: "array",
+      items: { type: "object", additionalProperties: false, required: ["name", "score", "note"], properties: { name: { type: "string" }, score: { type: "number" }, note: { type: "string" } } },
+    },
+    sections: {
+      type: "array",
+      items: { type: "object", additionalProperties: false, required: ["question", "finding", "cites"], properties: { question: { type: "string" }, finding: { type: "string" }, cites: { type: "array", items: { type: "integer" } } } },
+    },
+    criteria: {
+      type: "array",
+      items: { type: "object", additionalProperties: false, required: ["criterion", "where"], properties: { criterion: { type: "string" }, where: { type: "string" } } },
+    },
+    risks: {
+      type: "array",
+      items: { type: "object", additionalProperties: false, required: ["risk", "severity", "mitigation", "watch_signal"], properties: { risk: { type: "string" }, severity: { type: "string", enum: ["high", "medium", "low"] }, mitigation: { type: "string" }, watch_signal: { type: "string" } } },
+    },
+    dissents: {
+      type: "array",
+      items: { type: "object", additionalProperties: false, required: ["name", "role", "position", "quote", "seq"], properties: { name: { type: "string" }, role: { type: "string" }, position: { type: "string" }, quote: { type: "string" }, seq: { type: "integer" } } },
+    },
+    tripwires: { type: "array", items: { type: "string" } },
+  },
+};
+
+/** §4.1 REPORT LENGTH — depth instructions appended to the synth prompt */
+export function reportDepthRule(length: ReportLength): string {
+  if (length === "brief") {
+    return `DEPTH: BRIEF — the reader wants the decision fast. Executive summary 2-3 sentences; findings 2-3 tight sentences each; 3-4 risks; 2-3 tripwires. Every word earns its place; cut anything a busy IC would skim.`;
+  }
+  if (length === "dense") {
+    return `DEPTH: DENSE — the reader asked for the long-form memo. Executive summary 6-8 sentences; findings 6-10 sentences each carrying the full argument chain with every load-bearing number; 6-10 risks with real mitigations; 5-8 tripwires; 5-6 dimension scores with substantive notes. Use the whole transcript — quote more, compress less.`;
+  }
+  return `DEPTH: STANDARD — executive summary 4-6 sentences; findings 3-5 sentences each.`;
+}
+
+export function reportSynthSystem(length: ReportLength = "standard"): string {
   return (
     `You are the report director for Microcosm, an agent-swarm simulation platform for real-estate decisions. ` +
     `You are given a research brief and the full transcript of a panel deliberation (posts numbered by [seq]). ` +
@@ -58,7 +112,8 @@ export function reportSynthSystem(): string {
     `- Every "cites" seq must be a post that actually supports the finding. Every number in findings must appear in the transcript or the brief.\n` +
     `- The adversarial voice gets representation in dissents or risks — always.\n` +
     `- SUCCESS CRITERIA ARE THE CONTRACT: every criterion must be deliverably present — if the question sections don't cover one (pros/cons, value drivers, time-on-market, whatever the user listed), ADD a section for it. The "criteria" array is the receipt; never mark a criterion delivered by a section that doesn't actually contain it.\n` +
-    `- Write like the panel's chief of staff: specific, quantified, zero filler.`
+    `- Write like the panel's chief of staff: specific, quantified, zero filler.\n` +
+    `- ${reportDepthRule(length)}`
   );
 }
 

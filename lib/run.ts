@@ -18,6 +18,8 @@ export interface RunConfig {
   temperature: "conservative" | "balanced" | "exploratory";
   tier: "economy" | "standard" | "frontier";
   verifier: boolean;
+  /** how deep the synthesized report goes — auto lets the engine match the transcript */
+  report_length: "auto" | "brief" | "standard" | "dense";
 }
 
 export const RUN_DEFAULTS: RunConfig = {
@@ -29,6 +31,7 @@ export const RUN_DEFAULTS: RunConfig = {
   temperature: "balanced",
   tier: "standard",
   verifier: true,
+  report_length: "auto",
 };
 
 export const RUN_RANGES = {

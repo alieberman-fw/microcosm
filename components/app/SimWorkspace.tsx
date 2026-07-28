@@ -184,7 +184,7 @@ export default function SimWorkspace({
   const label: CSSProperties = { ...mono, fontSize: 11, letterSpacing: ".1em", color: "var(--t6)" };
 
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto", padding: "40px 40px 90px" }}>
+    <div style={{ maxWidth: 1060, margin: "0 auto", padding: "40px 40px 90px" }}>
       {/* stage rail — live stages jump to their section */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         {STAGES.map((s, i) => {
@@ -243,14 +243,17 @@ export default function SimWorkspace({
           </div>
           {brief.questions?.length > 0 && (
             brief.questions.some((q) => q.detail) ? (
-              // any question carrying a framing renders as readable rows — never clipped
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16, maxWidth: 860 }}>
+              // any question carrying a framing renders as readable rows — a
+              // FIXED label column so every framing starts at the same x
+              <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 16, maxWidth: 920 }}>
                 {brief.questions.map((q) => (
-                  <div key={q.label} style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-                    <span style={{ ...mono, fontSize: 11, padding: "6px 14px", borderRadius: 100, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)", flex: "none" }}>
-                      {q.label}
+                  <div key={q.label} style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                    <span style={{ width: 208, flex: "none", display: "flex" }}>
+                      <span title={q.label} style={{ ...mono, fontSize: 10.5, padding: "6px 13px", borderRadius: 100, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {q.label}
+                      </span>
                     </span>
-                    {q.detail && <span style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--t5)", minWidth: 0 }}>{q.detail}</span>}
+                    {q.detail && <span style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--t5)", minWidth: 0, flex: 1, paddingTop: 6 }}>{q.detail}</span>}
                   </div>
                 ))}
               </div>

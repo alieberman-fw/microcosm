@@ -15,14 +15,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  let body: { personaIds?: string[] };
+  let body: { personaIds?: string[]; crowdPersonaIds?: string[] };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
   const personaIds = [...new Set((body.personaIds ?? []).filter((p) => typeof p === "string"))].slice(0, MAX_SEATS);
-  if (personaIds.length === 0) return NextResponse.json({ error: "Pick at least one persona" }, { status: 400 });
+  // hand-picked CROWD members: real library/custom personas seated as the
+  // polled population (seat.tier "crowd") instead of speaking leads
+  const crowdIds = [...new Set((body.crowdPersonaIds ?? []).filter((p) => typeof p === "string"))]
+    .filter((p) => !personaIds.includes(p)).slice(0, 200);
+  if (personaIds.length === 0 && crowdIds.length === 0) return NextResponse.json({ error: "Pick at least one persona" }, { status: 400 });
 
   const { data: sim } = await supabase.from("simulations").select("id").eq("id", id).maybeSingle();
   if (!sim) return NextResponse.json({ error: "Simulation not found" }, { status: 404 });
@@ -38,13 +42,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const { data: personas, error: pErr } = await supabase
-    .from("personas").select("id, org_id, kind, spec").in("id", personaIds);
+    .from("personas").select("id, org_id, kind, spec").in("id", [...personaIds, ...crowdIds]);
   if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 });
+  const leadPersonas = (personas ?? []).filter((p) => personaIds.includes(p.id as string));
+  const crowdPersonas = (personas ?? []).filter((p) => crowdIds.includes(p.id as string));
 
   const seats: { key: string; provenance: "yours" | "library"; spec: FrozenSpec }[] = [];
   const rows = [];
   let i = existingKeys.size;
-  for (const p of personas ?? []) {
+  for (const p of leadPersonas) {
     if (existingIds.has(p.id)) continue;
     const spec = p.spec as PersonaSpec;
     const provenance: "yours" | "library" = p.org_id ? "yours" : "library";
@@ -64,9 +70,34 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     rows.push({ sim_id: id, persona_id: p.id, agent_key: key, spec_frozen: frozen });
     seats.push({ key, provenance, spec: frozen });
   }
+  // crowd rows: same frozen-spec shape as generated crowd, but backed by a
+  // real persona — the engine polls them, the CrowdBand lights them up
+  const crowdSeats: { key: string; spec: FrozenSpec }[] = [];
+  let c = (existing ?? []).filter((e) => (e.agent_key as string).startsWith("crowd-")).length;
+  for (const p of crowdPersonas) {
+    if (existingIds.has(p.id)) continue;
+    const spec = p.spec as PersonaSpec;
+    let key = `crowd-${++c}`;
+    while (existingKeys.has(key)) key = `crowd-${++c}`;
+    existingKeys.add(key);
+    const frozen: FrozenSpec = {
+      ...spec,
+      seat: {
+        role: spec.role || "Crowd member",
+        why: "Hand-picked crowd member",
+        discipline: (spec.discipline ?? spec.category ?? "CROWD").toUpperCase().slice(0, 20),
+        adversarial: false,
+        provenance: p.org_id ? "yours" : "library",
+        tier: "crowd",
+      },
+    };
+    rows.push({ sim_id: id, persona_id: p.id, agent_key: key, spec_frozen: frozen });
+    crowdSeats.push({ key, spec: frozen });
+  }
+
   if (rows.length === 0) return NextResponse.json({ error: "Those personas are already on the panel" }, { status: 400 });
 
   const { error: insErr } = await supabase.from("sim_agents").insert(rows);
   if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
-  return NextResponse.json({ seats });
+  return NextResponse.json({ seats, crowdSeats });
 }

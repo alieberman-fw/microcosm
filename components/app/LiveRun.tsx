@@ -134,6 +134,7 @@ export default function LiveRun({
   const [viewMode, setViewMode] = useState(mode);    // switches to the engine's mode when a new run starts
   const [reportReady, setReportReady] = useState(hasReport);
   const [confirmRerun, setConfirmRerun] = useState(false);
+  const [probOpen, setProbOpen] = useState(false);
   const router = useRouter();
 
   // self-heal a stale client-cache hit: a completed run can never be empty —
@@ -243,6 +244,7 @@ export default function LiveRun({
       const decoder = new TextDecoder();
       let buffer = "";
       let sawContinue = false;
+      let sawTerminal = false; // finished / done / converged / error — anything else = interrupted
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -310,12 +312,14 @@ export default function LiveRun({
               else if (reason === "budget") setNote(`STOPPED AT THE MAX-POSTS BUDGET — RAISE IT IN RUN CONFIG FOR A LONGER RUN`);
               else if (reason === "rounds") setNote(`ALL ROUNDS COMPLETE`);
             }
-            if (evt.value === "converged" || evt.value === "done") setStatus("done");
-            if (evt.value === "error") { setStatus("idle"); setError(String(evt.detail ?? "Run failed")); }
+            if (evt.value === "converged" || evt.value === "done") { sawTerminal = true; setStatus("done"); }
+            if (evt.value === "error") { sawTerminal = true; setStatus("idle"); setError(String(evt.detail ?? "Run failed")); }
           } else if (evt.type === "error") {
+            sawTerminal = true;
             setStatus("idle");
             setError(String(evt.error ?? "Run failed"));
           } else if (evt.type === "finished") {
+            sawTerminal = true;
             setStatus("done");
           } else if (evt.type === "continue") {
             // the slice hit the serverless window — reconnect for the next one
@@ -329,11 +333,24 @@ export default function LiveRun({
         }
       }
       setThinking(null);
-      if (!sawContinue) {
+      polling.current = null; // the sweep must never keep looping after the stream closes
+      if (!sawContinue && sawTerminal) {
         setStatus((s) => (s === "running" ? "done" : s));
         router.refresh(); // the persisted run replaces any cached empty payload
+      } else if (!sawContinue && !sawTerminal) {
+        // the stream died WITHOUT a verdict (platform hard-kill mid-slice,
+        // network drop) — the run is NOT done; resume it from the transcript
+        chunkCount.current += 1;
+        if (chunkCount.current < 40) {
+          setNote(`CONNECTION DROPPED MID-SLICE — RESUMING FROM THE PERSISTED TRANSCRIPT (SLICE ${chunkCount.current + 1})`);
+          setTimeout(() => void launch(true), 1500);
+        } else {
+          setStatus("idle");
+          setError("The run was interrupted repeatedly — hit RE-RUN to continue; every post so far is persisted");
+        }
       }
     } catch (e) {
+      polling.current = null;
       setError(e instanceof Error ? e.message : "Launch failed");
       setStatus("idle");
     }
@@ -489,7 +506,22 @@ export default function LiveRun({
           {currentRound > 0 ? `ROUND ${currentRound} / ${maxR} · ` : ""}{posts} POSTS
         </span>
       </div>
-      <div style={{ marginTop: 8, fontSize: 13, color: "var(--t5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{problem}</div>
+      {/* the full brief is one click away — a clipped question helps nobody */}
+      <div
+        onClick={() => setProbOpen((v) => !v)}
+        title={probOpen ? "Collapse" : "Show the full problem statement"}
+        style={{ marginTop: 8, cursor: "pointer", display: "flex", alignItems: "baseline", gap: 8 }}
+      >
+        <span style={{
+          fontSize: 13, lineHeight: 1.55, color: "var(--t5)", minWidth: 0, flex: 1,
+          ...(probOpen ? {} : { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }),
+        }}>
+          {problem}
+        </span>
+        <span style={{ ...mono, flex: "none", fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>
+          {probOpen ? "COLLAPSE ▴" : "FULL BRIEF ▾"}
+        </span>
+      </div>
       {note && <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t6)", marginTop: 6 }}>ⓘ {note.toUpperCase()}</div>}
       {configuredMode && configuredMode !== viewMode && items.length > 0 && status !== "running" && (
         <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t5)", marginTop: 6 }}>
