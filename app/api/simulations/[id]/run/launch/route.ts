@@ -145,10 +145,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           }).eq("id", id);
           send({ type: "continue", round: result.suspendedAtRound, posts: result.posts });
         } else {
-          await emit({ type: "stage", value: result.converged ? "converged" : "done" });
+          // "converged" is reserved for the stability rule actually firing —
+          // fixed choreographies and exhausted rounds report themselves honestly
+          await emit({ type: "stage", value: result.stopReason === "stability" ? "converged" : "done", detail: result.stopReason });
           await supabase.from("simulations").update({
             status: "complete",
-            config: { ...config, run_state: null, run_result: { posts: result.posts, converged: result.converged, mode, at: new Date().toISOString() } },
+            config: { ...config, run_state: null, run_result: { posts: result.posts, converged: result.converged, stop: result.stopReason, mode, at: new Date().toISOString() } },
           }).eq("id", id);
           send({ type: "finished", posts: result.posts });
         }

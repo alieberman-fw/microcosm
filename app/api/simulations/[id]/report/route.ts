@@ -33,7 +33,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const config = (sim.config as Record<string, unknown>) ?? {};
   const cfg: RunConfig = { ...RUN_DEFAULTS, ...((config.run as Partial<RunConfig>) ?? {}) };
   const mode = String((config.casting as { mode?: string } | undefined)?.mode ?? "Agora");
-  const runResult = (config.run_result as { posts?: number; converged?: boolean } | undefined) ?? {};
+  const runResult = (config.run_result as { posts?: number; converged?: boolean; stop?: string } | undefined) ?? {};
 
   const { data: postRows } = await supabase.from("posts")
     .select("seq, agent_key, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true });
@@ -165,8 +165,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           executive_summary: String(rawSpec.executive_summary ?? "").slice(0, 3000),
           dimension_scores: (Array.isArray(rawSpec.dimension_scores) ? rawSpec.dimension_scores : []).slice(0, 8)
             .map((d) => ({ name: String(d.name ?? "").slice(0, 60), score: num(d.score, 0, 10), note: String(d.note ?? "").slice(0, 200) })),
-          sections: (Array.isArray(rawSpec.sections) ? rawSpec.sections : []).slice(0, 12)
+          sections: (Array.isArray(rawSpec.sections) ? rawSpec.sections : []).slice(0, 16)
             .map((x) => ({ question: String(x.question ?? "").slice(0, 160), finding: String(x.finding ?? "").slice(0, 2500), cites: (Array.isArray(x.cites) ? x.cites : []).map((c) => Number(c) || 0).filter(Boolean).slice(0, 8) })),
+          criteria: (Array.isArray(rawSpec.criteria) ? rawSpec.criteria : []).slice(0, 8)
+            .map((c) => ({ criterion: String(c.criterion ?? "").slice(0, 220), where: String(c.where ?? "").slice(0, 220) })),
           risks: (Array.isArray(rawSpec.risks) ? rawSpec.risks : []).slice(0, 10)
             .map((r) => ({ risk: String(r.risk ?? "").slice(0, 220), severity: (["high", "medium", "low"] as const).find((sv) => sv === r.severity) ?? "medium", mitigation: String(r.mitigation ?? "").slice(0, 220), watch_signal: String(r.watch_signal ?? "").slice(0, 220) })),
           dissents: (Array.isArray(rawSpec.dissents) ? rawSpec.dissents : []).slice(0, 6)
@@ -191,6 +193,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             posts: postRows.length, tier: cfg.tier,
             models: [...new Set([TIER_MODELS[cfg.tier].leads, TIER_MODELS[cfg.tier].crowd, synthModel, ...(verification ? [verifyModel] : [])])],
             converged: !!runResult.converged,
+            stop: runResult.stop,
             docs: (docs ?? []).map((d) => d.name),
             generated_at: new Date().toISOString(),
           },

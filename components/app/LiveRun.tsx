@@ -93,11 +93,14 @@ function layoutLeads(mode: string, leads: LiveLead[], w: number, h: number): Rec
 }
 
 export default function LiveRun({
-  simId, problem, mode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialStatus, maxRounds, hasReport = false,
+  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialStatus, maxRounds, hasReport = false,
 }: {
   simId: string;
   problem: string;
+  /** the mode of the transcript being DISPLAYED (last run's mode when posts exist) */
   mode: string;
+  /** the mode currently saved in run config — a re-run uses this one */
+  configuredMode?: string;
   leads: LiveLead[];
   crowdCount: number;
   crowdTarget?: number;
@@ -128,7 +131,9 @@ export default function LiveRun({
   const [liveCrowd, setLiveCrowd] = useState(crowdCount);
   const [materializing, setMaterializing] = useState<{ landed: number; target: number } | null>(null);
   const [maxR, setMaxR] = useState(maxRounds);       // corrected live by the engine's config event
+  const [viewMode, setViewMode] = useState(mode);    // switches to the engine's mode when a new run starts
   const [reportReady, setReportReady] = useState(hasReport);
+  const [confirmRerun, setConfirmRerun] = useState(false);
   const router = useRouter();
 
   // self-heal a stale client-cache hit: a completed run can never be empty —
@@ -248,8 +253,11 @@ export default function LiveRun({
           if (!line.trim()) continue;
           const evt = JSON.parse(line) as Record<string, unknown>;
           if (evt.type === "config") {
-            // the engine's real parameters win over the server-rendered props
+            // the engine's real parameters win over the server-rendered props —
+            // including the MODE: a re-run after a mode change switches the
+            // arrangement the moment the new run starts
             if (Number(evt.rounds)) setMaxR(Number(evt.rounds));
+            if (typeof evt.mode === "string" && evt.mode) setViewMode(evt.mode);
           } else if (evt.type === "post") {
             const p = evt as unknown as LivePost & { type: string };
             setItems((prev) => [...prev, { kind: "post", post: p }]);
@@ -257,7 +265,7 @@ export default function LiveRun({
             // canvas: pulse + speaker — in lockstep with the feed item landing
             authorBySeq.current.set(p.seq, p.agent_key);
             composing.current = null;
-            const a = nodesRef.current[p.agent_key] ?? nodesRef.current["__judge"];
+            const a = nodesRef.current[p.agent_key] ?? nodesRef.current["__judge"] ?? nodesRef.current["__agg"];
             if (a) {
               // a reply pulses to the ACTUAL author being answered; an open post broadcasts
               const replyAuthor = p.reply_to != null ? authorBySeq.current.get(p.reply_to) : undefined;
@@ -295,6 +303,13 @@ export default function LiveRun({
           } else if (evt.type === "stage") {
             if (evt.value === "running" && evt.detail) setNote(String(evt.detail));
             if (evt.value === "converged") setNote(`CONVERGED — POSITIONS STABILIZED, STOPPED BEFORE THE ROUND CAP · SET "STOP WHEN: ROUNDS EXHAUSTED" TO FORCE EVERY ROUND`);
+            if (evt.value === "done") {
+              // honest stop reasons — "converged" is reserved for the stability rule
+              const reason = String(evt.detail ?? "");
+              if (reason === "choreography") setNote(`RUN COMPLETE — THIS MODE RUNS A FIXED CHOREOGRAPHY (PHASES, NOT ROUNDS), AND EVERY PHASE DELIVERED`);
+              else if (reason === "budget") setNote(`STOPPED AT THE MAX-POSTS BUDGET — RAISE IT IN RUN CONFIG FOR A LONGER RUN`);
+              else if (reason === "rounds") setNote(`ALL ROUNDS COMPLETE`);
+            }
             if (evt.value === "converged" || evt.value === "done") setStatus("done");
             if (evt.value === "error") { setStatus("idle"); setError(String(evt.detail ?? "Run failed")); }
           } else if (evt.type === "error") {
@@ -337,7 +352,7 @@ export default function LiveRun({
     const layout = () => {
       el.width = el.offsetWidth * dpr;
       el.height = el.offsetHeight * dpr;
-      nodesRef.current = layoutLeads(mode, leads, el.width, el.height);
+      nodesRef.current = layoutLeads(viewMode, leads, el.width, el.height);
       const cx = el.width / 2, cy = el.height / 2;
       const ring: Node[] = [];
       const n = Math.min(Math.max(Math.ceil(Math.max(liveCrowd, crowdCount) / 2), 0), 110);
@@ -440,19 +455,19 @@ export default function LiveRun({
     };
     raf = requestAnimationFrame(draw);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", layout); };
-  }, [mode, leads, crowdCount, liveCrowd]);
+  }, [viewMode, leads, crowdCount, liveCrowd]);
 
   // feed grouping: insert a divider when round/phase changes (mode-appropriate)
   const dividers = (idx: number): string | null => {
     const it = items[idx];
     if (it.kind !== "post") return null;
     const prev = [...items.slice(0, idx)].reverse().find((x) => x.kind === "post") as { kind: "post"; post: LivePost } | undefined;
-    if (mode === "Chamber" || mode === "Expedition" || mode === "Desk") {
+    if (viewMode === "Chamber" || viewMode === "Expedition" || viewMode === "Desk") {
       const ph = it.post.phase ?? it.post.tag;
       const prevPh = prev?.post.phase ?? prev?.post.tag;
       return ph !== prevPh ? String(ph).toUpperCase() : null;
     }
-    if (!prev || it.post.round !== prev.post.round) return `ROUND ${it.post.round}${mode === "Roundtable" ? " — EVERY VOICE IN ORDER" : ""}`;
+    if (!prev || it.post.round !== prev.post.round) return `ROUND ${it.post.round}${viewMode === "Roundtable" ? " — EVERY VOICE IN ORDER" : viewMode === "Jury" ? " — SCORE, THEN DELIBERATE" : ""}`;
     return null;
   };
 
@@ -468,7 +483,7 @@ export default function LiveRun({
         <Link href={`/sim/${simId}`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>← WORKSPACE</Link>
         <span style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: status === "done" ? "var(--acc)" : "var(--t4)" }}>{statusLabel}</span>
         <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)", border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 100, padding: "3px 10px" }}>
-          LIVE · {mode.toUpperCase()} · ENGINE V1
+          LIVE · {viewMode.toUpperCase()} · ENGINE V1
         </span>
         <span style={{ marginLeft: "auto", ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--t6)" }}>
           {currentRound > 0 ? `ROUND ${currentRound} / ${maxR} · ` : ""}{posts} POSTS
@@ -476,6 +491,11 @@ export default function LiveRun({
       </div>
       <div style={{ marginTop: 8, fontSize: 13, color: "var(--t5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{problem}</div>
       {note && <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t6)", marginTop: 6 }}>ⓘ {note.toUpperCase()}</div>}
+      {configuredMode && configuredMode !== viewMode && items.length > 0 && status !== "running" && (
+        <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t5)", marginTop: 6 }}>
+          ⓘ THIS TRANSCRIPT IS THE LAST RUN — {viewMode.toUpperCase()}. MODE IS NOW SET TO {configuredMode.toUpperCase()} — RE-RUN TO DELIBERATE IN {configuredMode.toUpperCase()} (REPLACES THIS TRANSCRIPT; REPORTS KEEP THEIR FROZEN COPY)
+        </div>
+      )}
       {liveCrowd === 0 && crowdTarget > 0 && status !== "running" && (
         <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--warn)", marginTop: 6 }}>
           ⚠ NO CROWD MATERIALIZED YET — LAUNCH WILL GENERATE IT AUTOMATICALLY, OR{" "}
@@ -490,7 +510,7 @@ export default function LiveRun({
       <div style={{ display: "flex", gap: 18, flex: 1, minHeight: 0, marginTop: 14 }}>
         <div style={{ flex: 1.15, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, padding: "14px 16px", background: "var(--sf)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>
-            <span>AGENT NETWORK · {mode.toUpperCase()} ARRANGEMENT</span>
+            <span>AGENT NETWORK · {viewMode.toUpperCase()} ARRANGEMENT</span>
             <span>{leads.length} LEADS · {liveCrowd} CROWD</span>
           </div>
           <canvas ref={canvasEl} style={{ flex: 1, width: "100%", minHeight: 0, marginTop: 10 }} />
@@ -499,12 +519,20 @@ export default function LiveRun({
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, background: "var(--sf)", overflow: "hidden" }}>
           <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--ln2)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>
-              {mode === "Jury" ? "VERDICTS" : mode === "Desk" ? "THE MEMO, ASSEMBLING" : mode === "Expedition" ? "FINDINGS LOG" : "FORUM FEED"}
+              {viewMode === "Jury" ? "VERDICTS" : viewMode === "Desk" ? "THE MEMO, ASSEMBLING" : viewMode === "Expedition" ? "FINDINGS LOG" : "FORUM FEED"}
             </span>
-            {/* one launch control at a time: empty feed → the hero button below; a finished run → RE-RUN up here */}
+            {/* one launch control at a time: empty feed → the hero button below; a finished
+                run → two-step RE-RUN (it REPLACES the persisted transcript) */}
             {status !== "running" && items.length > 0 && (
-              <button onClick={() => void launch(false)} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, background: "var(--acc)", color: "var(--acc-c)", border: "none", cursor: "pointer" }}>
-                ↺ RE-RUN
+              <button
+                onClick={() => { if (confirmRerun) { setConfirmRerun(false); void launch(false); } else setConfirmRerun(true); }}
+                onBlur={() => setConfirmRerun(false)}
+                style={{
+                  ...mono, fontSize: 9, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100,
+                  background: confirmRerun ? "var(--warn)" : "var(--acc)", color: "var(--acc-c)", border: "none", cursor: "pointer",
+                }}
+              >
+                {confirmRerun ? "↺ REPLACES THIS TRANSCRIPT — CONFIRM" : "↺ RE-RUN"}
               </button>
             )}
           </div>
@@ -512,7 +540,7 @@ export default function LiveRun({
             {items.length === 0 && status !== "running" && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: "60px 24px", textAlign: "center" }}>
                 <div style={{ fontSize: 14, lineHeight: 1.7, color: "var(--t4)", maxWidth: 420 }}>
-                  Watch the {mode} deliberation live — every post persists, the crowd is polled between rounds, and citations link back to your documents.
+                  Watch the {configuredMode ?? viewMode} deliberation live — every post persists, the crowd is polled between rounds, and citations link back to your documents.
                 </div>
                 <button
                   onClick={() => void launch(false)}
@@ -575,8 +603,8 @@ export default function LiveRun({
               }
               const p = it.post;
               const div = dividers(idx);
-              const score = mode === "Jury" ? scoreOf(p) : null;
-              const judge = p.tag === "JUDGE'S NOTE";
+              const score = viewMode === "Jury" && p.tag !== "TALLY" ? scoreOf(p) : null;
+              const judge = p.tag === "JUDGE'S NOTE" || p.tag === "TALLY";
               return (
                 <div key={`p${p.seq}`}>
                   {div && (
@@ -588,7 +616,7 @@ export default function LiveRun({
                   )}
                   <div style={{
                     marginTop: 14,
-                    marginLeft: mode === "Tribunal" && p.side === "con" ? 28 : p.tag === "REPLY" ? 36 : 0,
+                    marginLeft: viewMode === "Tribunal" && p.side === "con" ? 28 : p.tag === "REPLY" ? 36 : 0,
                     paddingLeft: p.tag === "REPLY" ? 14 : 0,
                     borderLeft: p.tag === "REPLY" ? "1px solid var(--ln2)" : "none",
                     ...(judge ? { border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 12, padding: "12px 14px" } : {}),

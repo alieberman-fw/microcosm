@@ -5,7 +5,7 @@ import { PersonaSpec } from "@/lib/personas";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import {
   CastPlan, CastSeat, FrozenSpec, MAX_SEATS, SIM_MODES,
-  CASTING_MODEL, castingAddSystem, castingGenerateSystem, castingPlanSystem, overlapScore, seatKey,
+  CASTING_MODEL, CROWD_MODEL, castingAddSystem, castingGenerateSystem, castingPlanSystem, overlapScore, seatKey,
 } from "@/lib/casting";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 
@@ -220,16 +220,42 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           // 2b — the global library (FTS; residents/consumers match their own kinds)
           const kinds = seat.kind === "consumer" || seat.kind === "resident" ? ["consumer", "resident"] : null;
           let hit: { id: string; spec: PersonaSpec } | null = null;
+          // FIT GATE: the loose OR-query fallback once seated a Wine Cellar
+          // Builder as "Pool Design & Build Specialist" on a shared word.
+          // Strong lexical overlap passes free; anything weaker must survive a
+          // Haiku yes/no before it takes the seat — rejects become generated.
+          let fitChecks = 0;
+          const fits = async (spec: PersonaSpec): Promise<boolean> => {
+            if (overlapScore(`${seat.role} ${seat.query}`, spec) >= 2) return true;
+            if (fitChecks >= 3) return false; // bound model calls per seat
+            fitChecks += 1;
+            const tf = Date.now();
+            try {
+              const res = await anthropic.messages.create({
+                model: CROWD_MODEL, max_tokens: 8,
+                system: `Casting fit check for an expert panel. Reply ONLY "yes" or "no": could this person credibly hold this seat and speak with first-hand authority on it? A neighboring trade or generic overlap is "no".`,
+                messages: [{ role: "user", content: `SEAT: ${seat.role}${seat.why ? ` — ${seat.why}` : ""}\nPERSON: ${spec.role}${spec.tagline ? ` — ${spec.tagline}` : ""}` }],
+              });
+              await logCall("casting.fit", CROWD_MODEL, res.usage, tf);
+              const verdict = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").toLowerCase();
+              return verdict.includes("yes");
+            } catch (e) {
+              await logCall("casting.fit", CROWD_MODEL, null, tf, e instanceof Error ? e.message : "fit check failed");
+              return true; // fail open — a plausible FTS match beats a dead cast
+            }
+          };
           // websearch syntax ANDs terms — retry progressively looser, ending OR-joined
           const orQuery = [...new Set(`${seat.query} ${seat.role}`.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3))].join(" or ");
-          for (const q of [seat.query, seat.role.toLowerCase(), orQuery]) {
+          outer: for (const q of [seat.query, seat.role.toLowerCase(), orQuery]) {
             if (!q) continue;
             const { data: rows } = await supabase.rpc("search_personas", {
               q, kinds, cats: null, age_min: null, age_max: null, tenure_f: null,
               sort: "relevance", off_set: 0, lim: 5,
             });
-            const fresh = (rows as { id: string; spec: PersonaSpec }[] | null)?.find((r) => !usedPersonaIds.has(r.id));
-            if (fresh) { hit = fresh; break; }
+            for (const r of (rows as { id: string; spec: PersonaSpec }[] | null) ?? []) {
+              if (usedPersonaIds.has(r.id)) continue;
+              if (await fits(r.spec)) { hit = r; break outer; }
+            }
           }
           if (hit) {
             usedPersonaIds.add(hit.id);

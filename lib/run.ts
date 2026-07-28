@@ -67,16 +67,32 @@ export interface CostEstimate {
   high: number;  // dollars
 }
 
+/** modes with a fixed choreography — the ROUNDS loop and stop rule don't apply */
+export const FIXED_SHAPE_MODES = ["Chamber", "Desk", "Expedition"] as const;
+export const isFixedShape = (mode: string) => (FIXED_SHAPE_MODES as readonly string[]).includes(mode);
+/** modes that poll the crowd for sentiment (Desk/Expedition are research choreographies) */
+export const POLLING_MODES = ["Agora", "Roundtable", "Tribunal", "Jury", "Chamber"] as const;
+
 export function estimateRunCost(args: {
   leads: number;
   crowd: number;
   cfg: RunConfig;
+  mode?: string;
 }): CostEstimate {
   const { leads, crowd, cfg } = args;
+  const mode = args.mode ?? "Agora";
   const m = TIER_MODELS[cfg.tier];
   const perPost = leads > 0 ? leads : 1;
-  const posts = Math.min(cfg.max_posts, Math.max(perPost * cfg.rounds, 1) + Math.round(perPost * cfg.rounds * 0.6)); // replies ≈ 0.6× posts
-  const polls = crowd > 0 ? crowd * cfg.rounds : 0;
+  // fixed choreographies have their own post shapes; round modes scale with rounds
+  const posts = Math.min(cfg.max_posts,
+    mode === "Chamber" ? perPost * 2 + 1
+    : mode === "Desk" ? perPost + 1
+    : mode === "Expedition" ? 5 * Math.min(3, perPost)
+    : mode === "Jury" ? perPost * cfg.rounds
+    : Math.max(perPost * cfg.rounds, 1) + Math.round(perPost * cfg.rounds * 0.6)); // replies ≈ 0.6× posts
+  const polls = crowd > 0
+    ? (mode === "Chamber" ? crowd * 2 : isFixedShape(mode) ? 0 : crowd * cfg.rounds)
+    : 0;
   const dollars = (model: string, calls: number, shape: { in: number; out: number }, cached = true) => {
     const r = RATES[model] ?? RATES["claude-sonnet-5"];
     const inTok = calls * shape.in * (cached ? SHAPE.cacheFactor : 1);
@@ -112,8 +128,11 @@ export function modeFitFlags(args: { mode: string; leads: number; expertSide: nu
   if (mode === "Jury" && leads < 5) {
     flags.push({ level: "info", text: `JURY AGGREGATES INDEPENDENT VERDICTS — more jurors, better signal. ${leads} works; 8+ is stronger.` });
   }
-  if ((mode === "Agora" || mode === "Roundtable") && crowd === 0) {
-    flags.push({ level: "info", text: "NO CROWD SET — the run will be leads-only; sentiment polling needs residents in the totals." });
+  if (mode !== "Desk" && mode !== "Expedition" && crowd === 0) {
+    flags.push({ level: "info", text: "NO CROWD SET — the run will be leads-only; sentiment polling needs a crowd in the totals." });
+  }
+  if ((mode === "Desk" || mode === "Expedition") && crowd > 0) {
+    flags.push({ level: "info", text: `${mode.toUpperCase()} IS A RESEARCH CHOREOGRAPHY — the crowd isn't polled in this mode. Pick Agora, Roundtable, Tribunal, Jury, or Chamber for sentiment.` });
   }
   return flags;
 }

@@ -12,7 +12,7 @@ import { CSSProperties, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ModeDiagram, { ModeKey } from "@/components/app/docs/ModeDiagram";
 import { SIM_MODES } from "@/lib/casting";
-import { RUN_DEFAULTS, RUN_RANGES, RunConfig, estimateRunCost, modeFitFlags } from "@/lib/run";
+import { RUN_DEFAULTS, RUN_RANGES, RunConfig, estimateRunCost, isFixedShape, modeFitFlags } from "@/lib/run";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -112,8 +112,9 @@ export default function RunConfigStage({
     router.push(`/sim/${simId}/run`);
   };
 
-  const est = useMemo(() => estimateRunCost({ leads, crowd, cfg }), [leads, crowd, cfg]);
+  const est = useMemo(() => estimateRunCost({ leads, crowd, cfg, mode }), [leads, crowd, cfg, mode]);
   const flags = useMemo(() => modeFitFlags({ mode, leads, expertSide, residentSide, crowd }), [mode, leads, expertSide, residentSide, crowd]);
+  const fixedShape = isFixedShape(mode);
 
   const label: CSSProperties = { ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)", width: 110, flex: "none", paddingTop: 6 };
 
@@ -204,12 +205,20 @@ export default function RunConfigStage({
         })}
       </div>
 
-      {/* fit flags */}
+      {/* fit flags — warns carry a jump to the population stage to fix the cast */}
       {flags.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 14 }}>
           {flags.map((f, i) => (
             <div key={i} style={{ ...mono, fontSize: 9, letterSpacing: ".05em", lineHeight: 1.7, color: f.level === "warn" ? "var(--warn)" : "var(--t6)", border: `1px solid ${f.level === "warn" ? "var(--warn)" : "var(--ln3)"}`, background: f.level === "warn" ? "var(--warn-dim)" : "transparent", borderRadius: 10, padding: "8px 14px" }}>
               {f.text}
+              {f.level === "warn" && (
+                <button
+                  onClick={() => document.getElementById("stage-population")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  style={{ ...mono, marginLeft: 10, fontSize: 8.5, letterSpacing: ".05em", background: "none", border: "none", color: "var(--warn)", cursor: "pointer", padding: 0, textDecoration: "underline", textUnderlineOffset: 3 }}
+                >
+                  FIX THE CAST — RE-CAST OR ADD SEATS ON THE POPULATION STAGE ↑
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -217,11 +226,19 @@ export default function RunConfigStage({
 
       {/* parameters */}
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 18, padding: "16px 18px", border: "1px solid var(--ln2)", borderRadius: 12, background: "var(--sf2)" }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <span style={label}>ROUNDS</span>
-          {numInput("rounds", RUN_RANGES.rounds.min, RUN_RANGES.rounds.max)}
-          <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t7)", alignSelf: "center" }}>{HELP.rounds}</span>
-        </div>
+        {fixedShape ? (
+          <div style={{ ...mono, fontSize: 9, letterSpacing: ".05em", lineHeight: 1.7, color: "var(--t6)" }}>
+            {mode.toUpperCase()} RUNS A FIXED CHOREOGRAPHY — ITS PHASES EXECUTE ONCE, SO ROUNDS AND THE STOP RULE DON'T APPLY. MAX POSTS STILL CAPS SPEND.
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <span style={label}>ROUNDS</span>
+            {numInput("rounds", RUN_RANGES.rounds.min, RUN_RANGES.rounds.max)}
+            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t7)", alignSelf: "center" }}>
+              {mode === "Jury" ? "Deliberation layers: round 1 scores blind; later rounds see the tally and re-score" : HELP.rounds}
+            </span>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <span style={label}>MAX POSTS</span>
           {numInput("max_posts", RUN_RANGES.max_posts.min, RUN_RANGES.max_posts.max)}
@@ -240,14 +257,16 @@ export default function RunConfigStage({
             ))}
           </div>
         )}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={label}>STOP WHEN</span>
-          {(["stability", "fixed", "budget"] as const).map((v) => (
-            <Pill key={v} on={cfg.convergence === v} onClick={() => set("convergence", v)} title={HELP.convergence}>
-              {v === "stability" ? "POSITIONS STABILIZE" : v === "fixed" ? "ROUNDS EXHAUSTED" : "BUDGET SPENT"}
-            </Pill>
-          ))}
-        </div>
+        {!fixedShape && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={label}>STOP WHEN</span>
+            {(["stability", "fixed", "budget"] as const).map((v) => (
+              <Pill key={v} on={cfg.convergence === v} onClick={() => set("convergence", v)} title={HELP.convergence}>
+                {v === "stability" ? "POSITIONS STABILIZE" : v === "fixed" ? "ROUNDS EXHAUSTED" : "BUDGET SPENT"}
+              </Pill>
+            ))}
+          </div>
+        )}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <span style={label}>TEMPERATURE</span>
           {(["conservative", "balanced", "exploratory"] as const).map((v) => (

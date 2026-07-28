@@ -427,6 +427,8 @@ function InteractionModes() {
     <>
       <P>A mode is the shape of the argument among the <B>leads</B>. The crowd never joins the turn-taking — in every mode it participates through sentiment polls between rounds and sampled interjections in the feed. Picking Roundtable with 500 residents means ~10 leads speaking in turn, informed by 500 polled opinions — never 500 people taking turns.</P>
       <ModeGallery />
+      <H>Rounds, stopping, and polling — mode by mode</H>
+      <P>Two families. <B>Round modes</B> — Agora, Roundtable, Tribunal, and Jury — loop: your ROUNDS setting and stop rule apply, and the crowd is polled between rounds. In Jury, rounds are deliberation layers: round 1 scores blind, every later round the jurors see the tally and re-score (hold or move), and stability means the scores stopped moving. <B>Fixed choreographies</B> — Chamber, Desk, and Expedition — run their phases exactly once: takes→blind review→synthesis, assign→draft→merge, and the five-phase route. Rounds and the stop rule don't apply to them (run config hides those controls), and the run screen says "phases complete", never "converged". Chamber polls the crowd twice (after the raw takes and after the chair's synthesis); Desk and Expedition are research choreographies and don't poll at all.</P>
       <H>How a full run composes them</H>
       <P>Big questions chain modes: an optional <B>Expedition</B> builds the background research pack → a <B>Jury</B> pass scores the question cheaply to seed the agenda → the <B>Agora</B> main deliberation runs with crowd polls between rounds → <B>Tribunal</B> spot-runs settle the one or two most contested subquestions → a <B>Desk</B> pass writes the report from the transcript.</P>
       <Callout label="RIGHT-SIZING">
