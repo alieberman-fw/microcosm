@@ -124,12 +124,19 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
   // NOTE: no `temperature` param — deprecated on Sonnet 5+ (400s the call);
   // the §4.1 temperature band steers style through the prompt instead.
   let lastErr = "";
-  for (let attempt = 0; attempt < 2 && !text; attempt++) {
+  // escalating output budgets: adaptive-thinking models (Sonnet 5+) can spend
+  // the ENTIRE budget thinking on a hard turn and return zero prose with
+  // stop_reason max_tokens — retrying at the same ceiling fails identically
+  // (the "Angela F.'s turn failed twice" run). Each retry must raise the
+  // ceiling; only actual output tokens are billed, so headroom is free.
+  const base = opts.maxTokens ?? 2000;
+  const budgets = [base, Math.max(base * 3, 6_000), Math.max(base * 6, 12_000)];
+  for (let attempt = 0; attempt < budgets.length && !text; attempt++) {
     const ta = Date.now();
     try {
       const res = await ctx.anthropic.beta.messages.create({
         model,
-        max_tokens: opts.maxTokens ?? 1200,
+        max_tokens: budgets[attempt],
         system,
         messages: [{ role: "user", content: userContent }],
         betas: ["files-api-2025-04-14"],
@@ -146,7 +153,8 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
       await ctx.logCall("engine.turn", model, res.usage as { input_tokens: number; output_tokens: number }, ta, undefined,
         { agent: lead.spec.name, seat: lead.spec.seat?.role ?? lead.spec.role, mode: ctx.mode, round: opts.round, tag: opts.tag });
       // a successful call with no prose = the model spent the budget thinking
-      // (Sonnet 5 adaptive thinking) or refused — record why and retry bigger
+      // (Sonnet 5 adaptive thinking) or refused — the next attempt runs with
+      // the escalated budget above
       if (!text) lastErr = `empty response (stop_reason: ${res.stop_reason})`;
     } catch (e) {
       lastErr = e instanceof Error ? e.message : "turn failed";
@@ -155,9 +163,10 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
       if (attempt === 0) await new Promise((r) => setTimeout(r, 600));
     }
   }
-  // fail LOUD: a dead turn after a retry means the run is broken — stop it
-  // with the real API error instead of littering the feed with skipped posts
-  if (!text) throw new Error(`${lead.spec.name}'s turn failed twice — ${lastErr}`);
+  // fail LOUD: a dead turn after the full escalation ladder means the run is
+  // broken — stop with the real API error instead of littering the feed with
+  // skipped posts (the escalation makes thinking-drain effectively impossible)
+  if (!text) throw new Error(`${lead.spec.name}'s turn failed ${budgets.length} times — ${lastErr}`);
   text = clampWords(stripSelfPrefix(text, lead.spec.name));
   await ctx.emit({
     type: "post", seq: opts.seq, author: "agent", agent_key: lead.key,
@@ -198,7 +207,9 @@ async function pollCrowd(ctx: EngineContext, round: number, topic: string): Prom
       try {
         const res = await ctx.anthropic.messages.create({
           model,
-          max_tokens: 130 * batch.length + 300,
+          // headroom over the strict per-row need: on frontier tier the crowd
+          // model is Sonnet 5, whose adaptive thinking bills against this cap
+          max_tokens: 200 * batch.length + 800,
           system:
             `You simulate a sentiment poll of crowd members on: "${topic}". For EACH member listed, answer AS THEM. ` +
             `Reply ONLY a JSON array in the same order: [{"name": "...", "stance": "support|conditional|oppose|disengaged", "quote": "one short in-character sentence"}]`,
@@ -236,7 +247,7 @@ async function stabilityCheck(ctx: EngineContext, transcript: string): Promise<b
   const t0 = Date.now();
   try {
     const res = await ctx.anthropic.messages.create({
-      model, max_tokens: 10,
+      model, max_tokens: 300, // room to think before the one-word verdict (adaptive-thinking models)
       system:
         `Read the deliberation. Reply ONLY "stable" or "moving". ` +
         `Reply "stable" ONLY IF the most recent round added NO new arguments, NO new evidence, NO position changes, ` +
@@ -253,6 +264,51 @@ async function stabilityCheck(ctx: EngineContext, transcript: string): Promise<b
 }
 
 export interface PostRec { name: string; role: string; content: string; tag: string; seq: number; agentKey: string; round: number }
+
+/* ---- Jury arithmetic (§5 MoA layers) — exported PURE so the Phase-1 test
+ * matrix pins every number the tally and the convergence rule produce ---- */
+
+export function juryScoreOf(text: string): number | null {
+  const m = text.match(/SCORE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i);
+  return m ? Math.min(Math.max(parseFloat(m[1]), 0), 10) : null;
+}
+
+export function juryScoresAt(posts: Pick<PostRec, "tag" | "round" | "agentKey" | "content">[], round: number): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const p of posts) {
+    if (p.tag !== "VERDICT" || p.round !== round) continue;
+    const s = juryScoreOf(p.content);
+    if (s !== null) out.set(p.agentKey, s);
+  }
+  return out;
+}
+
+/** movement between rounds: `returningMoved` feeds the tally line (jurors who
+ *  scored both rounds and shifted ≥1); `movedOrNew` feeds the stability stop
+ *  (a juror missing from the previous round counts as movement) */
+export function juryMovement(prev: Map<string, number>, cur: Map<string, number>): { returningMoved: number; movedOrNew: number } {
+  let returningMoved = 0;
+  let movedOrNew = 0;
+  for (const [k, v] of cur) {
+    const pv = prev.get(k);
+    if (pv === undefined) movedOrNew += 1;
+    else if (Math.abs(v - pv) >= 1) { returningMoved += 1; movedOrNew += 1; }
+  }
+  return { returningMoved, movedOrNew };
+}
+
+export function juryTallyLine(cur: Map<string, number>, prev: Map<string, number>, round: number): string | null {
+  if (cur.size === 0) return null;
+  const vs = [...cur.values()];
+  const mean = vs.reduce((a, b) => a + b, 0) / vs.length;
+  const forN = vs.filter((x) => x >= 6).length;
+  const against = vs.filter((x) => x <= 4).length;
+  const { returningMoved } = juryMovement(prev, cur);
+  return (
+    `ROUND ${round} TALLY — mean ${mean.toFixed(1)}/10 · ${forN} FOR (≥6) · ${against} AGAINST (≤4) · ${vs.length - forN - against} ON THE FENCE · range ${Math.min(...vs)}–${Math.max(...vs)}` +
+    (round > 1 ? ` · ${returningMoved === 0 ? "NO JUROR MOVED ≥1 POINT" : `${returningMoved} JUROR${returningMoved === 1 ? "" : "S"} MOVED ≥1 POINT`}` : "")
+  );
+}
 
 /** why the run stopped — the UI and the report must never claim convergence
  *  for a mode that simply finished its fixed choreography */
@@ -401,19 +457,8 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     // blind; every later round the jurors see the tally + peer verdicts and
     // re-score — hold or move. Convergence is computed in CODE from score
     // movement (no judge call): stable = nobody moved a full point.
-    const scoreOf = (text: string): number | null => {
-      const m = text.match(/SCORE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i);
-      return m ? Math.min(Math.max(parseFloat(m[1]), 0), 10) : null;
-    };
-    const scoresAt = (round: number): Map<string, number> => {
-      const out = new Map<string, number>();
-      for (const p of posts) {
-        if (p.tag !== "VERDICT" || p.round !== round) continue;
-        const s = scoreOf(p.content);
-        if (s !== null) out.set(p.agentKey, s);
-      }
-      return out;
-    };
+    // (arithmetic lives in the exported jury* helpers so tests pin it)
+    const scoresAt = (round: number) => juryScoresAt(posts, round);
     for (let round = startRound; round <= ctx.cfg.rounds && budget(); round++) {
       for (const lead of ctx.leads) {
         if (!budget()) break;
@@ -429,16 +474,9 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       }
       // the tally is pure arithmetic over the round's scores — no model call
       const cur = scoresAt(round);
-      if (cur.size > 0 && !did("The Tally", "TALLY", round)) {
-        const vs = [...cur.values()];
-        const mean = vs.reduce((a, b) => a + b, 0) / vs.length;
-        const forN = vs.filter((x) => x >= 6).length;
-        const against = vs.filter((x) => x <= 4).length;
-        const prev = round > 1 ? scoresAt(round - 1) : new Map<string, number>();
-        const movers = [...cur].filter(([k, v]) => prev.has(k) && Math.abs(v - prev.get(k)!) >= 1).length;
-        const content =
-          `ROUND ${round} TALLY — mean ${mean.toFixed(1)}/10 · ${forN} FOR (≥6) · ${against} AGAINST (≤4) · ${vs.length - forN - against} ON THE FENCE · range ${Math.min(...vs)}–${Math.max(...vs)}` +
-          (round > 1 ? ` · ${movers === 0 ? "NO JUROR MOVED ≥1 POINT" : `${movers} JUROR${movers === 1 ? "" : "S"} MOVED ≥1 POINT`}` : "");
+      const tallyContent = juryTallyLine(cur, round > 1 ? scoresAt(round - 1) : new Map(), round);
+      if (tallyContent && !did("The Tally", "TALLY", round)) {
+        const content = tallyContent;
         currentRound = round;
         seq += 1;
         await ctx.emit({
@@ -453,7 +491,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       await pollCrowd(ctx, round, ctx.problem);
       if (ctx.cfg.convergence === "stability" && round >= 2) {
         const prev = scoresAt(round - 1);
-        const movedOrNew = [...cur].filter(([k, v]) => !prev.has(k) || Math.abs(v - prev.get(k)!) >= 1).length;
+        const { movedOrNew } = juryMovement(prev, cur);
         if (cur.size > 0 && prev.size > 0 && movedOrNew === 0) { converged = true; stopReason = "stability"; break; }
       }
     }
@@ -515,7 +553,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       const t0 = Date.now();
       try {
         const res = await ctx.anthropic.messages.create({
-          model, max_tokens: 24,
+          model, max_tokens: 100,
           system: `Given the last post, reply ONLY the full name of the panelist who should speak next (not the last author). Panel: ${ctx.leads.map((l) => `${l.spec.name} (${l.spec.seat?.role ?? l.spec.role})`).join("; ")}`,
           messages: [{ role: "user", content: `${last.name}: ${last.content}` }],
         });

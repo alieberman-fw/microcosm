@@ -136,6 +136,44 @@ function KindTierMatrix() {
   );
 }
 
+/* ------------------------- round semantics table -------------------------- */
+/* The canonical "what is a round" table — same content as README.md and the
+ * engine test matrix (tests/engine/modes.test.ts). Change all three together. */
+
+const ROUND_SEMANTICS: { mode: string; round: string; ends: string; runEnds: string }[] = [
+  { mode: "Agora", round: "An opening post + replies routed by the speaker rule", ends: "Reply budget for the round is spent", runEnds: "Rounds cap · positions stable twice in a row (from round 3) · post budget" },
+  { mode: "Roundtable", round: "Every lead speaks once, in order", ends: "Last lead has spoken", runEnds: "Same as Agora" },
+  { mode: "Tribunal", round: "Up to 3 FOR arguments → up to 3 AGAINST rebuttals → judge's note", ends: "Judge rules the round", runEnds: "Rounds cap · post budget — always adversarial, never a stability stop" },
+  { mode: "Jury", round: "Every juror scores (blind in round 1; sees the tally after) + a code-computed TALLY", ends: "Tally posts", runEnds: "Scores stop moving (no juror shifts ≥1 point) · rounds cap · post budget" },
+  { mode: "Chamber", round: "Phases, not rounds: takes → blind review → chair synthesis", ends: "Phase completes", runEnds: "Choreography completes — never “converged”" },
+  { mode: "Desk", round: "Phases: assignment → section drafts → director's memo", ends: "Phase completes", runEnds: "Choreography completes" },
+  { mode: "Expedition", round: "Phases: questions → research → analysis → alternatives → verify", ends: "Phase completes", runEnds: "Choreography completes" },
+];
+
+function RoundSemanticsTable() {
+  const th: CSSProperties = { ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t6)", textTransform: "uppercase", textAlign: "left", padding: "8px 12px 8px 0", borderBottom: "1px solid var(--ln3)", whiteSpace: "nowrap" };
+  const td: CSSProperties = { fontSize: 12.5, lineHeight: 1.55, color: "var(--t4)", padding: "9px 12px 9px 0", borderBottom: "1px solid var(--ln2)", verticalAlign: "top" };
+  return (
+    <div style={{ overflowX: "auto", margin: "14px 0 18px" }}>
+      <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse" }}>
+        <thead>
+          <tr><th style={th}>Mode</th><th style={th}>One round =</th><th style={th}>Round ends when</th><th style={th}>Run ends when</th></tr>
+        </thead>
+        <tbody>
+          {ROUND_SEMANTICS.map((r) => (
+            <tr key={r.mode}>
+              <td style={{ ...td, ...mono, fontSize: 10, letterSpacing: ".06em", color: "var(--t1)", whiteSpace: "nowrap" }}>{r.mode.toUpperCase()}</td>
+              <td style={td}>{r.round}</td>
+              <td style={td}>{r.ends}</td>
+              <td style={td}>{r.runEnds}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /* ------------------------------ mode gallery ------------------------------ */
 
 const MODES: { key: ModeKey; name: string; when: string; speaks: string; crowd: string }[] = [
@@ -429,6 +467,9 @@ function InteractionModes() {
       <ModeGallery />
       <H>Rounds, stopping, and polling — mode by mode</H>
       <P>Two families. <B>Round modes</B> — Agora, Roundtable, Tribunal, and Jury — loop: your ROUNDS setting and stop rule apply, and the crowd is polled between rounds. In Jury, rounds are deliberation layers: round 1 scores blind, every later round the jurors see the tally and re-score (hold or move), and stability means the scores stopped moving. <B>Fixed choreographies</B> — Chamber, Desk, and Expedition — run their phases exactly once: takes→blind review→synthesis, assign→draft→merge, and the five-phase route. Rounds and the stop rule don't apply to them (run config hides those controls), and the run screen says "phases complete", never "converged". Chamber polls the crowd twice (after the raw takes and after the chair's synthesis); Desk and Expedition are research choreographies and don't poll at all.</P>
+      <P>What "one round" means, precisely, per mode — this table is the engine's contract, pinned by the offline test matrix:</P>
+      <RoundSemanticsTable />
+      <P>Crowd polls fire at every round boundary in Agora, Roundtable, Tribunal, and Jury, and twice in Chamber. A poll interrupted by a slice boundary ships its partial tally honestly and the round is never double-polled on resume.</P>
       <H>How a full run composes them</H>
       <P>Big questions chain modes: an optional <B>Expedition</B> builds the background research pack → a <B>Jury</B> pass scores the question cheaply to seed the agenda → the <B>Agora</B> main deliberation runs with crowd polls between rounds → <B>Tribunal</B> spot-runs settle the one or two most contested subquestions → a <B>Desk</B> pass writes the report from the transcript.</P>
       <Callout label="RIGHT-SIZING">

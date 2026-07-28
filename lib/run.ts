@@ -12,7 +12,6 @@ export type SimMode = (typeof SIM_MODES)[number];
 export interface RunConfig {
   rounds: number;              // max discussion rounds, 1-100
   max_posts: number;           // hard budget cap, 50-10000
-  duration_days: number;       // narrative clock, 1-30
   speaker: "priority" | "round-robin" | "random" | "mention-driven"; // Agora only
   convergence: "stability" | "fixed" | "budget";
   temperature: "conservative" | "balanced" | "exploratory";
@@ -25,7 +24,6 @@ export interface RunConfig {
 export const RUN_DEFAULTS: RunConfig = {
   rounds: 3,
   max_posts: 600,
-  duration_days: 14,
   speaker: "priority",
   convergence: "stability",
   temperature: "balanced",
@@ -37,7 +35,6 @@ export const RUN_DEFAULTS: RunConfig = {
 export const RUN_RANGES = {
   rounds: { min: 1, max: 100 },
   max_posts: { min: 50, max: 10_000 },
-  duration_days: { min: 1, max: 30 },
 } as const;
 
 /** $ per MTok — pull from the Anthropic pricing page when it changes */

@@ -232,7 +232,6 @@ Seeding data ≠ runtime tools (§7). The corpus below is **batch-curated into o
 | Consumer/resident count | 0–1,000 (POC) → 10,000+ (cohort batching, Phase 2) | from casting pass |
 | Max discussion rounds (`max_loops`) | 1–100 | 3 |
 | Max posts (budget cap) | 50–10,000+ | 600 |
-| Simulated duration | 1–30 "days" (pacing metaphor for the UI) | 14 |
 | Speaker selection (Agora mode) | round-robin · random · priority · mention-driven | priority |
 | Convergence rule | stop on stability of positions · fixed rounds · budget exhausted | stability |
 | Dissent preservation | always on (not configurable) | on |
@@ -271,8 +270,6 @@ So no — consumers/residents aren't *only* census-derived (you can author a pur
 **Max discussion rounds** — how many full passes the panel makes over the question. More rounds = positions refine, coalitions form, minds change (the demo's day-13 flip needed the later rounds). 1–3 for quick reads; 10–30 for contested questions; 50–100 only for long-horizon adversarial studies (cost scales linearly).
 
 **Max posts** — the hard budget cap on total messages; the run stops gracefully and synthesizes whatever it has. Protects spend; the estimator prices it before launch.
-
-**Simulated duration** — the narrative clock ("Day 7 of 14") used for pacing, burst rollups, and the report's timeline framing. Doesn't change compute; changes how the deliberation is staged and displayed.
 
 **Speaker selection** (Agora) — who talks next: `priority` (relevance-weighted, most natural), `round-robin` (every voice each cycle, best for panels of equals), `random` (kills anchoring bias), `mention-driven` (agents summon each other with @name — most emergent, least predictable).
 
@@ -556,6 +553,7 @@ Theme: `html[data-theme]`, persisted in `localStorage("mc-theme")`, sun/moon tog
 - **In-app docs stay current:** `/docs` (registry in `components/app/docs/content.tsx`) is the user-facing explanation of the product — what it is, core concepts (kind vs tier, leads vs crowd), the seven modes (animated via `ModeDiagram`, which the run-config mode picker reuses), casting/population controls, and getting-started guides. Every feature PR that changes user-facing behavior updates the relevant docs page in the same PR.
 - `README.md` carries the **living build checklist** (mirrors §11 phases). Every feature PR checks items off, adds newly-scoped ones, and keeps the "⟶ NEXT" marker honest — the README must always answer "what exists, what's next" at a glance. Keep its architecture section in sync when frameworks/models change.
 - Test the live-stream path with a scripted fake run (replay the demo's 46 events) before touching real LLM runs — the demo's `events` array in `demo.html` is the golden fixture.
+- **Engine changes must keep the offline matrix green** (`npm t` — vitest over a FakeAnthropic injected through `EngineContext.anthropic`; zero tokens, <1s). The matrix pins per-mode post counts, stop reasons, poll placement, suspend/resume dedupe, failure ladders, Jury arithmetic, and `compilePersonaPrompt` snapshots. For live verification, `npm run smoke` sweeps all seven modes end-to-end against a running deployment (economy tier, <$1) and cleans up after itself.
 - Verify UI work in the browser against both themes; screenshot the run screen and report for every PR that touches them.
 - Fair-housing gate: any feature that could rank or filter *individual* tenants/buyers is out of scope, full stop.
 

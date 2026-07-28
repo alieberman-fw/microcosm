@@ -29,7 +29,6 @@ const MODE_HINTS: Record<string, string> = {
 const HELP: Record<string, string> = {
   rounds: "Full passes over the question. 1–3 quick reads · 10–30 contested · cost scales linearly",
   max_posts: "Hard budget cap — the run stops gracefully and synthesizes what it has",
-  duration_days: "The narrative clock (DAY 7 / 14) — pacing and report framing, not compute",
   speaker: "Agora only: who talks next — priority (relevance) is the natural default",
   convergence: "When to stop: stability (positions stop moving) is the honest default",
   temperature: "How loose agents think — exploratory finds tail risks, repeats less",
@@ -99,7 +98,7 @@ export default function RunConfigStage({
     setLaunching(true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const final = { ...cfg };
-    for (const k of ["rounds", "max_posts", "duration_days"] as const) {
+    for (const k of ["rounds", "max_posts"] as const) {
       const raw = drafts[k];
       if (raw === undefined) continue;
       const r = RUN_RANGES[k];
@@ -141,14 +140,14 @@ export default function RunConfigStage({
   // blur/Enter so typing never fights the clamp, with −/+ steppers
   const stepFor = (k: string) => (k === "max_posts" ? 50 : 1);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const commitNum = (k: "rounds" | "max_posts" | "duration_days", min: number, max: number) => {
+  const commitNum = (k: "rounds" | "max_posts", min: number, max: number) => {
     const raw = drafts[k];
     if (raw === undefined) return;
     const v = Math.min(Math.max(parseInt(raw, 10) || min, min), max);
     setDrafts((d) => { const n = { ...d }; delete n[k]; return n; });
     if (v !== cfg[k]) set(k, v);
   };
-  const numInput = (k: "rounds" | "max_posts" | "duration_days", min: number, max: number) => (
+  const numInput = (k: "rounds" | "max_posts", min: number, max: number) => (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 0, border: "1px solid var(--ln4)", borderRadius: 10, background: "var(--sf)", overflow: "hidden" }}>
       <button
         onClick={() => set(k, Math.max(min, cfg[k] - stepFor(k)))}
@@ -258,11 +257,6 @@ export default function RunConfigStage({
           <span style={label}>MAX POSTS</span>
           {numInput("max_posts", RUN_RANGES.max_posts.min, RUN_RANGES.max_posts.max)}
           <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t7)", alignSelf: "center" }}>{HELP.max_posts}</span>
-        </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <span style={label}>SIM DAYS</span>
-          {numInput("duration_days", RUN_RANGES.duration_days.min, RUN_RANGES.duration_days.max)}
-          <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t7)", alignSelf: "center" }}>{HELP.duration_days}</span>
         </div>
         {mode === "Agora" && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>

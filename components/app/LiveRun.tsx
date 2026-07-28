@@ -63,7 +63,15 @@ function cssToken(name: string, fallback: string) {
 function layoutLeads(mode: string, leads: LiveLead[], w: number, h: number): Record<string, Node> {
   const cx = w / 2, cy = h / 2;
   const out: Record<string, Node> = {};
-  const label = (l: LiveLead) => `${l.name.split(" ")[0].toUpperCase()}${l.discipline ? ` · ${l.discipline}` : ""}`;
+  // first name + last initial ("ELISE J.") — one "ROSA" per canvas was ambiguous
+  // the moment two leads shared a first name; handles "Elise J." and "Larry Liu"
+  const shortName = (name: string) => {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length < 2) return name.toUpperCase();
+    const last = parts[parts.length - 1];
+    return `${parts[0]} ${last[0].toUpperCase()}.`.toUpperCase();
+  };
+  const label = (l: LiveLead) => `${shortName(l.name)}${l.discipline ? ` · ${l.discipline}` : ""}`;
   if (mode === "Tribunal") {
     const pro = leads.filter((l) => !l.residentSide && !l.adversarial);
     const con = leads.filter((l) => l.residentSide || l.adversarial);
