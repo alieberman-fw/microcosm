@@ -53,6 +53,24 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const { data: docs } = await supabase.from("documents")
     .select("id, name, mime, anthropic_file_id").eq("sim_id", id).eq("parse_status", "parsed");
 
+  // §2b: vote totals are a citable endorsement signal for the synthesizer
+  const { data: voteRows } = await supabase.from("post_votes").select("seq, vote").eq("sim_id", id);
+  const netBySeq = new Map<number, number>();
+  for (const v of voteRows ?? []) netBySeq.set(v.seq as number, (netBySeq.get(v.seq as number) ?? 0) + (v.vote as number));
+  const nameOf = (seq: number) => {
+    const row = postRows.find((r) => r.seq === seq);
+    const m = (row?.cites as { name?: string } | null) ?? {};
+    return m.name ?? "Agent";
+  };
+  const ranked = [...netBySeq.entries()].sort((a, b) => b[1] - a[1]);
+  const endorsed = ranked.filter(([, n]) => n > 0).slice(0, 3);
+  const contested = ranked.filter(([, n]) => n < 0).slice(-2);
+  const voteText = ranked.length
+    ? `PANEL VOTE SIGNALS (in-character endorsements; cite post numbers):\n` +
+      (endorsed.length ? `- most-endorsed: ${endorsed.map(([s, n]) => `post ${s} by ${nameOf(s)} (net +${n})`).join("; ")}\n` : "") +
+      (contested.length ? `- most-contested (net downvoted): ${contested.map(([s, n]) => `post ${s} by ${nameOf(s)} (net ${n})`).join("; ")}\n` : "")
+    : "";
+
   const questions = normalizeQuestions(brief.questions);
   const success = normalizeSuccess(brief.success);
   const transcript = postRows.map((r) => {
@@ -63,7 +81,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     `PROBLEM: ${brief.problem}\n` +
     (questions.length ? `QUESTIONS TO RESOLVE (one report section EACH, in order):\n${questions.map((q) => `- ${q.label}${q.detail ? ` — ${q.detail}` : ""}`).join("\n")}\n` : "") +
     (success.length ? `SUCCESS CRITERIA (the report is held to every one):\n${success.map((x) => `- ${x}`).join("\n")}\n` : "") +
-    (sentiments.length ? `CROWD SENTIMENT BY ROUND:\n${sentiments.map((x) => `- round ${x.round}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "");
+    (sentiments.length ? `CROWD SENTIMENT BY ROUND:\n${sentiments.map((x) => `- round ${x.round}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
+    voteText;
 
   const synthModel = TIER_MODELS[cfg.tier].synth;
   const verifyModel = TIER_MODELS[cfg.tier].verifier;

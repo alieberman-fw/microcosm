@@ -62,6 +62,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       tier: pick(r.tier ?? prev.tier, ["economy", "standard", "frontier"] as const, "standard"),
       verifier: typeof r.verifier === "boolean" ? r.verifier : prev.verifier,
       report_length: pick(r.report_length ?? prev.report_length, ["auto", "brief", "standard", "dense"] as const, "auto"),
+      density: pick(r.density ?? prev.density, ["focused", "lively", "bustling"] as const, "lively"),
     } satisfies RunConfig;
   }
 

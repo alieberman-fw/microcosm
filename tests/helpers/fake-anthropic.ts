@@ -28,11 +28,13 @@ export class FakeClock {
 
 /* ---------------------------- call classification ------------------------ */
 
-export type CallKind = "turn" | "poll" | "router" | "judge" | "unknown";
+export type CallKind = "turn" | "poll" | "router" | "judge" | "burst" | "votes" | "unknown";
 
 export function classify(system: string): CallKind {
   if (system.includes("Forum rules")) return "turn";
   if (system.includes("sentiment poll")) return "poll";
+  if (system.includes("interjecting")) return "burst";
+  if (system.includes("casting votes")) return "votes";
   if (system.includes("full name of the panelist")) return "router";
   if (system.includes('"stable" or "moving"')) return "judge";
   return "unknown";
@@ -85,6 +87,19 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
       const names = user.split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).split(":")[0]);
       text = JSON.stringify(names.map((name, i) => ({
         name, stance: ["support", "conditional", "oppose", "disengaged"][i % 4], quote: `as ${name} says`,
+      })));
+    } else if (kind === "burst") {
+      // every listed member reacts to the FIRST post of the round
+      const seqs = user.split("\n").map((l) => l.match(/^(\d+) · /)).filter(Boolean).map((m) => Number(m![1]));
+      const names = user.split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).split(":")[0]);
+      text = JSON.stringify(names.map((name, i) => ({ name, seq: seqs[i % seqs.length] ?? seqs[0], reaction: `${name} reacts.` })));
+    } else if (kind === "votes") {
+      // every voter upvotes the first post and downvotes the second (if any)
+      const seqs = user.split("\n").map((l) => l.match(/^(\d+) · /)).filter(Boolean).map((m) => Number(m![1]));
+      const names = user.split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).split(":")[0]);
+      text = JSON.stringify(names.map((name) => ({
+        voter: name,
+        votes: [{ seq: seqs[0], vote: "up" }, ...(seqs.length > 1 ? [{ seq: seqs[1], vote: "down" }] : [])],
       })));
     } else if (kind === "router") {
       // pick the second panelist listed (never the last author by construction)
@@ -177,6 +192,7 @@ export interface Harness {
   /** posts as PostRec (mirrors the launch route's resume reconstruction) */
   postRecs: () => PostRec[];
   sentimentRounds: () => number[];
+  voteEvents: () => Extract<EngineEvent, { type: "votes" }>[];
   /** build the RunResume the launch route would build from persisted state */
   resume: (round: number) => RunResume;
 }
@@ -189,6 +205,7 @@ export function makeHarness(args: {
   deadlineInMs?: number;          // relative to clock start; default: effectively infinite
   fake?: FakeOptions;
   polledRounds?: Set<number>;
+  votedRounds?: Set<number>;
   clock?: FakeClock;
 }): Harness {
   const clock = args.clock ?? new FakeClock();
@@ -196,7 +213,9 @@ export function makeHarness(args: {
   const events: EngineEvent[] = [];
   const ctx: EngineContext = {
     anthropic: client,
-    cfg: { ...RUN_DEFAULTS, convergence: "fixed", ...args.cfg } as RunConfig,
+    // density defaults to FOCUSED in tests: the Phase-1 matrix pins the tight
+    // v1 shapes; density tests opt into lively/bustling explicitly
+    cfg: { ...RUN_DEFAULTS, convergence: "fixed", density: "focused", ...args.cfg } as RunConfig,
     mode: args.mode,
     problem: "Test problem — pool or finishes?",
     questions: ["Q ONE", "Q TWO"],
@@ -206,19 +225,22 @@ export function makeHarness(args: {
     temperature: 0.7,
     deadline: clock.now + (args.deadlineInMs ?? 10 ** 12),
     polledRounds: args.polledRounds ?? new Set<number>(),
+    votedRounds: args.votedRounds ?? new Set<number>(),
     emit: async (e) => { events.push(e); },
     logCall: async () => {},
     isCancelled: () => false,
   };
   const postRecs = () => events
     .filter((e): e is Extract<EngineEvent, { type: "post" }> => e.type === "post")
-    .map((e) => ({ name: e.name, role: e.role, content: e.content, tag: e.tag, seq: e.seq, agentKey: e.agent_key, round: e.round }));
+    .map((e) => ({ name: e.name, role: e.role, content: e.content, tag: e.tag, seq: e.seq, agentKey: e.agent_key, round: e.round, replyTo: e.reply_to }));
   const sentimentRounds = () => events
     .filter((e): e is Extract<EngineEvent, { type: "sentiment" }> => e.type === "sentiment")
     .map((e) => e.round);
+  const voteEvents = () => events
+    .filter((e): e is Extract<EngineEvent, { type: "votes" }> => e.type === "votes");
   const resume = (round: number): RunResume => {
     const recs = postRecs();
     return { posts: recs, seq: recs.reduce((m, r) => Math.max(m, r.seq), 0), round };
   };
-  return { ctx, events, calls, clock, postRecs, sentimentRounds, resume };
+  return { ctx, events, calls, clock, postRecs, sentimentRounds, voteEvents, resume };
 }

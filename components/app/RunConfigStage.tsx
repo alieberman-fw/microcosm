@@ -29,6 +29,7 @@ const MODE_HINTS: Record<string, string> = {
 const HELP: Record<string, string> = {
   rounds: "Full passes over the question. 1–3 quick reads · 10–30 contested · cost scales linearly",
   max_posts: "Hard budget cap — the run stops gracefully and synthesizes what it has",
+  density: "How busy each round gets — replies scale with the panel, crossfire and counter-volleys open up, crowd voices interject. Priced in the estimate below",
   speaker: "Agora only: who talks next — priority (relevance) is the natural default",
   convergence: "When to stop: stability (positions stop moving) is the honest default",
   temperature: "How loose agents think — exploratory finds tail risks, repeats less",
@@ -258,6 +259,17 @@ export default function RunConfigStage({
           {numInput("max_posts", RUN_RANGES.max_posts.min, RUN_RANGES.max_posts.max)}
           <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t7)", alignSelf: "center" }}>{HELP.max_posts}</span>
         </div>
+        {mode !== "Desk" && mode !== "Expedition" && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={label}>DENSITY</span>
+            {(["focused", "lively", "bustling"] as const).map((v) => (
+              <Pill key={v} on={cfg.density === v} onClick={() => set("density", v)} title={HELP.density}>{v.toUpperCase()}</Pill>
+            ))}
+            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t7)", alignSelf: "center" }}>
+              {cfg.density === "focused" ? "Tight rounds — the v1 rhythm" : cfg.density === "lively" ? "Reply chains ~1.5× the panel + crowd interjections" : "Full melee — ~2× replies, counter-volleys, six interjectors"}
+            </span>
+          </div>
+        )}
         {mode === "Agora" && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             <span style={label}>SPEAKER</span>
@@ -313,7 +325,7 @@ export default function RunConfigStage({
               ${est.low.toFixed(2)}–{est.high.toFixed(2)}
             </span>
             <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
-              ~{est.posts.toLocaleString()} POSTS{est.polls > 0 ? ` · ${est.polls.toLocaleString()} POLLS` : ""} · {cfg.tier.toUpperCase()}
+              ~{est.posts.toLocaleString()} POSTS{est.polls > 0 ? ` · ${est.polls.toLocaleString()} POLLS` : ""}{est.votes > 0 ? ` · VOTES` : ""} · {cfg.density.toUpperCase()} · {cfg.tier.toUpperCase()}
             </span>
           </div>
         </div>

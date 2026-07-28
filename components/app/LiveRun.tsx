@@ -9,10 +9,12 @@
  * nothing is hidden, everything persisted, click to open.
  */
 
-import { CSSProperties, useEffect, useRef, useState } from "react";
+import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MiniSwarm } from "@/components/app/CastingTheater";
+import PersonaProfile from "@/components/app/PersonaProfile";
+import type { PersonaSpec } from "@/lib/personas";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -24,11 +26,18 @@ export interface LiveLead {
   discipline?: string;
   adversarial?: boolean;
   residentSide?: boolean;
+  kind?: string;
+  tagline?: string;
+  stances?: string[];
+  backstory?: string;
+  /** full frozen spec — roster rail cards + PersonaProfile + canvas click */
+  spec?: PersonaSpec;
 }
 
 export interface LivePost {
   seq: number;
   agent_key: string;
+  author?: string; // "agent" | "user" (Take the Floor)
   name: string;
   role: string;
   initials: string;
@@ -47,6 +56,14 @@ export interface LiveSentiment {
   polled: number;
   dist: Record<string, number>;
   quotes: { name: string; stance: string; quote: string }[];
+}
+
+export interface LiveVote {
+  seq: number;
+  voter_key: string;
+  voter_name: string;
+  voter_role: string;
+  vote: 1 | -1;
 }
 
 type Item = { kind: "post"; post: LivePost } | { kind: "sentiment"; s: LiveSentiment };
@@ -101,7 +118,7 @@ function layoutLeads(mode: string, leads: LiveLead[], w: number, h: number): Rec
 }
 
 export default function LiveRun({
-  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialStatus, maxRounds, hasReport = false,
+  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialVotes = [], initialStatus, maxRounds, hasReport = false,
 }: {
   simId: string;
   problem: string;
@@ -114,6 +131,7 @@ export default function LiveRun({
   crowdTarget?: number;
   initialPosts: LivePost[];
   initialSentiments: LiveSentiment[];
+  initialVotes?: LiveVote[];
   initialStatus: string;
   maxRounds: number;
   hasReport?: boolean;
@@ -143,7 +161,78 @@ export default function LiveRun({
   const [reportReady, setReportReady] = useState(hasReport);
   const [confirmRerun, setConfirmRerun] = useState(false);
   const [probOpen, setProbOpen] = useState(false);
+  const [votes, setVotes] = useState<LiveVote[]>(initialVotes);
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [profileKey, setProfileKey] = useState<string | null>(null);
+  const [floorText, setFloorText] = useState("");
+  const [floorBusy, setFloorBusy] = useState(false);
+  const [mentionQ, setMentionQ] = useState<string | null>(null); // text after the live "@"
+  const floorMentions = useRef<Map<string, string>>(new Map());  // display name → agent_key
   const router = useRouter();
+
+  // ---- §2b votes: per-post tallies with hover attribution ----
+  const votesBySeq = useMemo(() => {
+    const m = new Map<number, { up: LiveVote[]; down: LiveVote[] }>();
+    for (const v of votes) {
+      const e = m.get(v.seq) ?? { up: [], down: [] };
+      (v.vote === 1 ? e.up : e.down).push(v);
+      m.set(v.seq, e);
+    }
+    return m;
+  }, [votes]);
+  // highest NET endorsement per round gets the accent ring
+  const topOfRound = useMemo(() => {
+    const best = new Map<number, { seq: number; net: number }>();
+    for (const it of items) {
+      if (it.kind !== "post" || it.post.tag === "TALLY" || it.post.tag === "INTERJECTION") continue;
+      const e = votesBySeq.get(it.post.seq);
+      const net = (e?.up.length ?? 0) - (e?.down.length ?? 0);
+      if (net <= 0) continue;
+      const cur = best.get(it.post.round);
+      if (!cur || net > cur.net) best.set(it.post.round, { seq: it.post.seq, net });
+    }
+    return new Set([...best.values()].map((b) => b.seq));
+  }, [items, votesBySeq]);
+
+  // ---- §2a threading: depth via reply_to chains (visual cap 5) + collapse ----
+  const { depthBySeq, childrenBySeq } = useMemo(() => {
+    const parent = new Map<number, number>();
+    const children = new Map<number, number[]>();
+    for (const it of items) {
+      if (it.kind !== "post") continue;
+      const p = it.post;
+      if (p.reply_to != null) {
+        parent.set(p.seq, p.reply_to);
+        children.set(p.reply_to, [...(children.get(p.reply_to) ?? []), p.seq]);
+      }
+    }
+    const depth = new Map<number, number>();
+    const depthOf = (seq: number): number => {
+      if (depth.has(seq)) return depth.get(seq)!;
+      const par = parent.get(seq);
+      const d = par == null ? 0 : Math.min(depthOf(par) + 1, 12);
+      depth.set(seq, d);
+      return d;
+    };
+    for (const it of items) if (it.kind === "post") depthOf(it.post.seq);
+    return { depthBySeq: depth, childrenBySeq: children };
+  }, [items]);
+  const descendantCount = (seq: number): number => {
+    const kids = childrenBySeq.get(seq) ?? [];
+    return kids.length + kids.reduce((s, k) => s + descendantCount(k), 0);
+  };
+  const hiddenByCollapse = (seq: number): boolean => {
+    let cur = seq;
+    for (let guard = 0; guard < 24; guard++) {
+      const it = items.find((x) => x.kind === "post" && x.post.seq === cur) as { kind: "post"; post: LivePost } | undefined;
+      const par = it?.post.reply_to;
+      if (par == null) return false;
+      if (collapsed.has(par)) return true;
+      cur = par;
+    }
+    return false;
+  };
 
   // self-heal a stale client-cache hit: a completed run can never be empty —
   // if the server payload says complete but carried no posts, refetch once
@@ -310,6 +399,9 @@ export default function LiveRun({
             for (let i = 0; i < ring.length; i += Math.max(1, Math.floor(ring.length / 14))) {
               pulses.current.push({ a: ring[i], b: { x: cx, y: cy }, t0: now + (i % 7) * 120, dur: 2200, strong: false });
             }
+          } else if (evt.type === "votes") {
+            const vs = (evt as unknown as { votes: LiveVote[] }).votes ?? [];
+            setVotes((prev) => [...prev, ...vs]);
           } else if (evt.type === "stage") {
             if (evt.value === "running" && evt.detail) setNote(String(evt.detail));
             if (evt.value === "converged") setNote(`CONVERGED — POSITIONS STABILIZED, STOPPED BEFORE THE ROUND CAP · SET "STOP WHEN: ROUNDS EXHAUSTED" TO FORCE EVERY ROUND`);
@@ -368,6 +460,84 @@ export default function LiveRun({
     const el = feedEl.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [items.length, thinking]);
+
+  // ---- Take the Floor: post into the forum, @mentioned agents answer ----
+  const takeFloor = async () => {
+    const content = floorText.trim();
+    if (!content || floorBusy) return;
+    setFloorBusy(true);
+    setError(null);
+    const mentions = [...floorMentions.current.entries()]
+      .filter(([name]) => content.includes(`@${name}`))
+      .map(([, key]) => key);
+    try {
+      const res = await fetch(`/api/simulations/${simId}/floor`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, mentions }),
+      });
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "The floor is unavailable");
+      }
+      setFloorText("");
+      setMentionQ(null);
+      floorMentions.current.clear();
+      const round = items.reduce((m, i) => (i.kind === "post" ? Math.max(m, i.post.round) : m), 1);
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const evt = JSON.parse(line) as Record<string, unknown>;
+          if (evt.type === "floor") {
+            setItems((prev) => [...prev, { kind: "post", post: {
+              seq: Number(evt.seq), agent_key: "__user", author: "user", name: "You", role: "Taking the floor",
+              initials: "YOU", tag: "FLOOR", reply_to: null, content, cites: [], round,
+            } }]);
+          } else if (evt.type === "post") {
+            const p = evt as unknown as LivePost & { type: string };
+            setItems((prev) => [...prev, { kind: "post", post: p }]);
+            setThinking(null);
+            authorBySeq.current.set(p.seq, p.agent_key);
+            const a = nodesRef.current[p.agent_key];
+            if (a) speaker.current = { node: a, until: performance.now() + 4200 };
+          } else if (evt.type === "presence" && evt.state === "thinking") {
+            setThinking(String(evt.name));
+          } else if (evt.type === "error") {
+            setError(String(evt.error ?? "The panel could not answer"));
+          }
+        }
+      }
+      setThinking(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The floor is unavailable");
+    } finally {
+      setFloorBusy(false);
+    }
+  };
+
+  // canvas click → the lead under the cursor opens their full profile
+  const canvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const el = canvasEl.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const dpr = el.width / rect.width;
+    const x = (e.clientX - rect.left) * dpr, y = (e.clientY - rect.top) * dpr;
+    let best: { key: string; d: number } | null = null;
+    for (const nd of Object.values(nodesRef.current)) {
+      if (!nd.key) continue;
+      const d = Math.hypot(nd.x - x, nd.y - y);
+      if (d < 16 * dpr && (!best || d < best.d)) best = { key: nd.key, d };
+    }
+    if (best && leads.some((l) => l.key === best!.key)) setProfileKey(best.key);
+  };
 
   // canvas: layout + draw
   useEffect(() => {
@@ -482,11 +652,14 @@ export default function LiveRun({
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", layout); };
   }, [viewMode, leads, crowdCount, liveCrowd]);
 
-  // feed grouping: insert a divider when round/phase changes (mode-appropriate)
+  // feed grouping: insert a divider when round/phase changes (mode-appropriate);
+  // interjections and floor posts never open or close a group
   const dividers = (idx: number): string | null => {
     const it = items[idx];
     if (it.kind !== "post") return null;
-    const prev = [...items.slice(0, idx)].reverse().find((x) => x.kind === "post") as { kind: "post"; post: LivePost } | undefined;
+    if (it.post.tag === "INTERJECTION" || it.post.tag === "FLOOR" || it.post.author === "user") return null;
+    const prev = [...items.slice(0, idx)].reverse().find((x) =>
+      x.kind === "post" && x.post.tag !== "INTERJECTION" && x.post.tag !== "FLOOR" && x.post.author !== "user") as { kind: "post"; post: LivePost } | undefined;
     if (viewMode === "Chamber" || viewMode === "Expedition" || viewMode === "Desk") {
       const ph = it.post.phase ?? it.post.tag;
       const prevPh = prev?.post.phase ?? prev?.post.tag;
@@ -510,7 +683,13 @@ export default function LiveRun({
         <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)", border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 100, padding: "3px 10px" }}>
           LIVE · {viewMode.toUpperCase()} · ENGINE V1
         </span>
-        <span style={{ marginLeft: "auto", ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--t6)" }}>
+        <button
+          onClick={() => setRosterOpen((v) => !v)}
+          style={{ marginLeft: "auto", ...mono, fontSize: 9, letterSpacing: ".07em", color: rosterOpen ? "var(--acc)" : "var(--t5)", background: "transparent", border: `1px solid ${rosterOpen ? "var(--acc)" : "var(--ln4)"}`, borderRadius: 100, padding: "4px 12px", cursor: "pointer" }}
+        >
+          {leads.length} ON THE PANEL {rosterOpen ? "←" : "→"}
+        </button>
+        <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--t6)" }}>
           {currentRound > 0 ? `ROUND ${currentRound} / ${maxR} · ` : ""}{posts} POSTS
         </span>
       </div>
@@ -553,7 +732,7 @@ export default function LiveRun({
             <span>AGENT NETWORK · {viewMode.toUpperCase()} ARRANGEMENT</span>
             <span>{leads.length} LEADS · {liveCrowd} CROWD</span>
           </div>
-          <canvas ref={canvasEl} style={{ flex: 1, width: "100%", minHeight: 0, marginTop: 10 }} />
+          <canvas ref={canvasEl} onClick={canvasClick} title="Click a lead for their full profile" style={{ flex: 1, width: "100%", minHeight: 0, marginTop: 10, cursor: "pointer" }} />
         </div>
 
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, background: "var(--sf)", overflow: "hidden" }}>
@@ -642,9 +821,19 @@ export default function LiveRun({
                 );
               }
               const p = it.post;
+              if (hiddenByCollapse(p.seq)) return null;
               const div = dividers(idx);
               const score = viewMode === "Jury" && p.tag !== "TALLY" ? scoreOf(p) : null;
               const judge = p.tag === "JUDGE'S NOTE" || p.tag === "TALLY";
+              const isFloor = p.author === "user" || p.tag === "FLOOR";
+              const isInterjection = p.tag === "INTERJECTION";
+              const depth = Math.min(depthBySeq.get(p.seq) ?? 0, 5);
+              const kids = childrenBySeq.get(p.seq)?.length ?? 0;
+              const nested = descendantCount(p.seq);
+              const isCollapsed = collapsed.has(p.seq);
+              const ve = votesBySeq.get(p.seq);
+              const voteTitle = (list: LiveVote[]) => list.map((v) => `${v.voter_name} — ${v.voter_role}`).join("\n");
+              const topPost = topOfRound.has(p.seq);
               return (
                 <div key={`p${p.seq}`}>
                   {div && (
@@ -655,27 +844,31 @@ export default function LiveRun({
                     </div>
                   )}
                   <div style={{
-                    marginTop: 14,
-                    marginLeft: viewMode === "Tribunal" && p.side === "con" ? 28 : p.tag === "REPLY" ? 36 : 0,
-                    paddingLeft: p.tag === "REPLY" ? 14 : 0,
-                    borderLeft: p.tag === "REPLY" ? "1px solid var(--ln2)" : "none",
+                    marginTop: isInterjection ? 8 : 14,
+                    // reddit-style nesting: indent per reply depth (visual cap 5), chain line in --ln3
+                    marginLeft: (viewMode === "Tribunal" && p.side === "con" ? 20 : 0) + depth * 18,
+                    paddingLeft: depth > 0 ? 12 : 0,
+                    borderLeft: depth > 0 ? "1px solid var(--ln3)" : "none",
                     ...(judge ? { border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 12, padding: "12px 14px" } : {}),
+                    ...(isFloor ? { border: "1px solid var(--acc)", borderRadius: 12, padding: "12px 14px", background: "var(--sf2)" } : {}),
+                    ...(topPost ? { boxShadow: "0 0 0 1px var(--acc)", borderRadius: 12, padding: "10px 12px" } : {}),
                     animation: "fadeUp .3s ease both",
                   }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                      <span style={{ width: 30, height: 30, borderRadius: "50%", background: "var(--sf2)", border: `1px solid ${p.adversarial ? "var(--warn)" : "var(--ln5)"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: 9.5, color: "var(--t3)", flex: "none" }}>{p.initials}</span>
+                      <span style={{ width: isInterjection ? 22 : 30, height: isInterjection ? 22 : 30, borderRadius: "50%", background: isFloor ? "var(--acc-dim)" : "var(--sf2)", border: `1px solid ${isFloor ? "var(--acc)" : p.adversarial ? "var(--warn)" : "var(--ln5)"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: isInterjection ? 7.5 : 9.5, color: isFloor ? "var(--acc)" : "var(--t3)", flex: "none" }}>{p.initials}</span>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.2 }}>
+                        <div style={{ fontSize: isInterjection ? 11.5 : 12.5, fontWeight: 600, lineHeight: 1.2 }}>
                           {p.name}
-                          <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", marginLeft: 8, padding: "2px 7px", borderRadius: 100, border: `1px solid ${p.tag === "REBUTTAL" || p.adversarial ? "var(--warn)" : "var(--ln4)"}`, color: p.tag === "REBUTTAL" ? "var(--warn)" : p.tag.startsWith("POST") || judge ? "var(--acc)" : "var(--t6)" }}>
-                            {p.tag}
+                          <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", marginLeft: 8, padding: "2px 7px", borderRadius: 100, border: `1px solid ${isFloor ? "var(--acc)" : p.tag === "REBUTTAL" || p.tag === "COUNTER" || p.adversarial ? "var(--warn)" : "var(--ln4)"}`, color: isFloor ? "var(--acc)" : p.tag === "REBUTTAL" || p.tag === "COUNTER" ? "var(--warn)" : p.tag.startsWith("POST") || judge ? "var(--acc)" : "var(--t6)" }}>
+                            {isFloor ? "YOU · TAKING THE FLOOR" : p.tag}
                           </span>
                           {score && <span style={{ ...mono, fontSize: 9, marginLeft: 8, color: "var(--acc)" }}>SCORE {score}/10</span>}
+                          {topPost && <span style={{ ...mono, fontSize: 8, letterSpacing: ".05em", marginLeft: 8, color: "var(--acc)" }}>▲ MOST ENDORSED · ROUND {p.round}</span>}
                         </div>
-                        <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginTop: 2 }}>{p.role.toUpperCase()}</div>
+                        {!isFloor && <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginTop: 2 }}>{p.role.toUpperCase()}</div>}
                       </div>
                     </div>
-                    <p style={{ margin: "8px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "var(--t3)" }}>{p.content}</p>
+                    <p style={{ margin: "8px 0 0", fontSize: isInterjection ? 11.5 : 12.5, lineHeight: 1.6, color: isInterjection ? "var(--t5)" : "var(--t3)" }}>{p.content}</p>
                     {p.cites.length > 0 && (
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7 }}>
                         {p.cites.map((c, ci) => (
@@ -683,6 +876,24 @@ export default function LiveRun({
                             ⌗ {c.title.toUpperCase().slice(0, 28)}
                           </span>
                         ))}
+                      </div>
+                    )}
+                    {(ve || kids > 0) && (
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+                        {ve && ve.up.length > 0 && (
+                          <span title={voteTitle(ve.up)} style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--acc)", border: "1px solid var(--ln3)", borderRadius: 100, padding: "2px 8px", cursor: "default" }}>▲ {ve.up.length}</span>
+                        )}
+                        {ve && ve.down.length > 0 && (
+                          <span title={voteTitle(ve.down)} style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--warn)", border: "1px solid var(--ln3)", borderRadius: 100, padding: "2px 8px", cursor: "default" }}>▼ {ve.down.length}</span>
+                        )}
+                        {kids > 0 && (
+                          <button
+                            onClick={() => setCollapsed((prev) => { const n = new Set(prev); if (n.has(p.seq)) n.delete(p.seq); else n.add(p.seq); return n; })}
+                            style={{ ...mono, fontSize: 8.5, letterSpacing: ".04em", color: "var(--t6)", background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
+                          >
+                            {isCollapsed ? `+ SHOW ${nested} REPL${nested === 1 ? "Y" : "IES"}` : `— HIDE ${nested} REPL${nested === 1 ? "Y" : "IES"}`}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -755,8 +966,108 @@ export default function LiveRun({
             )}
             {error && <div style={{ ...mono, fontSize: 10.5, color: "var(--warn)", marginTop: 14 }}>{error}</div>}
           </div>
+
+          {/* Take the Floor — the user is a participant, not a spectator */}
+          {items.length > 0 && status !== "running" && (
+            <div style={{ borderTop: "1px solid var(--ln2)", padding: "10px 14px", position: "relative" }}>
+              {mentionQ !== null && (
+                <div style={{ position: "absolute", bottom: "100%", left: 14, right: 14, marginBottom: 6, background: "var(--sf)", border: "1px solid var(--ln5)", borderRadius: 10, overflow: "hidden", zIndex: 5, boxShadow: "0 8px 30px rgba(0,0,0,.35)" }}>
+                  {leads.filter((l) => l.name.toLowerCase().includes(mentionQ.toLowerCase()) || l.role.toLowerCase().includes(mentionQ.toLowerCase())).slice(0, 6).map((l) => (
+                    <button
+                      key={l.key}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        floorMentions.current.set(l.name, l.key);
+                        setFloorText((t) => t.replace(/@[^@]*$/, `@${l.name} `));
+                        setMentionQ(null);
+                      }}
+                      style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left", padding: "7px 12px", background: "transparent", border: "none", cursor: "pointer" }}
+                    >
+                      <span style={{ ...mono, fontSize: 8, width: 22, height: 22, borderRadius: "50%", border: "1px solid var(--ln5)", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "var(--t4)", flex: "none" }}>{l.initials}</span>
+                      <span style={{ fontSize: 12, color: "var(--t2)" }}>{l.name}</span>
+                      <span style={{ ...mono, fontSize: 8, letterSpacing: ".05em", color: "var(--t6)" }}>{l.role.toUpperCase().slice(0, 34)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  value={floorText}
+                  disabled={floorBusy}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setFloorText(v);
+                    const m = v.match(/@([^@]*)$/);
+                    setMentionQ(m && !m[1].includes("  ") && m[1].length <= 30 ? m[1] : null);
+                  }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && mentionQ === null) void takeFloor(); if (e.key === "Escape") setMentionQ(null); }}
+                  placeholder={`Take the floor — challenge a claim or ask the panel (@ mentions someone directly)`}
+                  style={{ flex: 1, background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "9px 16px", fontSize: 12.5, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
+                />
+                <button
+                  onClick={() => void takeFloor()}
+                  disabled={floorBusy || !floorText.trim()}
+                  style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "9px 16px", borderRadius: 100, background: floorBusy || !floorText.trim() ? "var(--sf2)" : "var(--acc)", color: floorBusy || !floorText.trim() ? "var(--t6)" : "var(--acc-c)", border: "none", cursor: floorBusy ? "wait" : "pointer", flex: "none" }}
+                >
+                  {floorBusy ? "THE PANEL IS ANSWERING…" : "POST ➤"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* §2c roster rail — the cast is knowable mid-run */}
+        {rosterOpen && (
+          <div style={{ width: 268, flex: "none", display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, background: "var(--sf)", overflow: "hidden" }}>
+            <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--ln2)", ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>
+              THE PANEL · {leads.length} LEADS
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+              {leads.map((l) => (
+                <button
+                  key={l.key}
+                  onClick={() => setProfileKey(l.key)}
+                  style={{ textAlign: "left", background: "var(--sf2)", border: `1px solid ${l.adversarial ? "var(--warn)" : "var(--ln3)"}`, borderRadius: 10, padding: "10px 12px", cursor: "pointer" }}
+                >
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ ...mono, fontSize: 8.5, width: 26, height: 26, borderRadius: "50%", border: `1px solid ${l.adversarial ? "var(--warn)" : "var(--ln5)"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", color: l.adversarial ? "var(--warn)" : "var(--t4)", flex: "none" }}>{l.initials}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.name}</div>
+                      <div style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: "var(--t6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.role.toUpperCase()}</div>
+                    </div>
+                  </div>
+                  {(l.discipline || l.adversarial) && (
+                    <div style={{ display: "flex", gap: 5, marginTop: 7, flexWrap: "wrap" }}>
+                      {l.discipline && <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", border: "1px solid var(--ln4)", borderRadius: 100, padding: "1px 7px", color: "var(--t6)" }}>{l.discipline}</span>}
+                      {l.adversarial && <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", border: "1px solid var(--warn)", borderRadius: 100, padding: "1px 7px", color: "var(--warn)" }}>ADVERSARIAL</span>}
+                    </div>
+                  )}
+                  {(l.tagline || l.backstory) && (
+                    <div style={{ fontSize: 10.5, lineHeight: 1.5, color: "var(--t5)", marginTop: 6, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                      {l.tagline || l.backstory}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      {profileKey && (() => {
+        const l = leads.find((x) => x.key === profileKey);
+        if (!l?.spec) return null;
+        return (
+          <PersonaProfile
+            kind={l.kind ?? "expert"}
+            spec={l.spec}
+            chatKey={l.key}
+            source="library"
+            showChatCta={false}
+            onClose={() => setProfileKey(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
