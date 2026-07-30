@@ -10,7 +10,7 @@
 
 import { CSSProperties, useState } from "react";
 import Link from "next/link";
-import { ReportSpec, VERDICT_STYLE } from "@/lib/report";
+import { ReportPlain, ReportSpec, VERDICT_STYLE } from "@/lib/report";
 import { LivePost } from "@/components/app/LiveRun";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -33,7 +33,7 @@ function CiteChips({ cites, onJump }: { cites: number[]; onJump: (seq: number) =
 }
 
 export default function ReportView({
-  simId, problem, spec, posts, version, versions = [],
+  simId, problem, spec, posts, version, versions = [], reportId,
 }: {
   simId: string;
   problem: string;
@@ -41,9 +41,35 @@ export default function ReportView({
   posts: LivePost[];
   version: number;
   versions?: number[];
+  reportId?: string;
 }) {
   const [flash, setFlash] = useState<number | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  // PLAIN ENGLISH toggle (3a): a cached TRANSLATION of the frozen spec —
+  // generated on first use, identical answers and numbers, jargon-free
+  const [view, setView] = useState<"expert" | "plain">("expert");
+  const [plain, setPlain] = useState<ReportPlain | null>(spec.plain ?? null);
+  const [plainBusy, setPlainBusy] = useState(false);
+  const [plainErr, setPlainErr] = useState<string | null>(null);
+  const showPlain = view === "plain" && !!plain;
+  const togglePlain = async () => {
+    if (view === "plain") { setView("expert"); return; }
+    setPlainErr(null);
+    if (plain || !reportId) { setView("plain"); return; }
+    setPlainBusy(true);
+    try {
+      const res = await fetch(`/api/reports/${reportId}/plain`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "Translation failed");
+      setPlain((data as { plain: ReportPlain }).plain);
+      setView("plain");
+    } catch (e) {
+      setPlainErr(e instanceof Error ? e.message : "Translation failed");
+    } finally {
+      setPlainBusy(false);
+    }
+  };
+  const bottomLine = showPlain ? plain!.bottom_line : spec.bottom_line;
   const v = VERDICT_STYLE[spec.verdict.tone] ?? VERDICT_STYLE.split;
   const jump = (seq: number) => {
     setTranscriptOpen(true); // citations open the transcript, then scroll
@@ -77,6 +103,21 @@ export default function ReportView({
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <Link href={`/sim/${simId}`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>← WORKSPACE</Link>
         <Link href={`/sim/${simId}/run`} prefetch={false} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>VIEW THE RUN →</Link>
+        {reportId && (
+          <button
+            onClick={() => void togglePlain()}
+            disabled={plainBusy}
+            title={view === "plain" ? "Back to the full technical report" : "Translate this report for a non-technical reader — same answers, same numbers"}
+            style={{
+              ...mono, fontSize: 9, letterSpacing: ".07em", padding: "5px 14px", borderRadius: 100,
+              border: `1px solid ${view === "plain" ? "var(--acc)" : "var(--ln5)"}`,
+              background: view === "plain" ? "var(--acc-dim)" : "transparent",
+              color: view === "plain" ? "var(--acc)" : "var(--t5)", cursor: plainBusy ? "wait" : "pointer",
+            }}
+          >
+            {plainBusy ? "TRANSLATING…" : view === "plain" ? "Aa PLAIN ENGLISH ✓ · BACK TO EXPERT" : "Aa PLAIN ENGLISH"}
+          </button>
+        )}
         <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
           {versions.length > 1 && versions.map((vn) => (
             <Link key={vn} href={`/sim/${simId}/report?v=${vn}`} style={{
@@ -105,8 +146,29 @@ export default function ReportView({
         <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--t6)" }}>{problem}</p>
       </div>
 
+      {plainErr && <div style={{ ...mono, fontSize: 10, color: "var(--warn)", marginTop: 10 }}>{plainErr}</div>}
+
+      {/* THE BOTTOM LINE — three plain sentences, both views, read this and stop */}
+      {bottomLine && (
+        <div style={{ marginTop: 24, border: "1px solid var(--acc)", borderRadius: 14, background: "var(--sf)", padding: "18px 22px", maxWidth: 900 }}>
+          <div style={{ ...mono, fontSize: 10, letterSpacing: ".12em", color: "var(--acc)" }}>THE BOTTOM LINE</div>
+          {([
+            ["THE ANSWER", bottomLine.answer],
+            ["WHAT WOULD CHANGE IT", bottomLine.changes_it],
+            ["DO NEXT", bottomLine.next_step],
+          ] as const).map(([k, val]) => (
+            <div key={k} style={{ display: "flex", gap: 14, alignItems: "baseline", marginTop: 10 }}>
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)", width: 150, flex: "none" }}>{k}</span>
+              <span style={{ fontSize: 14, lineHeight: 1.6, color: "var(--t1)", minWidth: 0 }}>{val}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* executive summary */}
-      <p style={{ margin: "22px 0 0", fontSize: 15, lineHeight: 1.75, color: "var(--t2)", maxWidth: 900 }}>{spec.executive_summary}</p>
+      <p style={{ margin: "22px 0 0", fontSize: 15, lineHeight: 1.75, color: "var(--t2)", maxWidth: 900 }}>
+        {showPlain ? plain!.executive_summary : spec.executive_summary}
+      </p>
 
       {/* stat tiles */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginTop: 26 }}>
@@ -140,21 +202,69 @@ export default function ReportView({
         </div>
       )}
 
-      {/* findings per question + per success criterion */}
+      {/* findings per question + per success criterion — ANSWER FIRST */}
       <div style={{ marginTop: 36 }}>
-        <div style={label}>FINDINGS · YOUR QUESTIONS AND SUCCESS CRITERIA</div>
+        <div style={label}>{showPlain ? "YOUR QUESTIONS, ANSWERED" : "FINDINGS · YOUR QUESTIONS AND SUCCESS CRITERIA"}</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 14 }}>
-          {spec.sections.map((sct, i) => (
-            <div key={i} className="card" style={{ padding: "20px 24px" }}>
-              <div style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--acc)" }}>
-                {String(i + 1).padStart(2, "0")} · {sct.question.toUpperCase()}
-                <CiteChips cites={sct.cites} onJump={jump} />
-              </div>
-              <p style={{ margin: "10px 0 0", fontSize: 13.5, lineHeight: 1.7, color: "var(--t3)" }}>{sct.finding}</p>
-            </div>
-          ))}
+          {showPlain
+            ? plain!.sections.map((sct, i) => (
+                <div key={i} className="card" style={{ padding: "20px 24px" }}>
+                  <div style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--acc)" }}>
+                    {String(i + 1).padStart(2, "0")} · {sct.question.toUpperCase()}
+                  </div>
+                  <p style={{ margin: "10px 0 0", fontSize: 14.5, lineHeight: 1.65, fontWeight: 600, color: "var(--t1)" }}>{sct.answer}</p>
+                  <p style={{ margin: "8px 0 0", fontSize: 13.5, lineHeight: 1.7, color: "var(--t4)" }}>{sct.explanation}</p>
+                </div>
+              ))
+            : spec.sections.map((sct, i) => (
+                <div key={i} className="card" style={{ padding: "20px 24px" }}>
+                  <div style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--acc)" }}>
+                    {String(i + 1).padStart(2, "0")} · {sct.question.toUpperCase()}
+                    <CiteChips cites={sct.cites} onJump={jump} />
+                  </div>
+                  {sct.answer && (
+                    <p style={{ margin: "10px 0 0", fontSize: 14.5, lineHeight: 1.65, fontWeight: 600, color: "var(--t1)" }}>{sct.answer}</p>
+                  )}
+                  {(sct.numbers?.length ?? 0) > 0 && (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                      {sct.numbers!.map((n, ni) => (
+                        <span key={ni} style={{ border: "1px solid var(--ln3)", borderRadius: 10, padding: "6px 12px", background: "var(--sf2)" }}>
+                          <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--t6)", display: "block" }}>{n.label.toUpperCase()}</span>
+                          <span style={{ ...mono, fontSize: 13, color: "var(--t1)" }}>{n.value}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <p style={{ margin: "10px 0 0", fontSize: 13, lineHeight: 1.7, color: sct.answer ? "var(--t4)" : "var(--t3)" }}>{sct.finding}</p>
+                </div>
+              ))}
         </div>
       </div>
+
+      {/* crowd sentiment by round — the deliberation's pulse over time */}
+      {(spec.sentiment?.length ?? 0) >= 2 && (
+        <div style={{ marginTop: 34 }}>
+          <div style={label}>CROWD SENTIMENT BY ROUND</div>
+          <div style={{ display: "flex", gap: 14, marginTop: 14, flexWrap: "wrap" }}>
+            {spec.sentiment!.map((s) => {
+              const total = Math.max(Object.values(s.dist).reduce((a, b) => a + b, 0), 1);
+              return (
+                <div key={s.round} style={{ minWidth: 150, flex: "1 1 150px", maxWidth: 220 }}>
+                  <div style={{ display: "flex", gap: 3, height: 10, borderRadius: 100, overflow: "hidden" }}>
+                    {(["support", "conditional", "oppose", "disengaged"] as const).map((k, i2) => (
+                      <span key={k} title={`Round ${s.round}: ${k} ${Math.round(((s.dist[k] ?? 0) / total) * 100)}%`}
+                        style={{ width: `${((s.dist[k] ?? 0) / total) * 100}%`, background: i2 === 0 ? "var(--acc)" : i2 === 1 ? "var(--t5)" : i2 === 2 ? "var(--warn)" : "var(--ln5)" }} />
+                    ))}
+                  </div>
+                  <div style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t6)", marginTop: 6 }}>
+                    ROUND {s.round} · {Math.round(((s.dist.support ?? 0) / total) * 100)}% SUPPORT · {s.polled} POLLED
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* success criteria — the delivery receipt */}
       {(spec.criteria?.length ?? 0) > 0 && (
@@ -173,27 +283,37 @@ export default function ReportView({
       )}
 
       {/* risk register */}
-      {spec.risks.length > 0 && (
+      {(showPlain ? plain!.risks.length : spec.risks.length) > 0 && (
         <div style={{ marginTop: 36 }}>
-          <div style={label}>RISK REGISTER</div>
+          <div style={label}>{showPlain ? "WHAT COULD GO WRONG" : "RISK REGISTER"}</div>
           <div style={{ overflowX: "auto", marginTop: 12 }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["RISK", "SEVERITY", "MITIGATION", "WATCH SIGNAL"].map((h) => (
+                  {(showPlain
+                    ? ["WHAT COULD GO WRONG", "WHAT WE'D DO ABOUT IT", "WHAT TO WATCH FOR"]
+                    : ["RISK", "SEVERITY", "MITIGATION", "WATCH SIGNAL"]).map((h) => (
                     <th key={h} style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)", textAlign: "left", padding: "8px 12px", borderBottom: "1px solid var(--ln3)" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {spec.risks.map((r, i) => (
-                  <tr key={i}>
-                    <td style={{ fontSize: 12.5, fontWeight: 600, padding: "10px 12px", borderBottom: "1px solid var(--ln1)", color: "var(--t2)" }}>{r.risk}</td>
-                    <td style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "10px 12px", borderBottom: "1px solid var(--ln1)", color: r.severity === "high" ? "var(--warn)" : r.severity === "medium" ? "var(--t4)" : "var(--t6)" }}>{r.severity.toUpperCase()}</td>
-                    <td style={{ fontSize: 12, padding: "10px 12px", borderBottom: "1px solid var(--ln1)", color: "var(--t4)" }}>{r.mitigation}</td>
-                    <td style={{ fontSize: 12, padding: "10px 12px", borderBottom: "1px solid var(--ln1)", color: "var(--t5)" }}>{r.watch_signal}</td>
-                  </tr>
-                ))}
+                {showPlain
+                  ? plain!.risks.map((r, i) => (
+                      <tr key={i}>
+                        <td style={{ fontSize: 12.5, fontWeight: 600, padding: "10px 12px", borderBottom: "1px solid var(--ln1)", color: "var(--t2)" }}>{r.risk}</td>
+                        <td style={{ fontSize: 12, padding: "10px 12px", borderBottom: "1px solid var(--ln1)", color: "var(--t4)" }}>{r.mitigation}</td>
+                        <td style={{ fontSize: 12, padding: "10px 12px", borderBottom: "1px solid var(--ln1)", color: "var(--t5)" }}>{r.watch_signal}</td>
+                      </tr>
+                    ))
+                  : spec.risks.map((r, i) => (
+                      <tr key={i}>
+                        <td style={{ fontSize: 12.5, fontWeight: 600, padding: "10px 12px", borderBottom: "1px solid var(--ln1)", color: "var(--t2)" }}>{r.risk}</td>
+                        <td style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "10px 12px", borderBottom: "1px solid var(--ln1)", color: r.severity === "high" ? "var(--warn)" : r.severity === "medium" ? "var(--t4)" : "var(--t6)" }}>{r.severity.toUpperCase()}</td>
+                        <td style={{ fontSize: 12, padding: "10px 12px", borderBottom: "1px solid var(--ln1)", color: "var(--t4)" }}>{r.mitigation}</td>
+                        <td style={{ fontSize: 12, padding: "10px 12px", borderBottom: "1px solid var(--ln1)", color: "var(--t5)" }}>{r.watch_signal}</td>
+                      </tr>
+                    ))}
               </tbody>
             </table>
           </div>
@@ -236,16 +356,31 @@ export default function ReportView({
       )}
 
       {/* tripwires */}
-      {spec.tripwires.length > 0 && (
+      {(showPlain ? plain!.tripwires.length : spec.tripwires.length) > 0 && (
         <div style={{ marginTop: 36 }}>
-          <div style={label}>TRIPWIRES · WHAT WOULD CHANGE THIS ANSWER</div>
+          <div style={label}>{showPlain ? "IF YOU SEE THIS HAPPEN, REVISIT THE DECISION" : "TRIPWIRES · WHAT WOULD CHANGE THIS ANSWER"}</div>
           <ul style={{ margin: "12px 0 0", padding: 0, listStyle: "none", maxWidth: 820 }}>
-            {spec.tripwires.map((t, i) => (
+            {(showPlain ? plain!.tripwires : spec.tripwires).map((t, i) => (
               <li key={i} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--ln1)", fontSize: 13, lineHeight: 1.6, color: "var(--t3)" }}>
                 <span style={{ color: "var(--warn)", flex: "none" }}>▲</span>{t}
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* plain-view glossary — the unavoidable terms, in everyday words */}
+      {showPlain && plain!.glossary.length > 0 && (
+        <div style={{ marginTop: 36 }}>
+          <div style={label}>TERMS USED, IN PLAIN WORDS</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10, marginTop: 12 }}>
+            {plain!.glossary.map((g, i) => (
+              <div key={i} style={{ border: "1px solid var(--ln2)", borderRadius: 12, padding: "12px 16px", background: "var(--sf2)" }}>
+                <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".05em", color: "var(--t2)" }}>{g.term}</span>
+                <p style={{ margin: "5px 0 0", fontSize: 12, lineHeight: 1.55, color: "var(--t5)" }}>{g.meaning}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

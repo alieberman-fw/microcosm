@@ -125,8 +125,40 @@ function BreakdownBar({ label, value, max, sub }: { label: string; value: number
 
 interface Ctx { loading: boolean; asked?: string; replied?: string }
 
-export default function MonitoringClient({ rows, rollup = [], conversations }: { rows: InteractionRow[]; rollup?: RollupRow[]; conversations: Record<string, ConvMeta> }) {
+export default function MonitoringClient({ rows: initialRows, rollup = [], conversations, total = 0 }: { rows: InteractionRow[]; rollup?: RollupRow[]; conversations: Record<string, ConvMeta>; total?: number }) {
   const supabase = createClient();
+  // full-history browsing: the server sends the newest window; LOAD MORE
+  // pages older rows in with a cursor (the table itself has no row cap —
+  // only responses do, which is why paging must be cursor-driven)
+  const [rows, setRows] = useState<InteractionRow[]>(initialRows);
+  const [convs, setConvs] = useState<Record<string, ConvMeta>>(conversations);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMore = async () => {
+    if (loadingMore || rows.length === 0) return;
+    setLoadingMore(true);
+    try {
+      const oldest = rows[rows.length - 1].id;
+      const { data } = await supabase!
+        .from("agent_interactions")
+        .select("id, surface, agent_name, model, input_tokens, output_tokens, latency_ms, status, error, created_at, conversation_id, sim_id, detail")
+        .lt("id", oldest)
+        .order("id", { ascending: false })
+        .limit(500);
+      const older = (data ?? []) as InteractionRow[];
+      const newConvIds = [...new Set(older.map((r) => r.conversation_id).filter((x): x is string => Boolean(x) && !convs[x!]))];
+      if (newConvIds.length) {
+        const { data: cs } = await supabase!.from("conversations").select("id, title, participant_keys").in("id", newConvIds);
+        setConvs((prev) => {
+          const next = { ...prev };
+          (cs ?? []).forEach((c) => { next[c.id as string] = { title: c.title as string, participants: (c.participant_keys as string[]).length }; });
+          return next;
+        });
+      }
+      setRows((prev) => [...prev, ...older]);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
   const [area, setArea] = useState("ALL");
   const [model, setModel] = useState("ALL");
   const [status, setStatus] = useState("ALL");
@@ -145,7 +177,7 @@ export default function MonitoringClient({ rows, rollup = [], conversations }: {
     .filter((r) => area === "ALL" || areaOf(r.surface) === area)
     .filter((r) => model === "ALL" || r.model === model)
     .filter((r) => status === "ALL" || (status === "OK" ? r.status === "ok" : r.status !== "ok"))
-    .filter((r) => !ql || [r.agent_name ?? "", r.surface, r.model, conversations[r.conversation_id ?? ""]?.title ?? ""].join(" ").toLowerCase().includes(ql));
+    .filter((r) => !ql || [r.agent_name ?? "", r.surface, r.model, convs[r.conversation_id ?? ""]?.title ?? ""].join(" ").toLowerCase().includes(ql));
 
   // analytics source: with NO filters active, the SQL rollup gives EXACT
   // 14-day numbers (the raw window caps at the newest rows and a heavy day
@@ -336,7 +368,7 @@ export default function MonitoringClient({ rows, rollup = [], conversations }: {
               )}
               {pageRows.map((r) => {
                 const open = expanded === r.id;
-                const conv = r.conversation_id ? conversations[r.conversation_id] : undefined;
+                const conv = r.conversation_id ? convs[r.conversation_id] : undefined;
                 const c = ctx[r.id];
                 return (
                   <Fragment key={r.id}>
@@ -474,6 +506,19 @@ export default function MonitoringClient({ rows, rollup = [], conversations }: {
               <button disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
                 style={{ fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, border: "1px solid var(--ln4)", background: "transparent", color: page >= pages - 1 ? "var(--t7)" : "var(--t4)", cursor: page >= pages - 1 ? "default" : "pointer" }}>
                 OLDER →
+              </button>
+            </div>
+          )}
+          {/* the full history is browsable — responses cap at a window, the table doesn't */}
+          {rows.length < total && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12, fontFamily: "var(--font-mono), monospace", fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)" }}>
+              <span>{rows.length.toLocaleString()} OF {total.toLocaleString()} CALLS LOADED</span>
+              <button
+                onClick={() => void loadMore()}
+                disabled={loadingMore}
+                style={{ fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".06em", padding: "6px 16px", borderRadius: 100, border: "1px solid var(--acc)", background: "var(--acc-dim)", color: "var(--acc)", cursor: loadingMore ? "wait" : "pointer" }}
+              >
+                {loadingMore ? "LOADING…" : "LOAD 500 OLDER →"}
               </button>
             </div>
           )}

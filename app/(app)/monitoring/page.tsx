@@ -11,13 +11,14 @@ export default async function Monitoring() {
   // the browsing table stays a recent-rows window; the ANALYTICS come from the
   // SQL rollup — raw rows hit PostgREST's 1,000-row cap on heavy days and made
   // history look deleted
-  const [{ data }, { data: rollupRows }] = await Promise.all([
+  const [{ data }, { data: rollupRows }, { count: totalCount }] = await Promise.all([
     supabase!
       .from("agent_interactions")
       .select("id, surface, agent_name, model, input_tokens, output_tokens, latency_ms, status, error, created_at, conversation_id, sim_id, detail")
       .order("id", { ascending: false })
       .limit(500),
     supabase!.rpc("activity_rollup", { p_days: 14 }),
+    supabase!.from("agent_interactions").select("id", { count: "exact", head: true }),
   ]);
   const rows = (data ?? []) as InteractionRow[];
   const rollup = (rollupRows ?? []) as RollupRow[];
@@ -35,5 +36,5 @@ export default async function Monitoring() {
     });
   }
 
-  return <MonitoringClient rows={rows} rollup={rollup} conversations={convMap} />;
+  return <MonitoringClient rows={rows} rollup={rollup} conversations={convMap} total={totalCount ?? rows.length} />;
 }

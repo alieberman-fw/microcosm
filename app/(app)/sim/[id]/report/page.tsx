@@ -54,6 +54,7 @@ export default async function ReportPage({ params, searchParams }: {
       posts={posts}
       version={report.version as number}
       versions={versions}
+      reportId={report.id as string}
     />
   );
 }

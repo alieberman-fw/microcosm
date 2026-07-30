@@ -312,9 +312,32 @@ async function synthesizeReport(simId) {
     return;
   }
   const row = await admin(`/rest/v1/reports?id=eq.${reportId}&select=spec`);
-  const verdict = (await row.json())[0]?.spec?.verdict?.label ?? null;
-  if (!verdict) failures.push({ mode: "report", problems: ["stored report has no verdict.label"] });
-  else console.log(`✓ report     verdict "${verdict}"`);
+  const spec = (await row.json())[0]?.spec;
+  const verdict = spec?.verdict?.label ?? null;
+  const problems = [];
+  if (!verdict) problems.push("no verdict.label");
+  // 3a contract: bottom line + a direct answer on every section
+  if (!spec?.bottom_line?.answer || !spec?.bottom_line?.next_step) problems.push("no bottom_line");
+  if (!Array.isArray(spec?.sections) || spec.sections.some((s) => !s.answer)) problems.push("sections missing direct answers");
+  if (problems.length) {
+    failures.push({ mode: "report", problems });
+    console.log(`✗ report     ${problems.join("; ")}`);
+    return;
+  }
+  console.log(`✓ report     verdict "${verdict}" · bottom line + ${spec.sections.length} direct answers`);
+
+  // the PLAIN ENGLISH toggle: translation generated, gated, and cached
+  const pl = await app(`/api/reports/${reportId}/plain`, { method: "POST" });
+  const plBody = await pl.json().catch(() => ({}));
+  if (!pl.ok || !plBody.plain?.bottom_line?.answer || (plBody.plain?.sections?.length ?? 0) < spec.sections.length) {
+    failures.push({ mode: "report-plain", problems: [`plain ${pl.status}: ${(plBody.error ?? "missing fields")}`] });
+    console.log(`✗ plain      ${pl.status}`);
+  } else {
+    const again = await app(`/api/reports/${reportId}/plain`, { method: "POST" });
+    const cached = (await again.json()).cached === true;
+    console.log(`✓ plain      ${plBody.plain.sections.length} sections · ${plBody.plain.glossary?.length ?? 0} glossary terms · cached=${cached}`);
+    if (!cached) failures.push({ mode: "report-plain", problems: ["second call was not served from cache"] });
+  }
 }
 
 async function cleanup() {

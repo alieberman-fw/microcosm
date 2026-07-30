@@ -228,11 +228,24 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             tone: (["go", "conditional", "no-go", "split"] as const).find((t) => t === rawSpec.verdict?.tone) ?? "split",
             headline: String(rawSpec.verdict?.headline ?? "").slice(0, 300),
           },
+          // 3a: THE BOTTOM LINE — three plain sentences, gate-enforced upstream
+          bottom_line: {
+            answer: String(rawSpec.bottom_line?.answer ?? "").slice(0, 400),
+            changes_it: String(rawSpec.bottom_line?.changes_it ?? "").slice(0, 400),
+            next_step: String(rawSpec.bottom_line?.next_step ?? "").slice(0, 400),
+          },
           executive_summary: String(rawSpec.executive_summary ?? "").slice(0, 3000),
           dimension_scores: (Array.isArray(rawSpec.dimension_scores) ? rawSpec.dimension_scores : []).slice(0, 8)
             .map((d) => ({ name: String(d.name ?? "").slice(0, 60), score: num(d.score, 0, 10), note: String(d.note ?? "").slice(0, 200) })),
           sections: (Array.isArray(rawSpec.sections) ? rawSpec.sections : []).slice(0, 16)
-            .map((x) => ({ question: String(x.question ?? "").slice(0, 160), finding: String(x.finding ?? "").slice(0, findingClamp), cites: (Array.isArray(x.cites) ? x.cites : []).map((c) => Number(c) || 0).filter(Boolean).slice(0, 8) })),
+            .map((x) => ({
+              question: String(x.question ?? "").slice(0, 160),
+              answer: String(x.answer ?? "").slice(0, 600), // 3a: the direct answer, first
+              finding: String(x.finding ?? "").slice(0, findingClamp),
+              numbers: (Array.isArray(x.numbers) ? x.numbers : []).slice(0, 6)
+                .map((n) => ({ label: String(n.label ?? "").slice(0, 40), value: String(n.value ?? "").slice(0, 60) })),
+              cites: (Array.isArray(x.cites) ? x.cites : []).map((c) => Number(c) || 0).filter(Boolean).slice(0, 8),
+            })),
           criteria: (Array.isArray(rawSpec.criteria) ? rawSpec.criteria : []).slice(0, 8)
             .map((c) => ({ criterion: String(c.criterion ?? "").slice(0, 220), where: String(c.where ?? "").slice(0, 220) })),
           risks: (Array.isArray(rawSpec.risks) ? rawSpec.risks : []).slice(0, 10)

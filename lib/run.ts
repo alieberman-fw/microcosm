@@ -77,10 +77,12 @@ const RATES: Record<string, { in: number; out: number }> = {
 };
 
 /** §6.4 tier map: which model speaks for each population role */
-export const TIER_MODELS: Record<RunConfig["tier"], { leads: string; crowd: string; verifier: string; synth: string }> = {
-  economy: { leads: "claude-haiku-4-5", crowd: "claude-haiku-4-5", verifier: "claude-haiku-4-5", synth: "claude-sonnet-5" },
-  standard: { leads: "claude-sonnet-5", crowd: "claude-haiku-4-5", verifier: "claude-sonnet-5", synth: "claude-opus-4-8" },
-  frontier: { leads: "claude-opus-4-8", crowd: "claude-sonnet-5", verifier: "claude-opus-4-8", synth: "claude-opus-4-8" },
+export const TIER_MODELS: Record<RunConfig["tier"], { leads: string; crowd: string; verifier: string; synth: string; plain: string }> = {
+  // `plain` = the Plain-English report translation — a faithful rewrite, not
+  // analysis, so the balanced tier serves every run tier consistently
+  economy: { leads: "claude-haiku-4-5", crowd: "claude-haiku-4-5", verifier: "claude-haiku-4-5", synth: "claude-sonnet-5", plain: "claude-sonnet-5" },
+  standard: { leads: "claude-sonnet-5", crowd: "claude-haiku-4-5", verifier: "claude-sonnet-5", synth: "claude-opus-4-8", plain: "claude-sonnet-5" },
+  frontier: { leads: "claude-opus-4-8", crowd: "claude-sonnet-5", verifier: "claude-opus-4-8", synth: "claude-opus-4-8", plain: "claude-sonnet-5" },
 };
 
 /** rough per-call token shapes; prompt caching makes input ~0.15× effective */

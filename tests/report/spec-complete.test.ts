@@ -5,10 +5,15 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { reportSpecIncomplete, synthBudgetFor } from "@/lib/report";
+import { plainSpecIncomplete, reportSpecIncomplete, synthBudgetFor } from "@/lib/report";
 
 const complete = (): Record<string, unknown> => ({
   verdict: { label: "GO — WAIVER REQUIRED", tone: "conditional", headline: "Proceed at $34M with three conditions." },
+  bottom_line: {
+    answer: "Buy the mall at $34M, but only with the grocery store's lease terms fixed first.",
+    changes_it: "If the grocer will not sign the waiver before closing, walk away.",
+    next_step: "Open the waiver negotiation with the grocer's real estate team this week.",
+  },
   executive_summary: "The panel converged on a conditional GO anchored to the co-tenancy waiver and right-sized retail across four rounds of deliberation.",
   dimension_scores: [
     { name: "DEMAND", score: 7, note: "absorption supported" },
@@ -16,8 +21,8 @@ const complete = (): Record<string, unknown> => ({
     { name: "CAPITAL", score: 5, note: "carry is tight" },
   ],
   sections: [
-    { question: "ANCHOR RECAPTURE", finding: "The REA parking consent is absolute.", cites: [3, 7] },
-    { question: "RESIDENTIAL DEMAND", finding: "20-24 units/month is evidenced.", cites: [12] },
+    { question: "Can the dark anchor boxes be recaptured?", answer: "Yes — for $1.6-2.1M, if demolition waits for Phase 2.", finding: "The REA parking consent is absolute.", numbers: [{ label: "RECAPTURE COST", value: "$1.6-2.1M" }], cites: [3, 7] },
+    { question: "Will 900 apartments absorb?", answer: "Yes, at 20-24 units/month — but at $1.95-2.05/SF, below the underwriting.", finding: "20-24 units/month is evidenced.", numbers: [], cites: [12] },
   ],
   criteria: [{ criterion: "A definitive GO or NO-GO", where: "Verdict + section 1" }],
   risks: [{ risk: "GreenLeaf termination", severity: "high", mitigation: "waiver pre-close", watch_signal: "election notice" }],
@@ -60,14 +65,44 @@ describe("reportSpecIncomplete", () => {
 
     const noTrips = complete(); noTrips.tripwires = [];
     expect(reportSpecIncomplete(noTrips, { questions: 2, criteria: 1 })).toBe("missing tripwires");
+
+    const noBottom = complete(); delete noBottom.bottom_line;
+    expect(reportSpecIncomplete(noBottom, { questions: 2, criteria: 1 })).toBe("missing bottom line");
+
+    const noAnswers = complete();
+    (noAnswers.sections as { answer?: string }[])[1].answer = "";
+    expect(reportSpecIncomplete(noAnswers, { questions: 2, criteria: 1 })).toBe("sections missing direct answers");
   });
 
   it("no criteria expected → no criteria required; question expectation caps at 8", () => {
     const spec = complete(); delete spec.criteria;
     expect(reportSpecIncomplete(spec, { questions: 2, criteria: 0 })).toBeNull();
     const eight = complete();
-    eight.sections = Array.from({ length: 8 }, (_, i) => ({ question: `Q${i}`, finding: "f", cites: [] }));
+    eight.sections = Array.from({ length: 8 }, (_, i) => ({ question: `Q${i}`, answer: `Direct answer ${i}.`, finding: "f", numbers: [], cites: [] }));
     expect(reportSpecIncomplete(eight, { questions: 12, criteria: 0 })).toBeNull();
+  });
+});
+
+describe("plainSpecIncomplete (the translation gate)", () => {
+  const plain = (): Record<string, unknown> => ({
+    bottom_line: { answer: "Buy it with the lease fixed first.", changes_it: "No waiver, no deal.", next_step: "Call the grocer this week." },
+    executive_summary: "The panel says buy the mall at $34M, but only after the grocery store agrees to stay under its current lease terms.",
+    sections: [
+      { question: "Can the empty stores be dealt with?", answer: "Yes, for about $2M.", explanation: "The old leases let us take them back if we time it right." },
+      { question: "Will the apartments fill up?", answer: "Yes, over about two years.", explanation: "Similar buildings nearby filled at the same pace." },
+    ],
+    risks: [{ risk: "The grocer leaves", mitigation: "Get their agreement before buying", watch_signal: "They start paying reduced rent" }],
+    tripwires: ["If demolition bids come in high, the first phase stops making money"],
+    glossary: [{ term: "co-tenancy clause", meaning: "A lease term that lets a store pay less or leave if the mall's big stores close" }],
+  });
+  it("accepts a faithful translation", () => {
+    expect(plainSpecIncomplete(plain(), 2)).toBeNull();
+  });
+  it("rejects a translation that drops sections or the bottom line", () => {
+    const short = plain(); short.sections = [(short.sections as unknown[])[0]];
+    expect(plainSpecIncomplete(short, 2)).toBe("covers 1/2 sections");
+    const noBl = plain(); delete noBl.bottom_line;
+    expect(plainSpecIncomplete(noBl, 2)).toBe("missing bottom line");
   });
 });
 
