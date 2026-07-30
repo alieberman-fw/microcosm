@@ -56,6 +56,7 @@ export interface LiveSentiment {
   polled: number;
   dist: Record<string, number>;
   quotes: { name: string; stance: string; quote: string }[];
+  question?: string; // what the crowd was asked (engine-derived from the brief; older runs pre-date it)
 }
 
 export interface LiveVote {
@@ -836,6 +837,12 @@ export default function LiveRun({
                     <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>
                       CROWD POLL · ROUND {it.s.round} · {it.s.polled} POLLED — CLICK TO {open ? "COLLAPSE" : "EXPAND"}
                     </div>
+                    {it.s.question && (
+                      <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--t3)", marginTop: 6 }}>
+                        <span style={{ ...mono, fontSize: 8, letterSpacing: ".08em", color: "var(--acc)" }}>ASKED · </span>
+                        “{it.s.question}”
+                      </div>
+                    )}
                     <div style={{ display: "flex", gap: 4, height: 8, borderRadius: 100, overflow: "hidden", marginTop: 8 }}>
                       {(["support", "conditional", "oppose", "disengaged"] as const).map((k, i2) => (
                         <span key={k} title={`${k} ${it.s.dist[k] ?? 0}`} style={{ width: `${((it.s.dist[k] ?? 0) / total) * 100}%`, background: i2 === 0 ? "var(--acc)" : i2 === 1 ? "var(--t5)" : i2 === 2 ? "var(--warn)" : "var(--ln5)" }} />

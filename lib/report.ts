@@ -27,6 +27,7 @@ export interface ReportSpec {
   dissents: { name: string; role: string; position: string; quote: string; seq: number }[];
   tripwires: string[];
   sentiment?: { round: number; polled: number; dist: Record<string, number> }[];
+  poll_question?: string; // the one proposition every crowd poll asked (engine-derived from the brief)
   /** frozen at synthesis — the report survives re-runs and re-casts intact */
   transcript?: { seq: number; name: string; role: string; initials: string; adversarial: boolean; tag: string; content: string; round: number }[];
   cast?: { name: string; role: string; kind: string; provenance: string; adversarial: boolean }[];

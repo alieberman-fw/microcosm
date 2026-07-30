@@ -49,6 +49,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     const p = e.payload as { round: number; polled: number; dist: Record<string, number> };
     return { round: p.round, polled: p.polled, dist: p.dist };
   });
+  // what the crowd was actually asked — from the newest poll event that carried
+  // it (constant per sim; older runs pre-date the field and show no question)
+  const pollQuestion = (sentimentRows ?? []).map((e) => (e.payload as { question?: string }).question).filter(Boolean).pop() ?? null;
 
   const { data: docs } = await supabase.from("documents")
     .select("id, name, mime, anthropic_file_id").eq("sim_id", id).eq("parse_status", "parsed");
@@ -81,7 +84,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     `PROBLEM: ${brief.problem}\n` +
     (questions.length ? `QUESTIONS TO RESOLVE (one report section EACH, in order):\n${questions.map((q) => `- ${q.label}${q.detail ? ` — ${q.detail}` : ""}`).join("\n")}\n` : "") +
     (success.length ? `SUCCESS CRITERIA (the report is held to every one):\n${success.map((x) => `- ${x}`).join("\n")}\n` : "") +
-    (sentiments.length ? `CROWD SENTIMENT BY ROUND:\n${sentiments.map((x) => `- round ${x.round}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
+    (sentiments.length ? `CROWD SENTIMENT BY ROUND${pollQuestion ? ` (the crowd was asked: "${pollQuestion}")` : ""}:\n${sentiments.map((x) => `- round ${x.round}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
     voteText;
 
   const synthModel = TIER_MODELS[cfg.tier].synth;
@@ -254,6 +257,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             .map((d) => ({ name: String(d.name ?? "").slice(0, 60), role: String(d.role ?? "").slice(0, 90), position: String(d.position ?? "").slice(0, 220), quote: String(d.quote ?? "").slice(0, 400), seq: Number(d.seq) || 0 })),
           tripwires: (Array.isArray(rawSpec.tripwires) ? rawSpec.tripwires : []).slice(0, 8).map((t) => String(t).slice(0, 220)),
           sentiment: sentiments,
+          poll_question: pollQuestion ? String(pollQuestion).slice(0, 240) : undefined,
           transcript: postRows.map((r) => {
             const meta = (r.cites as { name?: string; role?: string; initials?: string; adversarial?: boolean; round?: number } | null) ?? {};
             return { seq: r.seq as number, name: meta.name ?? "Agent", role: meta.role ?? "", initials: meta.initials ?? "·", adversarial: meta.adversarial ?? false, tag: r.tag as string, content: r.content as string, round: meta.round ?? 1 };

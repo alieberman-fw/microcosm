@@ -319,12 +319,14 @@ async function synthesizeReport(simId) {
   // 3a contract: bottom line + a direct answer on every section
   if (!spec?.bottom_line?.answer || !spec?.bottom_line?.next_step) problems.push("no bottom_line");
   if (!Array.isArray(spec?.sections) || spec.sections.some((s) => !s.answer)) problems.push("sections missing direct answers");
+  // poll instrument: a crowd run must record WHAT the crowd was asked
+  if ((spec?.sentiment?.length ?? 0) > 0 && !spec?.poll_question) problems.push("sentiment present but no poll_question");
   if (problems.length) {
     failures.push({ mode: "report", problems });
     console.log(`✗ report     ${problems.join("; ")}`);
     return;
   }
-  console.log(`✓ report     verdict "${verdict}" · bottom line + ${spec.sections.length} direct answers`);
+  console.log(`✓ report     verdict "${verdict}" · bottom line + ${spec.sections.length} direct answers${spec.poll_question ? ` · asked "${String(spec.poll_question).slice(0, 60)}…"` : ""}`);
 
   // the PLAIN ENGLISH toggle: translation generated, gated, and cached
   const pl = await app(`/api/reports/${reportId}/plain`, { method: "POST" });
@@ -379,9 +381,9 @@ try {
   if (firstSim) await synthesizeReport(firstSim);
   let forumSim = null;
   if (!SKIP_FORUM) forumSim = await livingForumCheck(personas);
-  if (KEEP && forumSim) {
+  if (KEEP && (forumSim || firstSim)) {
     console.log(`\n--keep: session preserved for manual UI verification`);
-    console.log(`  run screen: ${BASE}/sim/${forumSim}/run`);
+    console.log(`  run screen: ${BASE}/sim/${forumSim ?? firstSim}/run`);
     console.log(`  cookie: ${cookie}`);
     console.log(`  CLEANUP IS ON YOU: re-run without --keep, or delete the smoke user + disable email manually`);
   }

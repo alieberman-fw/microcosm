@@ -103,6 +103,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         problem: brief.problem ?? "",
         questions: [],
         leads, crowd: [], corpusBlocks,
+        pollQuestion: brief.problem ?? "", // floor replies never poll — placeholder only
         temperature: 0.7,
         deadline: Date.now() + 240_000,
         polledRounds: new Set(), votedRounds: new Set(),
