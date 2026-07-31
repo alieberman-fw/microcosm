@@ -394,6 +394,7 @@ function CoreConcepts() {
       <Term term="Adversarial seed">Every panel gets exactly one credible skeptic instructed to attack the thesis. Without seeded opposition, AI panels drift agreeable — and you ship a blind spot.</Term>
       <Term term="Interaction mode">The choreography of the deliberation — Agora, Roundtable, Tribunal, Chamber, Jury, Desk, or Expedition. See the modes page.</Term>
       <Term term="Provenance">Where each persona came from: YOUR LIBRARY (your customs), LIBRARY MATCH (the 1,800-persona catalog), or GENERATED (created for this simulation, saved back to your library).</Term>
+      <Term term="Seat vs. person">The casting director first writes the SEAT — the chair the panel needs ("Multifamily Market Analyst") — then finds a real persona to fill it. A card leads with the seat; the profile shows the person. When the two titles differ, the card adds a BY TRADE line and the profile a CAST AS line, so a Rent Comp Analyst sitting in the market-analyst seat reads as a casting decision, not a glitch. Candidates whose own title doesn't name the seat must pass a fit check ("could they hold this seat with first-hand authority?") — rejects are generated fresh instead.</Term>
       <Term term="Take the floor">You are a participant, not a spectator — post into the forum, @mention agents, challenge a claim before the report is written.</Term>
     </>
   );

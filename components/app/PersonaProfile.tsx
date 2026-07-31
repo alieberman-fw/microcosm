@@ -3,6 +3,7 @@
 import { CSSProperties } from "react";
 import Link from "next/link";
 import { PersonaSpec } from "@/lib/personas";
+import { seatRoleDiffers } from "@/lib/casting";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -81,6 +82,17 @@ export default function PersonaProfile({
               <div style={{ fontSize: 14, color: "var(--t4)", marginTop: 3 }}>{spec.role}</div>
               {spec.tagline && (
                 <div style={{ ...mono, fontSize: 11, letterSpacing: ".04em", color: "var(--t6)", marginTop: 7 }}>{spec.tagline}</div>
+              )}
+              {/* a seated persona whose own title differs from the seat: show
+                  the relationship instead of letting card vs profile disagree */}
+              {seatRoleDiffers(spec as PersonaSpec & { seat?: { role?: string } }) && (
+                <div
+                  title={(spec as PersonaSpec & { seat?: { why?: string } }).seat?.why || undefined}
+                  style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)", marginTop: 8 }}
+                >
+                  CAST AS · {(spec as PersonaSpec & { seat?: { role?: string } }).seat!.role!.toUpperCase()}
+                  <span style={{ color: "var(--t6)" }}> — THE PANEL SEAT THEY FILL</span>
+                </div>
               )}
             </div>
             <span style={{ flex: "none", display: "flex", gap: 8 }}>

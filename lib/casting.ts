@@ -173,3 +173,27 @@ export function overlapScore(seatText: string, spec: PersonaSpec): number {
   for (const w of a) if (b.has(w)) n++;
   return n;
 }
+
+/** the fit-gate lexical bypass: overlap between the SEAT's role and the
+ *  persona's OWN role — nothing else. overlapScore() counts tagline and
+ *  skills words too, which are exactly the words FTS surfaced the candidate
+ *  on, so using it as the bypass let lookalikes skip the fit judge (a
+ *  Foot-Traffic Analyst took a Retail Leasing Broker seat on
+ *  "retail/broker/leases" tagline overlap). Only a persona whose own title
+ *  already names the seat gets to skip the judge. */
+export function roleOverlap(seatRole: string, personaRole: string): number {
+  const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3));
+  const a = words(seatRole);
+  const b = words(personaRole);
+  let n = 0;
+  for (const w of a) if (b.has(w)) n++;
+  return n;
+}
+
+/** true when a frozen seat's role and the persona's own role are genuinely
+ *  different titles — the UI shows the relationship instead of hiding it */
+export function seatRoleDiffers(spec: { role?: string; seat?: { role?: string } }): boolean {
+  const seat = spec.seat?.role?.trim().toLowerCase();
+  const own = spec.role?.trim().toLowerCase();
+  return Boolean(seat && own && seat !== own);
+}
