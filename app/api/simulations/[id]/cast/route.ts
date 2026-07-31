@@ -5,7 +5,7 @@ import { PersonaSpec } from "@/lib/personas";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import {
   CastPlan, CastSeat, FrozenSpec, MAX_SEATS, SIM_MODES,
-  CASTING_MODEL, CROWD_MODEL, castingAddSystem, castingGenerateSystem, castingPlanSystem, overlapScore, seatKey,
+  CASTING_MODEL, CROWD_MODEL, castingAddSystem, castingGenerateSystem, castingPlanSystem, overlapScore, roleOverlap, seatKey,
 } from "@/lib/casting";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 
@@ -228,32 +228,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         for (const seat of seats) {
           const seatText = `${seat.role} ${seat.query}`;
-          // 2a — the org's own people
-          let best: { id: string; spec: PersonaSpec } | null = null;
-          let bestScore = 0;
-          for (const row of customRows ?? []) {
-            if (usedPersonaIds.has(row.id)) continue;
-            const score = overlapScore(seatText, row.spec as PersonaSpec);
-            if (score > bestScore) { best = { id: row.id, spec: row.spec as PersonaSpec }; bestScore = score; }
-          }
-          if (best && bestScore >= 2) {
-            usedPersonaIds.add(best.id);
-            const frozenYours = freeze(seat, best.spec, "yours");
-            resolved.push({ seat, personaId: best.id, spec: frozenYours, provenance: "yours" });
-            emit({ type: "seat", key: seat.key, provenance: "yours", spec: frozenYours });
-            continue;
-          }
-          // 2b — the global library (FTS; residents/consumers match their own kinds)
-          const kinds = seat.kind === "consumer" || seat.kind === "resident" ? ["consumer", "resident"] : null;
-          let hit: { id: string; spec: PersonaSpec } | null = null;
           // FIT GATE: the loose OR-query fallback once seated a Wine Cellar
           // Builder as "Pool Design & Build Specialist" on a shared word.
-          // Strong lexical overlap passes free; anything weaker must survive a
-          // Haiku yes/no before it takes the seat — rejects become generated.
+          // The bypass is ROLE-vs-ROLE overlap only: tagline/skills words are
+          // exactly what FTS surfaced the candidate on, so counting them let
+          // lookalikes skip the judge (a Foot-Traffic Analyst took a Retail
+          // Leasing Broker seat on "retail/broker/leases" tagline overlap).
+          // Anything whose own title doesn't name the seat must survive a
+          // Haiku yes/no before it sits — rejects become generated.
           let fitChecks = 0;
           const fits = async (spec: PersonaSpec): Promise<boolean> => {
-            if (overlapScore(`${seat.role} ${seat.query}`, spec) >= 2) return true;
-            if (fitChecks >= 3) return false; // bound model calls per seat
+            if (roleOverlap(seat.role, spec.role) >= 2) return true;
+            if (fitChecks >= 4) return false; // bound model calls per seat
             fitChecks += 1;
             const tf = Date.now();
             try {
@@ -270,6 +256,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
               return true; // fail open — a plausible FTS match beats a dead cast
             }
           };
+          // 2a — the org's own people (the best lexical candidate still faces the gate)
+          let best: { id: string; spec: PersonaSpec } | null = null;
+          let bestScore = 0;
+          for (const row of customRows ?? []) {
+            if (usedPersonaIds.has(row.id)) continue;
+            const score = overlapScore(seatText, row.spec as PersonaSpec);
+            if (score > bestScore) { best = { id: row.id, spec: row.spec as PersonaSpec }; bestScore = score; }
+          }
+          if (best && bestScore >= 2 && (await fits(best.spec))) {
+            usedPersonaIds.add(best.id);
+            const frozenYours = freeze(seat, best.spec, "yours");
+            resolved.push({ seat, personaId: best.id, spec: frozenYours, provenance: "yours" });
+            emit({ type: "seat", key: seat.key, provenance: "yours", spec: frozenYours });
+            continue;
+          }
+          // 2b — the global library (FTS; residents/consumers match their own kinds)
+          const kinds = seat.kind === "consumer" || seat.kind === "resident" ? ["consumer", "resident"] : null;
+          let hit: { id: string; spec: PersonaSpec } | null = null;
           // websearch syntax ANDs terms — retry progressively looser, ending OR-joined
           const orQuery = [...new Set(`${seat.query} ${seat.role}`.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3))].join(" or ");
           outer: for (const q of [seat.query, seat.role.toLowerCase(), orQuery]) {

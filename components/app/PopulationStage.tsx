@@ -18,7 +18,7 @@ import PersonaProfile from "@/components/app/PersonaProfile";
 import CastingTheater, { CrowdBand, MiniSwarm } from "@/components/app/CastingTheater";
 import CrowdRoster from "@/components/app/CrowdRoster";
 import SeatPicker from "@/components/app/SeatPicker";
-import { CROWD_SAMPLE_CAP, FrozenSpec, MAX_SEATS, PANEL_SIZES } from "@/lib/casting";
+import { CROWD_SAMPLE_CAP, FrozenSpec, MAX_SEATS, PANEL_SIZES, seatRoleDiffers } from "@/lib/casting";
 import { PersonaSpec } from "@/lib/personas";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -706,6 +706,14 @@ export default function PopulationStage({
                 <div style={{ marginTop: 11, fontSize: 12.5, fontWeight: 600, color: "var(--t3)" }}>
                   {s.spec.seat?.role ?? s.spec.role}
                 </div>
+                {/* the card leads with the SEAT; when the person filling it has
+                    a different title of their own, say so instead of letting
+                    the profile view look like a mismatch */}
+                {seatRoleDiffers(s.spec) && (
+                  <div style={{ marginTop: 3, ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)" }}>
+                    BY TRADE · {s.spec.role.toUpperCase()}
+                  </div>
+                )}
                 <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--t5)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                   {s.spec.tagline ?? s.spec.seat?.why ?? ""}
                 </div>
