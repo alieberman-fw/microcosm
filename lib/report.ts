@@ -13,20 +13,29 @@ export interface ReportCite { seq: number }
 export interface ReportSpec {
   version: number;
   verdict: { label: string; tone: "go" | "conditional" | "no-go" | "split"; headline: string };
+  /** three plain sentences a non-specialist reads first: the answer, the one
+   *  thing that would change it, and what to do next (3a report overhaul) */
+  bottom_line?: { answer: string; changes_it: string; next_step: string };
   executive_summary: string;
   dimension_scores: { name: string; score: number; note: string }[];
-  sections: { question: string; finding: string; cites: number[] }[];
+  /** answer-first sections: `answer` directly answers the question AS ASKED;
+   *  `finding` is the supporting argument; `numbers` are the key figures */
+  sections: { question: string; answer?: string; finding: string; numbers?: { label: string; value: string }[]; cites: number[] }[];
   /** success-criteria delivery map — the brief's bar, checked off explicitly */
   criteria?: { criterion: string; where: string }[];
   risks: { risk: string; severity: "high" | "medium" | "low"; mitigation: string; watch_signal: string }[];
   dissents: { name: string; role: string; position: string; quote: string; seq: number }[];
   tripwires: string[];
   sentiment?: { round: number; polled: number; dist: Record<string, number> }[];
+  poll_question?: string; // the one proposition every crowd poll asked (engine-derived from the brief)
   /** frozen at synthesis — the report survives re-runs and re-casts intact */
   transcript?: { seq: number; name: string; role: string; initials: string; adversarial: boolean; tag: string; content: string; round: number }[];
   cast?: { name: string; role: string; kind: string; provenance: string; adversarial: boolean }[];
   run_config?: { mode: string; rounds: number; max_posts: number; speaker: string; convergence: string; temperature: string; tier: string; verifier: boolean };
   verification?: { checks: number; supported: number; contradicted: number; unverifiable: number; contradictions: { claim: string; seq: number; note: string }[] };
+  /** cached PLAIN-ENGLISH translation of this frozen spec (generated on first
+   *  toggle; same answers and numbers, jargon-free — never a re-synthesis) */
+  plain?: ReportPlain;
   methodology: {
     mode: string; rounds: number; leads: number; crowd: number; polls: number;
     posts: number; tier: string; models: string[]; converged: boolean;
@@ -39,6 +48,17 @@ export interface ReportSpec {
 
 export type ReportLength = "brief" | "standard" | "dense";
 
+/** the Plain English view — a TRANSLATION of the frozen spec for a
+ *  non-technical reader: identical answers and numbers, simpler prose */
+export interface ReportPlain {
+  bottom_line: { answer: string; changes_it: string; next_step: string };
+  executive_summary: string;
+  sections: { question: string; answer: string; explanation: string }[];
+  risks: { risk: string; mitigation: string; watch_signal: string }[];
+  tripwires: string[];
+  glossary: { term: string; meaning: string }[];
+}
+
 /** Completeness gate for a synthesized spec. Truncation salvage can close the
  *  brackets on a PARTIAL JSON (a max_tokens draft once shipped a report with
  *  no findings, no criteria, no risks) — a spec that fails this gate must be
@@ -50,6 +70,8 @@ export function reportSpecIncomplete(
 ): string | null {
   const verdict = raw.verdict as { label?: unknown; headline?: unknown } | undefined;
   if (!verdict || typeof verdict.label !== "string" || verdict.label.trim().length === 0) return "missing verdict";
+  const bl = raw.bottom_line as { answer?: unknown; changes_it?: unknown; next_step?: unknown } | undefined;
+  if (!bl || [bl.answer, bl.changes_it, bl.next_step].some((x) => typeof x !== "string" || (x as string).trim().length === 0)) return "missing bottom line";
   if (typeof raw.executive_summary !== "string" || raw.executive_summary.trim().length < 40) return "missing executive summary";
   const scores = raw.dimension_scores;
   if (!Array.isArray(scores) || scores.length < 3) return "missing dimension scores";
@@ -57,6 +79,10 @@ export function reportSpecIncomplete(
   const wantSections = Math.min(Math.max(expected.questions, 1), 8);
   if (!Array.isArray(sections) || sections.length < wantSections) {
     return `findings cover ${Array.isArray(sections) ? sections.length : 0}/${wantSections} questions`;
+  }
+  // answer-first is the contract: every section must answer its question directly
+  if ((sections as { answer?: unknown }[]).some((s) => typeof s.answer !== "string" || s.answer.trim().length === 0)) {
+    return "sections missing direct answers";
   }
   if (expected.criteria > 0) {
     const criteria = raw.criteria;
@@ -79,7 +105,7 @@ export function synthBudgetFor(length: ReportLength): number {
 export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["verdict", "executive_summary", "dimension_scores", "sections", "criteria", "risks", "dissents", "tripwires"],
+  required: ["verdict", "bottom_line", "executive_summary", "dimension_scores", "sections", "criteria", "risks", "dissents", "tripwires"],
   properties: {
     verdict: {
       type: "object", additionalProperties: false, required: ["label", "tone", "headline"],
@@ -89,6 +115,10 @@ export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
         headline: { type: "string" },
       },
     },
+    bottom_line: {
+      type: "object", additionalProperties: false, required: ["answer", "changes_it", "next_step"],
+      properties: { answer: { type: "string" }, changes_it: { type: "string" }, next_step: { type: "string" } },
+    },
     executive_summary: { type: "string" },
     dimension_scores: {
       type: "array",
@@ -96,7 +126,16 @@ export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
     },
     sections: {
       type: "array",
-      items: { type: "object", additionalProperties: false, required: ["question", "finding", "cites"], properties: { question: { type: "string" }, finding: { type: "string" }, cites: { type: "array", items: { type: "integer" } } } },
+      items: {
+        type: "object", additionalProperties: false, required: ["question", "answer", "finding", "numbers", "cites"],
+        properties: {
+          question: { type: "string" },
+          answer: { type: "string" },
+          finding: { type: "string" },
+          numbers: { type: "array", items: { type: "object", additionalProperties: false, required: ["label", "value"], properties: { label: { type: "string" }, value: { type: "string" } } } },
+          cites: { type: "array", items: { type: "integer" } },
+        },
+      },
     },
     criteria: {
       type: "array",
@@ -131,9 +170,10 @@ export function reportSynthSystem(length: ReportLength = "standard"): string {
     `You are given a research brief and the full transcript of a panel deliberation (posts numbered by [seq]). ` +
     `Compile the decision-grade report. Reply with ONLY a JSON object:\n` +
     `{"verdict": {"label": "THE ANSWER IN <=5 WORDS — 'GO'/'NO-GO' for feasibility briefs; NAME THE WINNING OPTION for choose-between briefs (e.g. 'INTERIOR FINISHES — NOT THE POOL')", "tone": "go|conditional|no-go|split", "headline": "one sentence — the answer, committed"},\n` +
+    ` "bottom_line": {"answer": "ONE plain sentence answering the brief — no jargon, a CEO reads only this", "changes_it": "ONE plain sentence: the single thing most likely to change this answer", "next_step": "ONE plain sentence: what to do in the next two weeks"},\n` +
     ` "executive_summary": "4-6 sentences a decision-maker reads first — concrete, numbers included",\n` +
     ` "dimension_scores": [{"name": "...", "score": 0-10, "note": "one line"}],   // 4-6 dimensions THIS brief actually turns on\n` +
-    ` "sections": [{"question": "...", "finding": "3-5 sentences answering it", "cites": [seq, ...]}],  // one per question-to-resolve IN ORDER, THEN one per success criterion the question sections don't already fully deliver (title it after the criterion, e.g. "PROS & CONS OF BOTH OPTIONS", "TIME ON MARKET")\n` +
+    ` "sections": [{"question": "the user's question AS THEY ASKED IT (shorten but keep their words — never replace with an analyst label)", "answer": "1-2 sentences that DIRECTLY answer the question as asked — verdict first, then the number ('Yes — 900 units absorb, but at $1.95-2.05/SF, not the underwritten $2.05+')", "finding": "3-5 sentences of supporting argument", "numbers": [{"label": "ABSORPTION", "value": "20-24 units/mo"}], "cites": [seq, ...]}],  // one per question-to-resolve IN ORDER, THEN one per success criterion the question sections don't already fully deliver; 2-4 numbers per section ([] only if truly qualitative)\n` +
     ` "criteria": [{"criterion": "the success criterion verbatim (shortened ok)", "where": "one line: which section/part of this report delivers it"}],  // one entry per success criterion — this is the delivery receipt\n` +
     ` "risks": [{"risk": "...", "severity": "high|medium|low", "mitigation": "...", "watch_signal": "the observable that says it's happening"}],\n` +
     ` "dissents": [{"name": "...", "role": "...", "position": "one line", "quote": "VERBATIM sentence from their post", "seq": N}],\n` +
@@ -147,8 +187,70 @@ export function reportSynthSystem(length: ReportLength = "standard"): string {
     `- The adversarial voice gets representation in dissents or risks — always.\n` +
     `- SUCCESS CRITERIA ARE THE CONTRACT: every criterion must be deliverably present — if the question sections don't cover one (pros/cons, value drivers, time-on-market, whatever the user listed), ADD a section for it. The "criteria" array is the receipt; never mark a criterion delivered by a section that doesn't actually contain it.\n` +
     `- Write like the panel's chief of staff: specific, quantified, zero filler.\n` +
+    `CLARITY RULES (both audiences read this report — an analyst AND their CEO):\n` +
+    `- ANSWER FIRST, everywhere: the verdict before the qualification, the conclusion before the mechanism. Never open a finding with a formula or a clause name.\n` +
+    `- Short sentences: one idea per sentence, aim under 25 words. The executive summary is 2-3 SHORT sentences per thought — never one long chained sentence with nested parentheticals.\n` +
+    `- Expand every acronym or term of art at first use ("REA (the reciprocal easement agreement between the mall and its anchors)"); after that, use it freely.\n` +
+    `- The bottom_line is sacred plain English: no acronyms at all, no real-estate jargon — words a smart person outside the industry uses.\n` +
     `- ${reportDepthRule(length)}`
   );
+}
+
+/* ---- Plain English translation (the report toggle) ----------------------
+ * A TRANSLATION of the frozen spec — never a re-synthesis. Same verdict,
+ * same numbers, same section list; the prose is rewritten for a smart
+ * non-specialist, with a micro-glossary for unavoidable terms. */
+
+export const REPORT_PLAIN_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["bottom_line", "executive_summary", "sections", "risks", "tripwires", "glossary"],
+  properties: {
+    bottom_line: {
+      type: "object", additionalProperties: false, required: ["answer", "changes_it", "next_step"],
+      properties: { answer: { type: "string" }, changes_it: { type: "string" }, next_step: { type: "string" } },
+    },
+    executive_summary: { type: "string" },
+    sections: {
+      type: "array",
+      items: { type: "object", additionalProperties: false, required: ["question", "answer", "explanation"], properties: { question: { type: "string" }, answer: { type: "string" }, explanation: { type: "string" } } },
+    },
+    risks: {
+      type: "array",
+      items: { type: "object", additionalProperties: false, required: ["risk", "mitigation", "watch_signal"], properties: { risk: { type: "string" }, mitigation: { type: "string" }, watch_signal: { type: "string" } } },
+    },
+    tripwires: { type: "array", items: { type: "string" } },
+    glossary: {
+      type: "array",
+      items: { type: "object", additionalProperties: false, required: ["term", "meaning"], properties: { term: { type: "string" }, meaning: { type: "string" } } },
+    },
+  },
+};
+
+export function reportPlainSystem(): string {
+  return (
+    `You translate a technical real-estate simulation report into PLAIN ENGLISH for a smart reader with no real-estate background. ` +
+    `You are a translator, NOT an analyst: never change an answer, a recommendation, or a number — every figure in your output must appear in the input.\n` +
+    `Rules:\n` +
+    `- Keep the SAME sections in the SAME order, one output section per input section, keyed to the same question.\n` +
+    `- Each section: "answer" = 1-2 plain sentences that directly answer the question; "explanation" = 2-4 plain sentences of why, keeping the load-bearing numbers.\n` +
+    `- No jargon, no acronyms. Where a technical term is unavoidable, use it once and add it to the glossary with a one-line everyday meaning.\n` +
+    `- Risks become "what could go wrong / what we'd do about it / what to watch for" in everyday words.\n` +
+    `- Tripwires become "if you see this happen, revisit the decision" sentences.\n` +
+    `- Sentences under 20 words. Active voice. A busy executive should understand every line on first read.`
+  );
+}
+
+/** gate for the plain translation — must mirror the expert spec's coverage */
+export function plainSpecIncomplete(raw: Record<string, unknown>, expertSections: number): string | null {
+  const bl = raw.bottom_line as { answer?: unknown; changes_it?: unknown; next_step?: unknown } | undefined;
+  if (!bl || [bl.answer, bl.changes_it, bl.next_step].some((x) => typeof x !== "string" || (x as string).trim().length === 0)) return "missing bottom line";
+  if (typeof raw.executive_summary !== "string" || raw.executive_summary.trim().length < 40) return "missing summary";
+  const sections = raw.sections;
+  if (!Array.isArray(sections) || sections.length < expertSections) {
+    return `covers ${Array.isArray(sections) ? sections.length : 0}/${expertSections} sections`;
+  }
+  return null;
 }
 
 export function verifierSystem(): string {

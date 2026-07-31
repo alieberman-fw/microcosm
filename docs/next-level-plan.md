@@ -130,104 +130,119 @@ Phase 1 matrix extended to density/threading invariants (every reply_to resolves
 and stays green.
 
 ---
+## Phase 3 — reports, trust, tools, threads, scale (amended 2026-07-29)
 
-## Phase 3 — Detached runs, web search, 100+ panelists
+**What we're building, in plain terms** (the product view; technical detail under each):
 
-**Goal:** runs are server-owned things you *observe*, not browser tabs you babysit — then
-scale panel size on top of that foundation.
+### 3a · Reports anyone can read — audit first, then rebuild  ⟵ IN PROGRESS
 
-### 3a · Runs survive navigation (do this FIRST in the phase)
+Every report opens with a **bottom line** (the answer / what would change it / what to do
+next), every brief question gets a **direct answer up front** with reasoning below it, and
+a **Plain English toggle** flips the whole report into a jargon-free version — same
+answers, same numbers, translated. Preceded by an audit of real generated reports against
+their briefs.
 
-Today the browser drives continuation slices; closing the tab cancels via stream-abort.
-Inversion, in two steps:
+- **Audit findings (2026-07-29, all org reports):** post-completeness-gate reports are
+  structurally complete; pre-gate reports show 0-receipts / 0-risks holes (historical —
+  re-synthesize a new version to repair). Prose faults: findings lead with mechanism not
+  answer; exec summaries are 190-word chained sentences; analyst labels replace the user's
+  question; jargon (REA, MX-U, TI) never expanded.
+- **Build:** `bottom_line{answer,changes_it,next_step}` + per-section `answer` +
+  `numbers[{label,value}]` in schema/prompt/completeness-gate; CLARITY RULES in the synth
+  system (answer-first, ≤25-word sentences, expand acronyms at first use, bottom line is
+  jargon-free); PLAIN ENGLISH toggle = one cached translation pass over the frozen spec
+  (`spec.plain`, REPORT_PLAIN_SCHEMA + `plainSpecIncomplete` gate + glossary; never a
+  re-synthesis so views cannot disagree; reports_update RLS, migration 0016); sentiment-
+  by-round strip renders from the existing `spec.sentiment`.
 
-1. **v1 — self-driving slices on Vercel:** decouple engine cancellation from stream
-   disconnect (a closed stream stops *sending*, never stops *writing to Postgres*). At each
-   slice boundary the launch route schedules its own successor server-side
-   (`waitUntil(fetch(next slice))`) with `config.run_state` as the single source of truth +
-   a heartbeat timestamp so a dead chain is detectable and any viewer can restart it.
-   A `runs are yours to leave` banner replaces the reconnect logic.
-2. **The observer client:** LiveRun stops being the driver — on mount it loads the
-   transcript and **tails new posts/events via Supabase Realtime** (spec §9 finally earns
-   its keep) with polling fallback. Any number of tabs can watch one run; Home's
-   IN-PROGRESS strip links straight into live runs.
-3. **End-state (unchanged from spec §6.3):** the Python/FastAPI + swarms worker on
-   Railway/Fly for truly unbroken long processes. The event contract is identical; it
-   replaces the slice chain without touching the UI. Trigger for building it: sustained
-   100+ panelist runs (3c) or slice-chain flakiness in prod.
+### 3b · Headlines that fit the question
 
-### 3b · Web search as an agent tool (§7 Phase 1 tool #2)
+The report lead matches the ask: **decision** (go / conditional / no-go / split — today's
+chip), **key finding** (the universal catch-all: any brief that isn't a decision/valuation/
+hearing gets a committed most-important-conclusion headline — nothing falls outside the
+system), **price range** (valuations, with walk-away marker), **approval odds** (hearings).
+Commitment is mandatory in every kind. Technical: typed `lead{kind,…}` beside verdict
+(back-compat default = verdict), synthesizer picks kind from the brief + the silent
+`brief.template`, per-kind lead visuals in ReportView, Reports tab + Home outcomes gain an
+insight bucket, gate checks kind-appropriate fields.
 
-- Anthropic **server-side web search tool** — no scraping infra: pass
-  `tools: [{type: "web_search_20260209", name: "web_search", max_uses: 2}]` on lead turns
-  (Sonnet/Opus tiers; Haiku uses the basic `web_search_20250305` variant — select per model,
-  never hardcode).
-- **Per-sim toggle** in run config (`TOOLS: DOCS ONLY · DOCS + WEB SEARCH`), default off;
-  estimator prices it ($10/1K searches + tokens).
-- Engine extracts `server_tool_use` / `web_search_tool_result` blocks → post meta gains
-  `searches: [{query, results: [{title, url}]}]` → logged to `tool_runs` (schema already
-  has the table).
-- **Feed:** posts that searched carry a "🔍 SEARCHED THE WEB" card — click to expand the
-  query + sources with links. **Report:** web citations render alongside doc citations
-  ("source: tool", per §7).
+### 3c · Runs you can walk away from
 
-### 3c · 100+ panelists — sub-panels (§3's answer, backlog #43)
+Close the tab and the run keeps going server-side; any tab watches live. v1: decouple
+engine cancellation from stream disconnect; slices schedule their own successors
+(`waitUntil`) with `config.run_state` + heartbeat as truth; LiveRun becomes an observer
+tailing Supabase Realtime (polling fallback); Home's IN-PROGRESS strip links into live
+runs. End-state stays the Python/swarms worker (§6.3) when runs outgrow the slice chain.
 
-Not "raise MAX_SEATS and pray" — a hierarchy, exactly what the spec prescribes:
+### 3d · Agent tools v1 — web research, agent-decided, user-controlled
 
-- **Casting:** >20 seats auto-organize into **discipline sub-panels** of 6–10 (the seat
-  continuation loop from the truncation fix already builds arbitrarily long seat lists in
-  batches; generation already runs in parallel chunks). MAX_SEATS → 120.
-- **Choreography:** each round = sub-panels deliberate **in parallel** (independent Agora/
-  Roundtable cells) → each sub-panel's chair posts a roll-up → chairs hold a short
-  **plenary** exchange → next round's agendas flow back down. Feed groups by sub-panel with
-  the plenary as the spine; canvas renders cluster orbits (the demo's discipline-cluster
-  grammar at full size).
-- **Prereqs, honestly:** 3a is required (a 100-lead round is inherently long-running);
-  2a's density controls cap the post explosion; the estimator must show the real price
-  before launch (a 100-lead × 5-round bustling run is a triple-digit-dollar decision —
-  that's the §4.1 "no surprise bills" contract, not a limitation).
-- Phase 1 matrix grows sub-panel cells (roll-up integrity: every sub-panel reports each
-  round; plenary cites roll-ups; resume across sub-panel boundaries).
+Agents decide **when** a tool is worth using (a lawyer answering from expertise doesn't
+search; an economist citing current rates does) — tool use is never per-post mandatory.
+**Default OFF**; a TOOLS section in run config shows each tool as a card with a plain
+explanation — enable all or pick some. Built as a **rack**: one generic tool interface so
+parcel data / historical web / economic series become new cards later, no re-architecture.
+Searches render as clickable cards in the feed, logged to `tool_runs`, citable by the
+report as "source: tool". Technical: Anthropic server-side web search tool on lead turns,
+model-appropriate variant per tier, per-simulation result cache so the panel shares one
+factbase, `config.tools` allowlist.
 
-**Acceptance:** close the tab mid-run, return in 10 minutes → the run advanced and the
-screen reattaches live; web-search posts show clickable source cards and tool_runs rows; a
-60-lead, 2-sub-panel-per-discipline pilot completes end-to-end with a report; costs shown
-up front within ±40% of actual.
+### 3e · The forum acts like a real forum (living threads)
 
----
+Agents can return to earlier posts — even prior rounds — to reply, extend sub-threads, or
+vote late (including flipping an earlier vote). Fresh discussion still dominates. UI: the
+floating pill becomes **"↓ GO TO BOTTOM"** with an activity count; revival replies carry a
+breadcrumb chip that jumps to the parent. Zero-errors approach: this changes only WHERE
+replies aim — counts per round, budgets, resume dedupe, and termination are untouched by
+construction. Technical: `pickReplyTarget` widens to all substantive posts with λ≈0.4
+round-decay + necro cap (focused 0% — the existing matrix stays pinned — lively ~25%,
+bustling ~35%, recomputed from persisted posts on resume); cross-round replies get an
+"update, don't reopen" instruction; votes go per-run `(post, voter)` latest-wins (DB
+already agrees); round-close vote sweep gains a retro slice for older posts that drew new
+replies; full offline pinning before ship.
 
-## Phase 4 — The docs that teach the platform
+### 3f · Big panels — 100+ experts (design exploration + engineering)
 
-**Goal:** /docs stops describing the product and starts *demonstrating* it — every core
-surface has a live, animated, token-styled miniature.
-
-- **Live mini-run replay**: the Site 47-A golden fixture (`lib/replay-fixture.ts`) embedded
-  in /docs as a playable miniature of the run screen — canvas + threaded feed + polls at 8×
-  speed with pause/scrub. One component, reused by the landing page.
-- **Round-lifecycle animations per mode**: extend `ModeDiagram` with a stepper that walks
-  ONE round of each mode with the 1b table as captions (Agora post→replies→poll;
-  Tribunal args→rebuttals→judge; Jury blind→tally→re-score...).
-- **New/updated pages:** "Anatomy of a run" (rounds, stop rules, suspend/resume, honest stop
-  reasons); "The forum" (threads, votes, bursts, Take the Floor — with a live threaded
-  vignette); "Tools & grounding" (docs vs web search, how citations flow to the report);
-  "Reading a report" (annotated miniature report with criteria receipt + verdict grammar);
-  expanded "Casting at scale" (sub-panels).
-- **Interaction:** every vignette is real HTML/CSS/JS in the design tokens — no videos, no
-  screenshots — reusing the actual product components in miniature (the established
-  vignette pattern: CrowdBand, ModeDiagram, chat vignette).
-- Keep the §12 convention: after Phase 4, every feature PR updates its demo vignette too.
-
-**Acceptance:** a new user can go from zero to understanding rounds, modes, threading,
-votes, tools, and reports without leaving /docs; every animation runs in both themes.
+Discipline pods deliberate in parallel, spokespeople carry positions to a main table.
+Explicitly includes: the **constellation visualization** (pods with mini-rings, bright
+spokesperson edges to the center, activity pulsing, zoom/hover into a pod — the "city in
+silico" money shot) and the **written value proposition** (coverage: every discipline
+genuinely represented; robustness: pods reach positions independently before meeting —
+less groupthink; scale: a 150-agent deliberation you can actually read). Technical:
+sub-panel choreography per §3 (auto-organize above ~32 leads), roll-up posts, per-pod
+transcripts, canvas layout mode.
 
 ---
 
-## Sequencing & spec updates
+## Phase 4 — Docs that teach
 
-**1 → 2 → 3 → 4.** Phase 1 is the substrate (Adam's explicit first priority); Phase 2
-changes the transcript shape that Phase 3's observer/report and Phase 4's vignettes
-consume; Phase 3's detached runner unlocks Phase 3's own scale work; Phase 4 documents the
-final behavior. Take the Floor ships inside Phase 2. Each phase = one or more PRs off
-`origin/main`, README checklist + /docs updated per PR, CLAUDE.md updated where the spec
-changes (SIM DAYS removal, density parameter, votes event, sub-panel choreography, tools).
+Guided walkthrough built on our own `examples/` demos — likely **Southgate Mall** (threads,
+votes, dissent, conditional verdict end-to-end) instead of the scripted Site 47-A: why the
+director cast these ten, what to watch in round 2, how to read the report. Site 47-A stays
+the marketing demo; the teaching path uses the real product on synthetic materials.
+Plus richer animated explainers and "what am I looking at" affordances on the run screen.
+
+---
+
+## Parked — deliberately (needs its own planning session; do not rush)
+
+**Scenario / stress-test simulations**: world-state timelines ("rates +1.5% by month 6,
++3% by month 12"), rounds as time steps, market poll instruments (buy / wait / priced out /
+forced to sell), trajectory charts, projection-lead reports. Design sketch exists (third
+axis: brief × mode × scenario — the mode is how agents talk, the scenario is what world
+they're in); revisit with Adam when ready. Natural partner: **what-if forks + report
+diffs** (backlog) — the stress-grid mechanism (+1%/+2%/+3% forks, diff the verdicts).
+
+## Backlog
+
+What-if forks + side-by-side report diffs · DOCX/XLSX uploads + per-doc viewer with
+citation deep-links · census-grounded crowds (ACS PUMS, Arizona first) · saved panels &
+per-seat swap · more agent tools (parcel/lot data, historical web, FRED/Census series —
+new cards in the 3d rack) · teams/sharing/billing → marketplace → calibration.
+
+## Sequencing
+
+**3a → 3b → 3c → 3d → 3e → 3f**, reports first (every demo ends on the report; it's what
+a non-technical reader judges), then trust, then tools+threads, scale last. Each item =
+its own PR off `origin/main`; README checklist + /docs updated per PR; CLAUDE.md updated
+where the spec changes. The zero-errors bar from Phase 1 applies to every item: offline
+pinning + live smoke before merge.

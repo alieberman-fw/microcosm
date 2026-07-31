@@ -34,7 +34,7 @@ export type EngineEvent =
   | { type: "post"; seq: number; author: string; agent_key: string; name: string; role: string; initials: string; adversarial?: boolean; thread: string; reply_to: number | null; tag: string; content: string; cites: { title: string; quote: string }[]; round: number; phase?: string; side?: string; score?: number }
   | { type: "presence"; agent_key: string; name: string; state: "thinking" | "speaking" | "idle" }
   | { type: "polling"; round: number; count: number }
-  | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[] }
+  | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[]; question?: string }
   | { type: "votes"; round: number; votes: { seq: number; voter_key: string; voter_name: string; voter_role: string; vote: 1 | -1 }[] }
   | { type: "convergence"; aligned: number; total: number; dissents: number };
 
@@ -46,6 +46,7 @@ export interface EngineContext {
   questions: string[];
   leads: EngineLead[];
   crowd: EngineCrowdMember[];
+  pollQuestion: string;                                 // the one proposition every crowd poll asks (brief-derived; falls back to the raw problem)
   corpusBlocks: Anthropic.Beta.BetaContentBlockParam[]; // document blocks with citations enabled (may be empty)
   temperature: number;
   deadline: number;                                     // ms epoch — suspend at the next safe boundary after this
@@ -218,12 +219,58 @@ function windowOf(posts: { name: string; role: string; content: string; tag: str
   return posts.slice(-n).map((p) => `[${p.tag}] ${p.name} (${p.role}): ${p.content}`).join("\n");
 }
 
+/** stance normalization: models answer with variants ("supportive", "against",
+ *  "neutral") and the old blanket coercion dumped ALL of them into "disengaged",
+ *  silently inflating that bucket. Map known variants to their real stance;
+ *  neutral/undecided reads closest to "conditional" (a leaning that depends),
+ *  NOT "disengaged" (which means genuinely unaffected). Exported pure for tests. */
+export function normalizeStance(raw: unknown): "support" | "conditional" | "oppose" | "disengaged" | null {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (s.startsWith("support") || s === "yes" || s === "for" || s === "favor" || s === "in favor") return "support";
+  if (s.startsWith("oppos") || s === "against" || s === "no" || s.startsWith("reject")) return "oppose";
+  if (s.startsWith("condition") || s.startsWith("depend") || s === "maybe" || s === "if" || s === "neutral" || s.startsWith("undecid") || s === "unsure" || s === "mixed" || s === "on the fence") return "conditional";
+  if (s.startsWith("disengag") || s.startsWith("indifferent") || s.startsWith("apath") || s.includes("care")) return "disengaged";
+  return null; // unknown — caller decides (counted, not silently dumped)
+}
+
+/** the poll question: one plain proposition the crowd can support or oppose,
+ *  derived from the brief ONCE per simulation (persisted in config so every
+ *  round, resume slice, and the report ask the same thing). Fail-soft: the
+ *  raw problem statement is the fallback topic. */
+export async function derivePollQuestion(
+  anthropic: Anthropic, model: string, problem: string,
+  logCall: EngineContext["logCall"],
+): Promise<string> {
+  const t0 = Date.now();
+  try {
+    const res = await anthropic.messages.create({
+      model, max_tokens: 900, // headroom for adaptive thinking on Sonnet-class crowd tiers
+      system:
+        `Turn a research brief into ONE neutral poll question for a crowd of ordinary people (residents, buyers, renters, neighbors). ` +
+        `It must be a single plain-language proposition someone can SUPPORT or OPPOSE — answerable YES or NO, never an either/or choice ` +
+        `(if the brief weighs options, make the brief's leading option the subject: "Should X do Y?"). ` +
+        `Max 22 words, no jargon, no acronyms. Reply ONLY the question text.`,
+      messages: [{ role: "user", content: problem.slice(0, 4000) }],
+    });
+    await logCall("engine.poll_question", model, res.usage, t0);
+    const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim()
+      .replace(/^["“]|["”]$/g, "");
+    return text.length >= 12 && text.length <= 240 ? text : problem;
+  } catch (e) {
+    await logCall("engine.poll_question", model, null, t0, e instanceof Error ? e.message : "derive failed");
+    return problem;
+  }
+}
+
 /** crowd sentiment poll (§5 — our custom layer): batched Haiku calls between
  *  rounds. Batches run 3-CONCURRENT (a 169-member poll was ~9 serial calls —
  *  minutes of wall-clock that blew slices past the serverless window) and the
  *  poll is DEADLINE-AWARE: when time runs out mid-poll it emits the partial
- *  tally honestly instead of dragging the run into a hard kill. */
-async function pollCrowd(ctx: EngineContext, round: number, topic: string): Promise<void> {
+ *  tally honestly instead of dragging the run into a hard kill. Each round's
+ *  poll carries a digest of what the panel just argued, so movement between
+ *  rounds is reaction, not sampling noise. */
+async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Promise<void> {
   if (ctx.crowd.length === 0) return;
   if (ctx.polledRounds.has(round)) return; // already polled before a suspension
   await ctx.emit({ type: "polling", round, count: ctx.crowd.length }); // canvas animates WHILE the poll runs
@@ -246,21 +293,32 @@ async function pollCrowd(ctx: EngineContext, round: number, topic: string): Prom
           // model is Sonnet 5, whose adaptive thinking bills against this cap
           max_tokens: 200 * batch.length + 800,
           system:
-            `You simulate a sentiment poll of crowd members on: "${topic}". For EACH member listed, answer AS THEM. ` +
+            `You simulate a sentiment poll. THE POLL QUESTION: "${ctx.pollQuestion}". For EACH member listed, answer AS THEM${digest ? ", reacting to the question AND to what the panel just argued" : ""}. ` +
+            `Stances — exactly one per member:\n` +
+            `- "support": they would say yes to the question.\n` +
+            `- "conditional": yes, but only if a specific concern is handled — name it in the quote.\n` +
+            `- "oppose": they would say no.\n` +
+            `- "disengaged": the outcome truly would not touch their life and they would pay no attention. Most people have SOME leaning — use this sparingly, and NEVER as a stand-in for neutral or undecided (that is "conditional").\n` +
             `Reply ONLY a JSON array in the same order: [{"name": "...", "stance": "support|conditional|oppose|disengaged", "quote": "one short in-character sentence"}]`,
           messages: [{
             role: "user",
-            content: batch.map((m) => `- ${m.spec.name}: ${m.spec.seat?.role ?? m.spec.role}${m.spec.tagline ? ` — ${m.spec.tagline}` : ""}${m.spec.stances?.[0] ? ` — stance: ${m.spec.stances[0]}` : ""}`).join("\n"),
+            content:
+              (digest ? `WHAT THE PANEL ARGUED THIS ROUND:\n${digest}\n\nMEMBERS TO POLL:\n` : "") +
+              batch.map((m) => `- ${m.spec.name}: ${m.spec.seat?.role ?? m.spec.role}${m.spec.tagline ? ` — ${m.spec.tagline}` : ""}${m.spec.stances?.[0] ? ` — stance: ${m.spec.stances[0]}` : ""}`).join("\n"),
           }],
         });
         await ctx.logCall("engine.poll", model, res.usage, t0, undefined, { mode: ctx.mode, round, batch: batch.length, crowd: ctx.crowd.length });
         const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
         const rows = (parseLooseArray(text) ?? []) as { name?: string; stance?: string; quote?: string }[];
+        let coerced = 0;
         for (const r of rows) {
-          const stance = ["support", "conditional", "oppose", "disengaged"].includes(String(r.stance)) ? String(r.stance) : "disengaged";
+          const norm = normalizeStance(r.stance);
+          const stance = norm ?? "disengaged"; // truly unrecognized only — counted below, no longer the neutral dumping ground
+          if (!norm) coerced += 1;
           dist[stance] += 1;
           if (r.quote && quotes.length < 6) quotes.push({ name: String(r.name ?? "Crowd member"), stance, quote: String(r.quote).slice(0, 160) });
         }
+        if (coerced > 0) await ctx.logCall("engine.poll", model, null, t0, undefined, { note: "unrecognized stances coerced", coerced, round });
       } catch (e) {
         await ctx.logCall("engine.poll", model, null, t0, e instanceof Error ? e.message : "poll failed");
       }
@@ -272,7 +330,7 @@ async function pollCrowd(ctx: EngineContext, round: number, topic: string): Prom
   // aborted poll gets re-run in full on the next slice
   if (polled > 0) {
     ctx.polledRounds.add(round);
-    await ctx.emit({ type: "sentiment", round, polled, dist, quotes });
+    await ctx.emit({ type: "sentiment", round, polled, dist, quotes, question: ctx.pollQuestion });
   }
 }
 
@@ -544,9 +602,15 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     if ((n ?? 0) > 0 || (votedPairs.get(round)?.size ?? 0) > 0) ctx.votedRounds.add(round);
   };
 
-  /** the standard round close for polling modes: poll → interjections → votes */
+  /** the standard round close for polling modes: poll → interjections → votes.
+   *  The poll hears the round it just watched — a compact digest of the
+   *  strongest recent posts — so stance movement is reaction, not noise. */
+  const roundDigest = (round: number) =>
+    substantive(round).slice(-8)
+      .map((p) => `${p.name} (${p.role}): ${p.content.slice(0, 200)}`)
+      .join("\n").slice(0, 1800);
   const roundClose = async (round: number) => {
-    await pollCrowd(ctx, round, ctx.problem);
+    await pollCrowd(ctx, round, roundDigest(round));
     await burst(round);
     await voteRound(round);
   };

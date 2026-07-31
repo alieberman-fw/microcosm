@@ -28,10 +28,11 @@ export class FakeClock {
 
 /* ---------------------------- call classification ------------------------ */
 
-export type CallKind = "turn" | "poll" | "router" | "judge" | "burst" | "votes" | "unknown";
+export type CallKind = "turn" | "poll" | "pollq" | "router" | "judge" | "burst" | "votes" | "unknown";
 
 export function classify(system: string): CallKind {
   if (system.includes("Forum rules")) return "turn";
+  if (system.includes("neutral poll question")) return "pollq";
   if (system.includes("sentiment poll")) return "poll";
   if (system.includes("interjecting")) return "burst";
   if (system.includes("casting votes")) return "votes";
@@ -101,6 +102,8 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
         voter: name,
         votes: [{ seq: seqs[0], vote: "up" }, ...(seqs.length > 1 ? [{ seq: seqs[1], vote: "down" }] : [])],
       })));
+    } else if (kind === "pollq") {
+      text = "Should the town let the project go ahead?";
     } else if (kind === "router") {
       // pick the second panelist listed (never the last author by construction)
       const m = system.match(/Panel: ([^;]+); ([^ ]+ [^ ]+?) \(/);
@@ -221,6 +224,7 @@ export function makeHarness(args: {
     questions: ["Q ONE", "Q TWO"],
     leads: args.leads,
     crowd: args.crowd ?? [],
+    pollQuestion: "Should the builder spend the leftover budget on the pool?",
     corpusBlocks: [],
     temperature: 0.7,
     deadline: clock.now + (args.deadlineInMs ?? 10 ** 12),

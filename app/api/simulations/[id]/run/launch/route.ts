@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { FrozenSpec } from "@/lib/casting";
-import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
+import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
 import { normalizeQuestions } from "@/lib/corpus";
-import { EngineEvent, EngineLead, PostRec, RunResume, runMode } from "@/lib/engine";
+import { EngineEvent, EngineLead, PostRec, RunResume, derivePollQuestion, runMode } from "@/lib/engine";
 
 export const maxDuration = 800; // Vercel Pro ceiling; chunked continuation covers anything longer
 
@@ -95,6 +95,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   await supabase.from("simulations").update({ status: "running" }).eq("id", id);
 
   const anthropic = new Anthropic();
+
+  // ---- the poll question: derived ONCE per simulation (persisted in config so
+  // every round, resume slice, and the report ask the crowd the same thing) ----
+  let pollQuestion = String(config.poll_question ?? "");
+  if (!pollQuestion && crowd.length > 0) {
+    pollQuestion = await derivePollQuestion(
+      anthropic, TIER_MODELS[cfg.tier].crowd, brief.problem!,
+      async (surface, model, usage, t0, error) => {
+        await supabase.from("agent_interactions").insert({
+          org_id: orgId, user_id: user.id, surface, model, sim_id: id,
+          input_tokens: usage?.input_tokens ?? null, output_tokens: usage?.output_tokens ?? null,
+          latency_ms: Date.now() - t0, status: error ? "error" : "ok", error: error ?? null,
+        });
+      },
+    );
+    // mutate the local object so the later `...config` spreads carry it too
+    config.poll_question = pollQuestion;
+    await supabase.from("simulations").update({ config }).eq("id", id);
+  }
   const encoder = new TextEncoder();
   let cancelled = false;
   let evSeq = isContinue ? 1000 * (resume?.round ?? 1) : 0; // coarse but monotonic across chunks
@@ -150,6 +169,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           problem: brief.problem!,
           questions: normalizeQuestions(brief.questions).map((x) => x.label),
           leads, crowd, corpusBlocks,
+          pollQuestion: pollQuestion || brief.problem!,
           temperature: 0.7,
           deadline: Date.now() + (Number(process.env.ENGINE_CHUNK_MS) || 770_000), // ~13-min slices on Pro; env override for dev tests
           polledRounds,
