@@ -15,7 +15,7 @@
 
 import { CSSProperties, useState } from "react";
 import Link from "next/link";
-import { ReportPlain, ReportSpec, VERDICT_STYLE } from "@/lib/report";
+import { LEAD_KIND_LABEL, ReportLead, ReportPlain, ReportSpec, VERDICT_STYLE, fmtMoney } from "@/lib/report";
 import { LivePost } from "@/components/app/LiveRun";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -136,6 +136,80 @@ function CiteChips({ cites, onJump }: { cites: number[]; onJump: (seq: number) =
         </button>
       ))}
     </span>
+  );
+}
+
+/** 3b — the price band: a defended range with central estimate and the
+ *  walk-away marker. Pure CSS percentages over the padded domain. */
+function PriceBand({ lead }: { lead: ReportLead }) {
+  const cur = lead.currency ?? "$";
+  const lo = lead.low!, hi = lead.high!;
+  const wa = lead.walk_away?.value;
+  const pt = lead.point;
+  const dMin = Math.min(lo, wa ?? lo, pt ?? lo);
+  const dMax = Math.max(hi, wa ?? hi, pt ?? hi);
+  const pad = (dMax - dMin) * 0.1 || dMax * 0.05 || 1;
+  const min = dMin - pad, max = dMax + pad;
+  const pct = (x: number) => Math.min(Math.max(((x - min) / (max - min)) * 100, 0), 100);
+  return (
+    <div className="card" style={{ marginTop: 18, padding: "22px 26px", maxWidth: 760 }}>
+      <div style={{ position: "relative", height: 26 }}>
+        <span style={{ ...mono, position: "absolute", left: `${pct(lo)}%`, transform: "translateX(-50%)", fontSize: 15, color: "var(--t0)" }}>{fmtMoney(lo, cur)}</span>
+        <span style={{ ...mono, position: "absolute", left: `${pct(hi)}%`, transform: "translateX(-50%)", fontSize: 15, color: "var(--t0)" }}>{fmtMoney(hi, cur)}</span>
+      </div>
+      <div style={{ position: "relative", height: 8, borderRadius: 100, background: "var(--sf2)", marginTop: 4 }}>
+        <div style={{ position: "absolute", left: `${pct(lo)}%`, width: `${Math.max(pct(hi) - pct(lo), 0.5)}%`, top: 0, bottom: 0, borderRadius: 100, background: "var(--acc)", animation: "grow .8s ease both", transformOrigin: "left" }} />
+        {typeof pt === "number" && (
+          <div title={`Central estimate ${fmtMoney(pt, cur)}`} style={{ position: "absolute", left: `calc(${pct(pt)}% - 1.5px)`, top: -4, width: 3, height: 16, borderRadius: 2, background: "var(--t0)" }} />
+        )}
+        {typeof wa === "number" && (
+          <div title={lead.walk_away!.label} style={{ position: "absolute", left: `calc(${pct(wa)}% - 1px)`, top: -6, width: 2, height: 20, background: "var(--warn)" }} />
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 14, alignItems: "baseline" }}>
+        {typeof pt === "number" && (
+          <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--t3)" }}>CENTRAL ESTIMATE · {fmtMoney(pt, cur)}</span>
+        )}
+        {lead.walk_away && (
+          <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--warn)" }}>▲ {lead.walk_away.label.toUpperCase()}</span>
+        )}
+      </div>
+      {lead.basis && (
+        <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t6)", marginTop: 8 }}>
+          TRIANGULATED FROM · {lead.basis.toUpperCase()}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 3b — approval odds: a committed number with a band meter and its drivers */
+function OddsMeter({ lead }: { lead: ReportLead }) {
+  const odds = Math.round(lead.odds ?? 0);
+  const color = lead.band === "likely" ? "var(--acc)" : lead.band === "unlikely" ? "var(--warn)" : "var(--t4)";
+  return (
+    <div className="card" style={{ marginTop: 18, padding: "22px 26px", maxWidth: 760 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
+        <span style={{ ...mono, fontSize: 40, color }}>{odds}%</span>
+        {lead.band && <span style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color, border: `1px solid ${color}`, borderRadius: 100, padding: "4px 12px" }}>{lead.band.toUpperCase()}</span>}
+        <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", color: "var(--t6)" }}>ODDS OF APPROVAL · PANEL-JUDGED</span>
+      </div>
+      <div style={{ height: 8, borderRadius: 100, background: "var(--sf2)", marginTop: 12, overflow: "hidden" }}>
+        <div style={{ width: `${odds}%`, height: "100%", borderRadius: 100, background: color, animation: "grow .8s ease both", transformOrigin: "left" }} />
+      </div>
+      {(lead.drivers?.length ?? 0) > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>WHAT MOVES IT</span>
+          <ul style={{ margin: "8px 0 0", padding: 0, listStyle: "none" }}>
+            {lead.drivers!.map((d, i) => (
+              <li key={i} style={{ display: "flex", gap: 10, padding: "5px 0", fontSize: 13, lineHeight: 1.55, color: "var(--t3)" }}>
+                <span style={{ color, flex: "none" }}>·</span>{d}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -450,16 +524,55 @@ export default function ReportView({
         <PlainBody spec={spec} plain={plain!} problem={problem} onExpert={() => setView("expert")} />
       ) : (
         <>
-          {/* verdict */}
-          <div style={{ marginTop: 22 }}>
-            <span style={{ ...mono, fontSize: 11, letterSpacing: ".1em", padding: "7px 16px", borderRadius: 100, border: `1px solid ${v.color}`, background: v.bg, color: v.color }}>
-              {spec.verdict.label}
-            </span>
-            <h1 style={{ fontSize: "clamp(22px, 2.8vw, 32px)", fontWeight: 600, letterSpacing: "-.025em", lineHeight: 1.25, margin: "16px 0 0", maxWidth: 860 }}>
-              {spec.verdict.headline}
-            </h1>
-            <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--t6)" }}>{problem}</p>
-          </div>
+          {/* the lead — its kind matches the ask (3b); pre-3b reports and
+              decision briefs render exactly as before */}
+          {(() => {
+            const lead = spec.lead;
+            const kind = lead?.kind ?? "decision";
+            if (kind === "decision") {
+              return (
+                <div style={{ marginTop: 22 }}>
+                  <span style={{ ...mono, fontSize: 11, letterSpacing: ".1em", padding: "7px 16px", borderRadius: 100, border: `1px solid ${v.color}`, background: v.bg, color: v.color }}>
+                    {spec.verdict.label}
+                  </span>
+                  <h1 style={{ fontSize: "clamp(22px, 2.8vw, 32px)", fontWeight: 600, letterSpacing: "-.025em", lineHeight: 1.25, margin: "16px 0 0", maxWidth: 860 }}>
+                    {spec.verdict.headline}
+                  </h1>
+                  <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--t6)" }}>{problem}</p>
+                </div>
+              );
+            }
+            const chipColor = kind === "approval_odds"
+              ? (lead!.band === "likely" ? "var(--acc)" : lead!.band === "unlikely" ? "var(--warn)" : "var(--t4)")
+              : "var(--acc)";
+            const chipBg = chipColor === "var(--acc)" ? "var(--acc-dim)" : chipColor === "var(--warn)" ? "var(--warn-dim)" : "var(--sf2)";
+            return (
+              <div style={{ marginTop: 22 }}>
+                <span style={{ ...mono, fontSize: 11, letterSpacing: ".1em", padding: "7px 16px", borderRadius: 100, border: `1px solid ${chipColor}`, background: chipBg, color: chipColor }}>
+                  {LEAD_KIND_LABEL[kind]}
+                </span>
+                <h1 style={{ fontSize: "clamp(22px, 2.8vw, 32px)", fontWeight: 600, letterSpacing: "-.025em", lineHeight: 1.3, margin: "16px 0 0", maxWidth: 860 }}>
+                  {kind === "key_finding" ? (lead!.finding ?? spec.verdict.headline) : spec.verdict.headline}
+                </h1>
+                {kind === "key_finding" && lead!.so_what && (
+                  <p style={{ margin: "10px 0 0", fontSize: 14.5, lineHeight: 1.6, color: "var(--t3)", maxWidth: 820 }}>{lead!.so_what}</p>
+                )}
+                {kind === "key_finding" && (lead!.magnitude?.length ?? 0) > 0 && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                    {lead!.magnitude!.map((n, ni) => (
+                      <span key={ni} style={{ border: "1px solid var(--ln3)", borderRadius: 10, padding: "6px 12px", background: "var(--sf2)" }}>
+                        <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--t6)", display: "block" }}>{n.label.toUpperCase()}</span>
+                        <span style={{ ...mono, fontSize: 13, color: "var(--t1)" }}>{n.value}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {kind === "price_range" && <PriceBand lead={lead!} />}
+                {kind === "approval_odds" && <OddsMeter lead={lead!} />}
+                <p style={{ margin: "10px 0 0", fontSize: 13, color: "var(--t6)" }}>{problem}</p>
+              </div>
+            );
+          })()}
 
           {/* THE BOTTOM LINE — three plain sentences, read this and stop */}
           {spec.bottom_line && (

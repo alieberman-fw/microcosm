@@ -27,6 +27,10 @@ export interface ReportRow {
   mode: string;
   posts: number;
   dissents: number;
+  /** 3b — non-decision reports bucket as INSIGHT; leadMetric is the card chip
+   *  ("$4.2M–$4.6M", "68% LIKELY", "KEY FINDING") */
+  leadKind?: string;
+  leadMetric?: string;
 }
 
 const TONES = [
@@ -35,9 +39,12 @@ const TONES = [
   { key: "conditional", label: "CONDITIONAL" },
   { key: "no-go", label: "NO-GO" },
   { key: "split", label: "SPLIT" },
+  { key: "insight", label: "INSIGHT" },
 ] as const;
 
 const toneColor = (t: string) => (t === "go" ? "var(--acc)" : t === "split" ? "var(--t4)" : "var(--warn)");
+/** exclusive buckets: a range/odds/finding report lives in INSIGHT, never in a tone */
+const bucketOf = (r: ReportRow) => (r.leadKind && r.leadKind !== "decision" ? "insight" : r.tone);
 
 export default function ReportsClient({ initialRows }: { initialRows: ReportRow[] }) {
   const router = useRouter();
@@ -73,11 +80,11 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
 
   const needle = q.trim().toLowerCase();
   const visible = grouped.filter((g) => {
-    if (tone !== "all" && g.latest.tone !== tone) return false;
+    if (tone !== "all" && bucketOf(g.latest) !== tone) return false;
     if (!needle) return true;
     return `${g.latest.problem} ${g.latest.headline} ${g.latest.label}`.toLowerCase().includes(needle);
   });
-  const countFor = (t: string) => (t === "all" ? grouped.length : grouped.filter((g) => g.latest.tone === t).length);
+  const countFor = (t: string) => (t === "all" ? grouped.length : grouped.filter((g) => bucketOf(g.latest) === t).length);
   const pages = Math.max(1, Math.ceil(visible.length / PAGE));
   const pageRows = visible.slice(page * PAGE, page * PAGE + PAGE);
   useEffect(() => { setPage(0); }, [q, tone]);
@@ -151,9 +158,15 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
             <div key={r.id} className="card simCard" style={{ position: "relative", opacity: deleting === r.sim_id ? 0.4 : 1, transition: "opacity .2s" }}>
               <Link href={`/sim/${r.sim_id}/report`} style={{ display: "block", padding: "22px 24px", height: "100%", boxSizing: "border-box" }}>
                 <div style={{ ...mono, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 9, letterSpacing: ".07em", color: "var(--t6)", paddingRight: 22 }}>
-                  <span style={{ fontSize: 9, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, border: `1px solid ${toneColor(r.tone)}`, color: toneColor(r.tone) }}>
-                    {r.label}
-                  </span>
+                  {bucketOf(r) === "insight" ? (
+                    <span style={{ fontSize: 9, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, border: "1px solid var(--acc)", color: "var(--acc)" }}>
+                      {r.leadMetric ?? "KEY FINDING"}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 9, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, border: `1px solid ${toneColor(r.tone)}`, color: toneColor(r.tone) }}>
+                      {r.label}
+                    </span>
+                  )}
                   <span>{new Date(r.created_at).toLocaleDateString()}</span>
                 </div>
                 <div style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.4, margin: "12px 0 8px", color: "var(--t1)" }}>

@@ -29,7 +29,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const { data: sim } = await supabase.from("simulations").select("id, brief, config, status").eq("id", id).maybeSingle();
   if (!sim) return NextResponse.json({ error: "Simulation not found" }, { status: 404 });
-  const brief = (sim.brief ?? {}) as { problem?: string; questions?: unknown; success?: unknown };
+  const brief = (sim.brief ?? {}) as { problem?: string; questions?: unknown; success?: unknown; template?: string };
   const config = (sim.config as Record<string, unknown>) ?? {};
   const cfg: RunConfig = { ...RUN_DEFAULTS, ...((config.run as Partial<RunConfig>) ?? {}) };
   const mode = String((config.casting as { mode?: string } | undefined)?.mode ?? "Agora");
@@ -82,6 +82,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   }).join("\n\n");
   const briefText =
     `PROBLEM: ${brief.problem}\n` +
+    // 3b: the brief composer's silent classification seeds the lead kind — a
+    // hint only; the synthesizer re-reads the brief and self-corrects
+    (brief.template ? `DECISION SHAPE HINT: ${brief.template}\n` : "") +
     (questions.length ? `QUESTIONS TO RESOLVE (one report section EACH, in order):\n${questions.map((q) => `- ${q.label}${q.detail ? ` — ${q.detail}` : ""}`).join("\n")}\n` : "") +
     (success.length ? `SUCCESS CRITERIA (the report is held to every one):\n${success.map((x) => `- ${x}`).join("\n")}\n` : "") +
     (sentiments.length ? `CROWD SENTIMENT BY ROUND${pollQuestion ? ` (the crowd was asked: "${pollQuestion}")` : ""}:\n${sentiments.map((x) => `- round ${x.round}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
@@ -111,7 +114,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
+      let lastSent = Date.now();
+      const send = (obj: unknown) => { lastSent = Date.now(); controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`)); };
+      // HEARTBEAT: adaptive thinking emits NO text for minutes at a time, and
+      // an idle response body is exactly what proxies and HTTP clients kill
+      // (undici's default body timeout is 300s — a silent think blew it in the
+      // field). Pulse a note whenever the stream has been quiet too long.
+      const pulse = setInterval(() => {
+        if (Date.now() - lastSent > 15_000) {
+          try { send({ type: "stage", value: "compile", note: "STILL WORKING — THE DIRECTOR IS THINKING THROUGH THE TRANSCRIPT…" }); } catch { clearInterval(pulse); }
+        }
+      }, 5_000);
       try {
         // ---- 1 · compile: director synthesizes the structured report ----
         // stage notes are user-facing copy — models stay in Monitoring.
@@ -231,6 +244,36 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             tone: (["go", "conditional", "no-go", "split"] as const).find((t) => t === rawSpec.verdict?.tone) ?? "split",
             headline: String(rawSpec.verdict?.headline ?? "").slice(0, 300),
           },
+          // 3b: the typed lead — clamped passthrough (the 3a lesson: the gate
+          // validates the RAW draft; assembly must carry every field it approved)
+          lead: (() => {
+            // the draft's lead is FLAT (schema complexity budget); assembly
+            // reshapes it and computes band/currency/magnitude here
+            const l = (rawSpec as { lead?: Record<string, unknown> }).lead;
+            const kind = (["decision", "key_finding", "price_range", "approval_odds"] as const).find((k) => k === l?.kind);
+            if (!l || !kind) return undefined;
+            const numOr = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
+            const odds = Number.isFinite(Number(l.odds)) ? Math.min(Math.max(Number(l.odds), 0), 100) : undefined;
+            const waVal = numOr(l.walk_away_value);
+            const firstNumbers = (rawSpec.sections?.[0]?.numbers ?? []) as { label?: unknown; value?: unknown }[];
+            return {
+              kind,
+              finding: l.finding ? String(l.finding).slice(0, 300) : undefined,
+              so_what: l.so_what ? String(l.so_what).slice(0, 240) : undefined,
+              magnitude: kind === "key_finding" && firstNumbers.length
+                ? firstNumbers.slice(0, 3).map((m) => ({ label: String(m.label ?? "").slice(0, 40), value: String(m.value ?? "").slice(0, 60) }))
+                : undefined,
+              currency: "$",
+              low: numOr(l.low), high: numOr(l.high), point: numOr(l.point),
+              walk_away: waVal ? { value: waVal, label: String(l.walk_away_label ?? `Walk away at ${waVal}`).slice(0, 80) } : undefined,
+              basis: l.basis ? String(l.basis).slice(0, 220) : undefined,
+              odds,
+              band: kind === "approval_odds" && odds !== undefined
+                ? (odds >= 60 ? "likely" as const : odds <= 40 ? "unlikely" as const : "toss-up" as const)
+                : undefined,
+              drivers: Array.isArray(l.drivers) ? (l.drivers as unknown[]).slice(0, 4).map((d) => String(d).slice(0, 140)) : undefined,
+            };
+          })(),
           // 3a: THE BOTTOM LINE — three plain sentences, gate-enforced upstream
           bottom_line: {
             answer: String(rawSpec.bottom_line?.answer ?? "").slice(0, 400),
@@ -295,6 +338,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       } catch (e) {
         send({ type: "error", error: e instanceof Error ? e.message : "Report synthesis failed" });
       } finally {
+        clearInterval(pulse);
         controller.close();
       }
     },

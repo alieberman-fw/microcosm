@@ -321,12 +321,16 @@ async function synthesizeReport(simId) {
   if (!Array.isArray(spec?.sections) || spec.sections.some((s) => !s.answer)) problems.push("sections missing direct answers");
   // poll instrument: a crowd run must record WHAT the crowd was asked
   if ((spec?.sentiment?.length ?? 0) > 0 && !spec?.poll_question) problems.push("sentiment present but no poll_question");
+  // 3b: every fresh synthesis must pick a typed lead kind
+  if (!["decision", "key_finding", "price_range", "approval_odds"].includes(spec?.lead?.kind)) {
+    problems.push(`lead kind missing/invalid (${spec?.lead?.kind})`);
+  }
   if (problems.length) {
     failures.push({ mode: "report", problems });
     console.log(`✗ report     ${problems.join("; ")}`);
     return;
   }
-  console.log(`✓ report     verdict "${verdict}" · bottom line + ${spec.sections.length} direct answers${spec.poll_question ? ` · asked "${String(spec.poll_question).slice(0, 60)}…"` : ""}`);
+  console.log(`✓ report     verdict "${verdict}" · lead ${spec.lead.kind} · bottom line + ${spec.sections.length} direct answers${spec.poll_question ? ` · asked "${String(spec.poll_question).slice(0, 60)}…"` : ""}`);
 
   // the PLAIN ENGLISH toggle: translation generated, gated, and cached
   const pl = await app(`/api/reports/${reportId}/plain`, { method: "POST" });

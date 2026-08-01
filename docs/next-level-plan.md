@@ -134,7 +134,7 @@ and stays green.
 
 **What we're building, in plain terms** (the product view; technical detail under each):
 
-### 3a · Reports anyone can read — audit first, then rebuild  ⟵ IN PROGRESS
+### 3a · Reports anyone can read — audit first, then rebuild  ✅ SHIPPED (PR #54 + follow-ups: poll instrument, standalone SIMPLIFY page)
 
 Every report opens with a **bottom line** (the answer / what would change it / what to do
 next), every brief question gets a **direct answer up front** with reasoning below it, and
@@ -155,7 +155,7 @@ their briefs.
   re-synthesis so views cannot disagree; reports_update RLS, migration 0016); sentiment-
   by-round strip renders from the existing `spec.sentiment`.
 
-### 3b · Headlines that fit the question
+### 3b · Headlines that fit the question  ✅ SHIPPED (PR #56 — typed leads, INSIGHT bucket, synthesis heartbeat)
 
 The report lead matches the ask: **decision** (go / conditional / no-go / split — today's
 chip), **key finding** (the universal catch-all: any brief that isn't a decision/valuation/
@@ -166,7 +166,7 @@ Commitment is mandatory in every kind. Technical: typed `lead{kind,…}` beside 
 `brief.template`, per-kind lead visuals in ReportView, Reports tab + Home outcomes gain an
 insight bucket, gate checks kind-appropriate fields.
 
-### 3c · Runs you can walk away from
+### 3c · Runs you can walk away from  ⟵ NEXT
 
 Close the tab and the run keeps going server-side; any tab watches live. v1: decouple
 engine cancellation from stream disconnect; slices schedule their own successors

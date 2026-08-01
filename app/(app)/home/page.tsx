@@ -59,7 +59,7 @@ export default async function HomePage() {
     supabase!.rpc("activity_rollup", { p_days: 14 }),
     supabase!.from("simulations").select("created_at").gte("created_at", since30).limit(2000),
     supabase!.from("conversation_messages").select("created_at").gte("created_at", since30).limit(5000),
-    supabase!.from("reports").select("tone:spec->verdict->>tone").limit(500),
+    supabase!.from("reports").select("tone:spec->verdict->>tone, lead_kind:spec->lead->>kind").limit(500),
     supabase!.from("simulations").select("mode:config->run_result->>mode").limit(1000),
   ]);
 
@@ -123,10 +123,13 @@ export default async function HomePage() {
   const sims30 = series30(simDates as { created_at: string }[] | null);
   const msgs30 = series30(msgDates as { created_at: string }[] | null);
 
-  // outcomes: verdict tones across every report + which modes actually ran
+  // outcomes: verdict tones across every report + which modes actually ran.
+  // 3b: non-decision leads (key finding / price range / approval odds) bucket
+  // as INSIGHT — exclusive, so the stacked bar always sums to the report count
   const verdictMix: Record<string, number> = {};
-  for (const r of (toneRows ?? []) as { tone: string | null }[]) {
-    if (r.tone) verdictMix[r.tone] = (verdictMix[r.tone] ?? 0) + 1;
+  for (const r of (toneRows ?? []) as { tone: string | null; lead_kind?: string | null }[]) {
+    const bucket = r.lead_kind && r.lead_kind !== "decision" ? "insight" : r.tone;
+    if (bucket) verdictMix[bucket] = (verdictMix[bucket] ?? 0) + 1;
   }
   const modeCounts = new Map<string, number>();
   for (const r of (modeRows ?? []) as { mode: string | null }[]) {

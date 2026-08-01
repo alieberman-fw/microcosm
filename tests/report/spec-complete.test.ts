@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { plainSpecIncomplete, reportSpecIncomplete, synthBudgetFor } from "@/lib/report";
+import { fmtMoney, plainSpecIncomplete, reportSpecIncomplete, synthBudgetFor } from "@/lib/report";
 
 const complete = (): Record<string, unknown> => ({
   verdict: { label: "GO — WAIVER REQUIRED", tone: "conditional", headline: "Proceed at $34M with three conditions." },
@@ -33,6 +33,43 @@ const complete = (): Record<string, unknown> => ({
 describe("reportSpecIncomplete", () => {
   it("accepts a complete spec (empty dissents are legitimate — never gated)", () => {
     expect(reportSpecIncomplete(complete(), { questions: 2, criteria: 1 })).toBeNull();
+  });
+
+  it("3b lead: absent lead is fine (pre-3b back-compat); a bare decision lead is fine", () => {
+    const withDecision = complete();
+    withDecision.lead = { kind: "decision" };
+    expect(reportSpecIncomplete(withDecision, { questions: 2, criteria: 1 })).toBeNull();
+  });
+
+  it("3b lead: every kind must COMMIT — uncommitted leads are named failures", () => {
+    const badKind = complete(); badKind.lead = { kind: "vibes" };
+    expect(reportSpecIncomplete(badKind, { questions: 2, criteria: 1 })).toBe("invalid lead kind");
+
+    const noFinding = complete(); noFinding.lead = { kind: "key_finding", finding: "" };
+    expect(reportSpecIncomplete(noFinding, { questions: 2, criteria: 1 })).toBe("lead missing its key finding");
+
+    const invertedRange = complete(); invertedRange.lead = { kind: "price_range", low: 5_000_000, high: 4_000_000, basis: "comps" };
+    expect(reportSpecIncomplete(invertedRange, { questions: 2, criteria: 1 })).toBe("lead price range incomplete");
+
+    const noBasis = complete(); noBasis.lead = { kind: "price_range", low: 4_000_000, high: 5_000_000, basis: "" };
+    expect(reportSpecIncomplete(noBasis, { questions: 2, criteria: 1 })).toBe("lead price range missing its basis");
+
+    const wildOdds = complete(); wildOdds.lead = { kind: "approval_odds", odds: 140 };
+    expect(reportSpecIncomplete(wildOdds, { questions: 2, criteria: 1 })).toBe("lead odds incomplete");
+  });
+
+  it("3b lead: committed kinds pass", () => {
+    const range = complete();
+    range.lead = { kind: "price_range", currency: "$", low: 4_200_000, high: 4_600_000, point: 4_400_000, walk_away: { value: 5_100_000, label: "Walk away above $5.1M" }, basis: "sales comparison + residual land value" };
+    expect(reportSpecIncomplete(range, { questions: 2, criteria: 1 })).toBeNull();
+
+    const odds = complete();
+    odds.lead = { kind: "approval_odds", odds: 62, band: "likely", drivers: ["council math", "traffic study"] };
+    expect(reportSpecIncomplete(odds, { questions: 2, criteria: 1 })).toBeNull();
+
+    const finding = complete();
+    finding.lead = { kind: "key_finding", finding: "Rents fall 8-12% within a year of the rate shock.", so_what: "Delay the refinance." };
+    expect(reportSpecIncomplete(finding, { questions: 2, criteria: 1 })).toBeNull();
   });
 
   it("rejects the gutted-report shape from the field (findings/criteria/risks cut off)", () => {
@@ -103,6 +140,21 @@ describe("plainSpecIncomplete (the translation gate)", () => {
     expect(plainSpecIncomplete(short, 2)).toBe("covers 1/2 sections");
     const noBl = plain(); delete noBl.bottom_line;
     expect(plainSpecIncomplete(noBl, 2)).toBe("missing bottom line");
+  });
+});
+
+describe("fmtMoney (lead visuals)", () => {
+  it("compacts to K/M/B with trimmed decimals", () => {
+    expect(fmtMoney(4_200_000)).toBe("$4.2M");
+    expect(fmtMoney(4_000_000)).toBe("$4M");
+    expect(fmtMoney(410_000)).toBe("$410K");
+    expect(fmtMoney(1_250_000_000)).toBe("$1.3B");
+    expect(fmtMoney(950)).toBe("$950");
+  });
+
+  it("handles currency override and garbage", () => {
+    expect(fmtMoney(2_500_000, "€")).toBe("€2.5M");
+    expect(fmtMoney(NaN)).toBe("—");
   });
 });
 

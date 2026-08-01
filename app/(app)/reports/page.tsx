@@ -1,6 +1,15 @@
 import { createServerSupabase } from "@/lib/supabase/server";
-import { ReportSpec } from "@/lib/report";
+import { ReportSpec, fmtMoney } from "@/lib/report";
 import ReportsClient, { ReportRow } from "@/components/app/ReportsClient";
+
+/** 3b — the card chip for non-decision leads: the committed metric itself */
+function leadMetricOf(spec: ReportSpec): string | undefined {
+  const l = spec.lead;
+  if (!l || l.kind === "decision") return undefined;
+  if (l.kind === "price_range" && l.low && l.high) return `${fmtMoney(l.low, l.currency ?? "$")}–${fmtMoney(l.high, l.currency ?? "$")}`;
+  if (l.kind === "approval_odds" && typeof l.odds === "number") return `${Math.round(l.odds)}% ${l.band ? l.band.toUpperCase() : "ODDS"}`;
+  return "KEY FINDING";
+}
 
 export const metadata = { title: "Reports — Microcosm" };
 export const dynamic = "force-dynamic";
@@ -27,6 +36,8 @@ export default async function ReportsPage() {
       tone: spec.verdict.tone,
       label: spec.verdict.label,
       headline: spec.verdict.headline,
+      leadKind: spec.lead?.kind,
+      leadMetric: leadMetricOf(spec),
       problem: problemOf.get(r.sim_id as string) ?? "Untitled simulation",
       mode: spec.methodology.mode,
       posts: spec.methodology.posts,
