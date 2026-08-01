@@ -151,6 +151,8 @@ const VERDICT_ORDER: { key: string; label: string; color: string }[] = [
   { key: "conditional", label: "CONDITIONAL", color: "var(--warn)" },
   { key: "no-go", label: "NO-GO", color: "var(--warn)" },
   { key: "split", label: "SPLIT", color: "var(--t5)" },
+  // 3b — non-decision reports (key finding / price range / approval odds)
+  { key: "insight", label: "INSIGHT", color: "var(--t3)" },
 ];
 
 function SectionHead({ label, href, cta }: { label: string; href?: string; cta?: string }) {

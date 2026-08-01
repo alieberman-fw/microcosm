@@ -10,9 +10,36 @@ export const REPORT_VERSION = 1;
 
 export interface ReportCite { seq: number }
 
+/** 3b — the report lead matches the ASK. `decision` keeps today's verdict
+ *  chip; `key_finding` is the universal catch-all (any brief that isn't a
+ *  decision/valuation/hearing gets a committed most-important-conclusion
+ *  headline — nothing falls outside the system); `price_range` leads
+ *  valuations with a defended band + walk-away marker; `approval_odds`
+ *  leads hearings. Commitment is mandatory in every kind. */
+export type ReportLeadKind = "decision" | "key_finding" | "price_range" | "approval_odds";
+
+export interface ReportLead {
+  kind: ReportLeadKind;
+  /* key_finding */
+  finding?: string;                                   // the committed conclusion — a claim someone could disagree with
+  so_what?: string;                                   // one line: what to do with it
+  magnitude?: { label: string; value: string }[];     // up to 3 numbers that carry the finding
+  /* price_range */
+  currency?: string;                                  // assembly-set ("$")
+  low?: number; high?: number; point?: number;        // plain numbers; point = central estimate
+  walk_away?: { value: number; label: string };       // assembled from the draft's flat walk_away_value/label
+  basis?: string;                                     // the methods triangulated
+  /* approval_odds */
+  odds?: number;                                      // 0–100
+  band?: "likely" | "toss-up" | "unlikely";
+  drivers?: string[];                                 // 2–3 things that move the odds
+}
+
 export interface ReportSpec {
   version: number;
   verdict: { label: string; tone: "go" | "conditional" | "no-go" | "split"; headline: string };
+  /** the typed lead visual (3b) — absent on pre-3b reports, which render as `decision` */
+  lead?: ReportLead;
   /** three plain sentences a non-specialist reads first: the answer, the one
    *  thing that would change it, and what to do next (3a report overhaul) */
   bottom_line?: { answer: string; changes_it: string; next_step: string };
@@ -70,6 +97,23 @@ export function reportSpecIncomplete(
 ): string | null {
   const verdict = raw.verdict as { label?: unknown; headline?: unknown } | undefined;
   if (!verdict || typeof verdict.label !== "string" || verdict.label.trim().length === 0) return "missing verdict";
+  // 3b lead: when present, the kind-appropriate fields must be COMMITTED —
+  // a price_range without a range or odds without a number is a hedge
+  const lead = raw.lead as { kind?: unknown; finding?: unknown; low?: unknown; high?: unknown; basis?: unknown; odds?: unknown } | undefined;
+  if (lead) {
+    const kind = String(lead.kind ?? "");
+    if (!["decision", "key_finding", "price_range", "approval_odds"].includes(kind)) return "invalid lead kind";
+    if (kind === "key_finding" && (typeof lead.finding !== "string" || lead.finding.trim().length < 10)) return "lead missing its key finding";
+    if (kind === "price_range") {
+      const lo = Number(lead.low), hi = Number(lead.high);
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi < lo) return "lead price range incomplete";
+      if (typeof lead.basis !== "string" || lead.basis.trim().length === 0) return "lead price range missing its basis";
+    }
+    if (kind === "approval_odds") {
+      const odds = Number(lead.odds);
+      if (!Number.isFinite(odds) || odds < 0 || odds > 100) return "lead odds incomplete";
+    }
+  }
   const bl = raw.bottom_line as { answer?: unknown; changes_it?: unknown; next_step?: unknown } | undefined;
   if (!bl || [bl.answer, bl.changes_it, bl.next_step].some((x) => typeof x !== "string" || (x as string).trim().length === 0)) return "missing bottom line";
   if (typeof raw.executive_summary !== "string" || raw.executive_summary.trim().length < 40) return "missing executive summary";
@@ -105,7 +149,7 @@ export function synthBudgetFor(length: ReportLength): number {
 export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["verdict", "bottom_line", "executive_summary", "dimension_scores", "sections", "criteria", "risks", "dissents", "tripwires"],
+  required: ["verdict", "lead", "bottom_line", "executive_summary", "dimension_scores", "sections", "criteria", "risks", "dissents", "tripwires"],
   properties: {
     verdict: {
       type: "object", additionalProperties: false, required: ["label", "tone", "headline"],
@@ -113,6 +157,25 @@ export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
         label: { type: "string" },
         tone: { type: "string", enum: ["go", "conditional", "no-go", "split"] },
         headline: { type: "string" },
+      },
+    },
+    // FLAT by necessity: the structured-outputs API has a schema complexity
+    // budget and a nested lead blew it ("Schema is too complex"). band /
+    // currency / magnitude are COMPUTED at assembly, never asked of the model.
+    lead: {
+      type: "object", additionalProperties: false, required: ["kind"],
+      properties: {
+        kind: { type: "string", enum: ["decision", "key_finding", "price_range", "approval_odds"] },
+        finding: { type: "string" },
+        so_what: { type: "string" },
+        low: { type: "number" },
+        high: { type: "number" },
+        point: { type: "number" },
+        walk_away_value: { type: "number" },
+        walk_away_label: { type: "string" },
+        basis: { type: "string" },
+        odds: { type: "number" },
+        drivers: { type: "array", items: { type: "string" } },
       },
     },
     bottom_line: {
@@ -170,6 +233,7 @@ export function reportSynthSystem(length: ReportLength = "standard"): string {
     `You are given a research brief and the full transcript of a panel deliberation (posts numbered by [seq]). ` +
     `Compile the decision-grade report. Reply with ONLY a JSON object:\n` +
     `{"verdict": {"label": "THE ANSWER IN <=5 WORDS — 'GO'/'NO-GO' for feasibility briefs; NAME THE WINNING OPTION for choose-between briefs (e.g. 'INTERIOR FINISHES — NOT THE POOL')", "tone": "go|conditional|no-go|split", "headline": "one sentence — the answer, committed"},\n` +
+    ` "lead": {"kind": "decision|key_finding|price_range|approval_odds", ...},  // the report's LEAD VISUAL — pick the kind that matches what the brief ASKS (rules below)\n` +
     ` "bottom_line": {"answer": "ONE plain sentence answering the brief — no jargon, a CEO reads only this", "changes_it": "ONE plain sentence: the single thing most likely to change this answer", "next_step": "ONE plain sentence: what to do in the next two weeks"},\n` +
     ` "executive_summary": "4-6 sentences a decision-maker reads first — concrete, numbers included",\n` +
     ` "dimension_scores": [{"name": "...", "score": 0-10, "note": "one line"}],   // 4-6 dimensions THIS brief actually turns on\n` +
@@ -178,6 +242,11 @@ export function reportSynthSystem(length: ReportLength = "standard"): string {
     ` "risks": [{"risk": "...", "severity": "high|medium|low", "mitigation": "...", "watch_signal": "the observable that says it's happening"}],\n` +
     ` "dissents": [{"name": "...", "role": "...", "position": "one line", "quote": "VERBATIM sentence from their post", "seq": N}],\n` +
     ` "tripwires": ["what would change this answer", ...]}\n\n` +
+    `THE LEAD (the report's opening visual — its kind must match what the brief ASKS; a DECISION SHAPE HINT may be provided, but re-read the brief and trust the brief):\n` +
+    `- "decision" — go/no-go, choose-between, "should we": the verdict chip carries it; emit {"kind": "decision"} with no other fields.\n` +
+    `- "price_range" — "what is it worth", fair price, valuation briefs: {"kind": "price_range", "low": N, "high": N, "point": N, "walk_away_value": N, "walk_away_label": "WALK AWAY ABOVE $X", "basis": "the methods triangulated (sales comparison, residual land value, income cap)"}. Numbers are PLAIN NUMBERS in dollars (4200000, never "4.2M"). Commit to the range the transcript defends.\n` +
+    `- "approval_odds" — rezonings, entitlements, hearings, "will the council/neighbors allow it": {"kind": "approval_odds", "odds": 0-100, "drivers": ["the 2-3 things that move the odds"]}. Commit to a number — 50 is a finding only when the transcript is genuinely split.\n` +
+    `- "key_finding" — EVERYTHING ELSE (market simulations, "what happens if", diagnostics, open research): {"kind": "key_finding", "finding": "the single most important conclusion, committed — a claim someone could disagree with", "so_what": "one line: what to do with it"}. Never generic ("the market is complex" is a failure).\n` +
     `Non-negotiable rules:\n` +
     `- COMMIT TO AN ANSWER. The user ran this simulation to resolve a hard question, and hedging is a product failure. When the brief or success criteria ask for a definitive recommendation ("which option", "tell me whether", "a definitive answer"), the verdict label and headline MUST pick one — use tone "go" for the chosen path (or "no-go" when the answer is don't). Execution caveats belong in risks and tripwires, never in the verdict.\n` +
     `- "conditional" tone is reserved for a SPECIFIC, NAMED blocking unknown (a missing study, an unresolved approval) that genuinely prevents choosing — name the blocker in the headline and list what resolves it in tripwires. Never use conditional as a hedge on a resolvable question.\n` +
@@ -270,3 +339,28 @@ export const VERDICT_STYLE: Record<ReportSpec["verdict"]["tone"], { color: strin
   "no-go": { color: "var(--warn)", bg: "var(--warn-dim)" },
   split: { color: "var(--t3)", bg: "var(--sf2)" },
 };
+
+/** chip label per lead kind (decision uses the verdict's own label) */
+export const LEAD_KIND_LABEL: Record<ReportLeadKind, string> = {
+  decision: "DECISION",
+  key_finding: "KEY FINDING",
+  price_range: "PRICE RANGE",
+  approval_odds: "APPROVAL ODDS",
+};
+
+/** compact money formatting for lead visuals — $4.2M / $410K / $950.
+ *  Exported pure for tests; unit suffixes ("/SF") are the caller's job. */
+export function fmtMoney(n: number, currency = "$"): string {
+  if (!Number.isFinite(n)) return "—";
+  const abs = Math.abs(n);
+  // one decimal while the compact value is 1-2 digits ($4.2M), none at 3 ($410K)
+  const compact = (div: number, suffix: string) => {
+    const v = n / div;
+    const s = Math.abs(v) >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10);
+    return `${currency}${s}${suffix}`;
+  };
+  if (abs >= 1e9) return compact(1e9, "B");
+  if (abs >= 1e6) return compact(1e6, "M");
+  if (abs >= 1e3) return compact(1e3, "K");
+  return `${currency}${Math.round(n).toLocaleString()}`;
+}
