@@ -28,11 +28,12 @@ export class FakeClock {
 
 /* ---------------------------- call classification ------------------------ */
 
-export type CallKind = "turn" | "poll" | "pollq" | "router" | "judge" | "burst" | "votes" | "unknown";
+export type CallKind = "turn" | "poll" | "pollx" | "pollq" | "router" | "judge" | "burst" | "votes" | "unknown";
 
 export function classify(system: string): CallKind {
   if (system.includes("Forum rules")) return "turn";
   if (system.includes("neutral poll question")) return "pollq";
+  if (system.includes("preference poll")) return "pollx";
   if (system.includes("sentiment poll")) return "poll";
   if (system.includes("interjecting")) return "burst";
   if (system.includes("casting votes")) return "votes";
@@ -91,6 +92,13 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
       text = JSON.stringify(names.map((name, i) => ({
         name, stance: ["support", "conditional", "oppose", "disengaged"][i % 4], quote: `as ${name} says`,
       })));
+    } else if (kind === "pollx") {
+      // choice instrument: members pick the offered choices round-robin
+      const options = [...system.matchAll(/^- "([^"]+)"$/gm)].map((m) => m[1]);
+      const names = user.split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).split(":")[0]);
+      text = JSON.stringify(names.map((name, i) => ({
+        name, choice: options[i % Math.max(options.length, 1)] ?? "undecided", quote: `as ${name} picks`,
+      })));
     } else if (kind === "burst") {
       // every listed member reacts to the FIRST post of the round
       const seqs = user.split("\n").map((l) => l.match(/^(\d+) · /)).filter(Boolean).map((m) => Number(m![1]));
@@ -105,7 +113,7 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
         votes: [{ seq: seqs[0], vote: "up" }, ...(seqs.length > 1 ? [{ seq: seqs[1], vote: "down" }] : [])],
       })));
     } else if (kind === "pollq") {
-      text = "Should the town let the project go ahead?";
+      text = `{"question": "Should the town let the project go ahead?", "options": []}`;
     } else if (kind === "router") {
       // pick the second panelist listed (never the last author by construction)
       const m = system.match(/Panel: ([^;]+); ([^ ]+ [^ ]+?) \(/);
@@ -227,6 +235,8 @@ export function makeHarness(args: {
   clock?: FakeClock;
   /** 3d — enabled tool keys for the run under test */
   tools?: string[];
+  /** PR-B — choice instrument options (empty = classic stance poll) */
+  pollOptions?: string[];
 }): Harness {
   const clock = args.clock ?? new FakeClock();
   const { client, calls } = makeFakeAnthropic(clock, args.fake ?? {});
@@ -242,6 +252,7 @@ export function makeHarness(args: {
     leads: args.leads,
     crowd: args.crowd ?? [],
     pollQuestion: "Should the builder spend the leftover budget on the pool?",
+    pollOptions: args.pollOptions ?? [],
     tools: args.tools ?? [],
     pulledFacts: [],
     corpusBlocks: [],

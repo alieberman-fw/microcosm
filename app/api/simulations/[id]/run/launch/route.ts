@@ -5,7 +5,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { FrozenSpec } from "@/lib/casting";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
-import { derivePollQuestion } from "@/lib/engine";
+import { derivePollInstrument } from "@/lib/engine";
 import { executeSlice } from "@/lib/run-worker";
 import { RunState, heartbeatFresh } from "@/lib/walkaway";
 
@@ -68,10 +68,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await supabase.from("post_votes").delete().eq("sim_id", id);
   }
 
-  // ---- the poll question: derived ONCE per simulation (persisted in config so
-  // every round, resume slice, and the report ask the crowd the same thing) ----
+  // ---- the poll instrument: derived ONCE per simulation (persisted in config
+  // so every round, resume slice, and the report ask the crowd the same thing).
+  // Choose-between briefs poll the brief's actual alternatives; everything
+  // else gets the classic stance poll (options stays empty). ----
   if (!config.poll_question && crowdCount > 0) {
-    const pollQuestion = await derivePollQuestion(
+    const instrument = await derivePollInstrument(
       new Anthropic(), TIER_MODELS[cfg.tier].crowd, brief.problem!,
       async (surface, model, usage, t0, error) => {
         await supabase.from("agent_interactions").insert({
@@ -81,7 +83,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         });
       },
     );
-    config.poll_question = pollQuestion;
+    config.poll_question = instrument.question;
+    if (instrument.options.length) config.poll_options = instrument.options;
   }
 
   const workerNonce = Math.random().toString(36).slice(2, 10);

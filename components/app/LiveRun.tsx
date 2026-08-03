@@ -58,6 +58,21 @@ export interface LiveSentiment {
   dist: Record<string, number>;
   quotes: { name: string; stance: string; quote: string }[];
   question?: string; // what the crowd was asked (engine-derived from the brief; older runs pre-date it)
+  options?: string[]; // choice instrument (PR-B): the alternatives on offer; absent = classic stance poll
+}
+
+/** poll bar colors: classic keeps its stance semantics (support=accent,
+ *  oppose=warn); choice instruments cycle a distinguishable palette */
+const CLASSIC_STANCES = ["support", "conditional", "oppose", "disengaged"] as const;
+const classicColor = (i: number) => (i === 0 ? "var(--acc)" : i === 1 ? "var(--t5)" : i === 2 ? "var(--warn)" : "var(--ln5)");
+const CHOICE_PALETTE = ["var(--acc)", "var(--warn)", "var(--t5)", "var(--ln7)", "var(--ln4)"];
+function pollKeys(s: LiveSentiment): { key: string; color: string }[] {
+  if (s.options?.length) {
+    const keys = s.options.map((o, i) => ({ key: o, color: CHOICE_PALETTE[i % CHOICE_PALETTE.length] }));
+    if ((s.dist.undecided ?? 0) > 0) keys.push({ key: "undecided", color: "var(--ln5)" });
+    return keys;
+  }
+  return CLASSIC_STANCES.map((k, i) => ({ key: k, color: classicColor(i) }));
 }
 
 export interface LiveVote {
@@ -1089,18 +1104,18 @@ export default function LiveRun({
                       </div>
                     )}
                     <div style={{ display: "flex", gap: 4, height: 8, borderRadius: 100, overflow: "hidden", marginTop: 8 }}>
-                      {(["support", "conditional", "oppose", "disengaged"] as const).map((k, i2) => (
-                        <span key={k} title={`${k} ${it.s.dist[k] ?? 0}`} style={{ width: `${((it.s.dist[k] ?? 0) / total) * 100}%`, background: i2 === 0 ? "var(--acc)" : i2 === 1 ? "var(--t5)" : i2 === 2 ? "var(--warn)" : "var(--ln5)" }} />
+                      {pollKeys(it.s).map(({ key: k, color }) => (
+                        <span key={k} title={`${k} ${it.s.dist[k] ?? 0}`} style={{ width: `${((it.s.dist[k] ?? 0) / total) * 100}%`, background: color }} />
                       ))}
                     </div>
                     <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginTop: 6 }}>
-                      {(["support", "conditional", "oppose", "disengaged"] as const).map((k) => `${Math.round(((it.s.dist[k] ?? 0) / total) * 100)}% ${k.toUpperCase()}`).join(" · ")}
+                      {pollKeys(it.s).map(({ key: k }) => `${Math.round(((it.s.dist[k] ?? 0) / total) * 100)}% ${k.toUpperCase()}`).join(" · ")}
                     </div>
                     {open && (
                       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                         {it.s.quotes.map((qt, qi) => (
                           <div key={qi} style={{ fontSize: 12, lineHeight: 1.55, color: "var(--t4)" }}>
-                            <span style={{ ...mono, fontSize: 8.5, color: qt.stance === "oppose" ? "var(--warn)" : "var(--acc)" }}>{qt.stance.toUpperCase()} · </span>
+                            <span style={{ ...mono, fontSize: 8.5, color: qt.stance === "oppose" ? "var(--warn)" : qt.stance === "undecided" || qt.stance === "disengaged" ? "var(--t6)" : "var(--acc)" }}>{qt.stance.toUpperCase()} · </span>
                             “{qt.quote}” <span style={{ color: "var(--t6)" }}>— {qt.name}</span>
                           </div>
                         ))}

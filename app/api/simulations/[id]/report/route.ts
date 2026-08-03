@@ -6,6 +6,7 @@ import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
 import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, synthBudgetFor, verifierSystem } from "@/lib/report";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { normalizeEnabledTools } from "@/lib/tools";
+import { synthTicker } from "@/lib/synth-progress";
 
 export const maxDuration = 800; // the synthesis ladder may run a dense Opus pass more than once
 
@@ -51,8 +52,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     return { round: p.round, polled: p.polled, dist: p.dist };
   });
   // what the crowd was actually asked — from the newest poll event that carried
-  // it (constant per sim; older runs pre-date the field and show no question)
+  // it (constant per sim; older runs pre-date the field and show no question).
+  // Choice instruments (PR-B) also carry the option list the crowd chose among.
   const pollQuestion = (sentimentRows ?? []).map((e) => (e.payload as { question?: string }).question).filter(Boolean).pop() ?? null;
+  const pollOptions = (sentimentRows ?? []).map((e) => (e.payload as { options?: string[] }).options).filter((o) => Array.isArray(o) && o.length).pop() ?? null;
 
   // 3d — the searches the panel ran: synthesis input + the WEB SOURCES appendix
   const { data: toolRows } = await supabase.from("tool_runs")
@@ -107,7 +110,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     (brief.template ? `DECISION SHAPE HINT: ${brief.template}\n` : "") +
     (questions.length ? `QUESTIONS TO RESOLVE (one report section EACH, in order):\n${questions.map((q) => `- ${q.label}${q.detail ? ` — ${q.detail}` : ""}`).join("\n")}\n` : "") +
     (success.length ? `SUCCESS CRITERIA (the report is held to every one):\n${success.map((x) => `- ${x}`).join("\n")}\n` : "") +
-    (sentiments.length ? `CROWD SENTIMENT BY ROUND${pollQuestion ? ` (the crowd was asked: "${pollQuestion}")` : ""}:\n${sentiments.map((x) => `- round ${x.round}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
+    (sentiments.length ? `CROWD SENTIMENT BY ROUND${pollQuestion ? ` (the crowd was asked: "${pollQuestion}")` : ""}${pollOptions ? ` (a preference poll — the crowd chose among: ${pollOptions.join(" · ")})` : ""}:\n${sentiments.map((x) => `- round ${x.round}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
     (toolFindings.length ? `TOOL FINDINGS (live web searches the panel ran — citable as "source: web", URLs are real):\n${toolFindings.map((f) => `- [${f.agent}] searched "${f.query}" → ${f.results.slice(0, 3).map((x) => `${x.title} <${x.url}>`).join(" · ") || "no results"}`).join("\n")}\n` : "") +
     ((docs?.length ?? 0) > 0 ? `UPLOADED MATERIALS (exact filenames — usable in "media" when the decision turned on one):\n${docs!.map((d) => `- ${d.name} (${(d.mime ?? "").startsWith("image/") ? "image" : "document"})`).join("\n")}\n` : "") +
     voteText;
@@ -173,13 +176,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               // prose-wrapped response killed a live synthesis ("unparseable")
               output_config: { format: { type: "json_schema", schema: REPORT_JSON_SCHEMA } },
             });
-            let written = 0;
+            // the ticker (PR-B): the draft streams schema-shaped JSON, so the
+            // buffer itself says where the director is — "✓ SUMMARY · WRITING
+            // FINDINGS 3/6" beats a bare word count
+            let buf = "";
             let lastNote = Date.now();
             ms.on("text", (t) => {
-              written += t.length;
+              buf += t;
               if (Date.now() - lastNote > 2000) {
                 lastNote = Date.now();
-                send({ type: "stage", value: "compile", note: `COMPILING… ~${Math.round(written / 6).toLocaleString()} WORDS DRAFTED${attempt > 0 ? ` · PASS ${attempt + 1}` : ""}` });
+                const tick = synthTicker(buf, { expectedSections: Math.min(questions.length, 8) || undefined, elapsedMs: Date.now() - t0 });
+                send({ type: "stage", value: "compile", note: `${tick ?? `COMPILING… ~${Math.round(buf.length / 6).toLocaleString()} WORDS DRAFTED`}${attempt > 0 ? ` · PASS ${attempt + 1}` : ""}` });
               }
             });
             const res = await ms.finalMessage();
@@ -323,6 +330,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           tripwires: (Array.isArray(rawSpec.tripwires) ? rawSpec.tripwires : []).slice(0, 8).map((t) => String(t).slice(0, 220)),
           sentiment: sentiments,
           poll_question: pollQuestion ? String(pollQuestion).slice(0, 240) : undefined,
+          poll_options: pollOptions ?? undefined,
           tool_calls: toolFindings.length || undefined,
           web_sources: webSources.length ? webSources : undefined,
           // PR-A: media picks resolve against REAL uploads only (unknown names drop)

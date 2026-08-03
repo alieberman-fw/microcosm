@@ -55,6 +55,7 @@ export interface ReportSpec {
   tripwires: string[];
   sentiment?: { round: number; polled: number; dist: Record<string, number> }[];
   poll_question?: string; // the one proposition every crowd poll asked (engine-derived from the brief)
+  poll_options?: string[]; // choice instrument (PR-B): the alternatives the crowd chose among; absent = classic stance poll
   /** 3d — tool usage frozen with the report: how many calls, and the deduped
    *  web sources the panel actually used (the traceability appendix) */
   tool_calls?: number;

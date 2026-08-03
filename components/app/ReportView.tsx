@@ -23,19 +23,35 @@ const label: CSSProperties = { ...mono, fontSize: 10, letterSpacing: ".12em", co
 
 /** one instrument, two vocabularies: expert labels for the full report,
  *  everyday labels for the simplified read */
-const STANCES: { key: string; label: string; plain: string; color: string }[] = [
+type Stance = { key: string; label: string; plain: string; color: string };
+const STANCES: Stance[] = [
   { key: "support", label: "SUPPORT", plain: "WOULD SAY YES", color: "var(--acc)" },
   { key: "conditional", label: "CONDITIONAL", plain: "YES, IF CONCERNS ARE MET", color: "var(--t5)" },
   { key: "oppose", label: "OPPOSE", plain: "WOULD SAY NO", color: "var(--warn)" },
   { key: "disengaged", label: "DISENGAGED", plain: "NOT AFFECTED / NO OPINION", color: "var(--ln6)" },
 ];
 
+/** choice instruments (PR-B) swap the four stances for the brief's actual
+ *  alternatives — "which photo leads the listing?" tallies green.png vs
+ *  red.png, not support vs oppose. Undecideds show only when they exist. */
+const CHOICE_PALETTE = ["var(--acc)", "var(--warn)", "var(--t5)", "var(--ln7)", "var(--ln4)"];
+function instrumentOf(spec: Pick<ReportSpec, "poll_options" | "sentiment">): Stance[] {
+  if (!spec.poll_options?.length) return STANCES;
+  const rows: Stance[] = spec.poll_options.map((o, i) => ({
+    key: o, label: o.toUpperCase(), plain: o, color: CHOICE_PALETTE[i % CHOICE_PALETTE.length],
+  }));
+  if ((spec.sentiment ?? []).some((s) => (s.dist.undecided ?? 0) > 0)) {
+    rows.push({ key: "undecided", label: "UNDECIDED", plain: "COULDN'T PICK ONE", color: "var(--ln6)" });
+  }
+  return rows;
+}
+
 const totalOf = (d: Record<string, number>) => Math.max(Object.values(d).reduce((a, b) => a + b, 0), 1);
 const pctOf = (d: Record<string, number>, k: string) => Math.round(((d[k] ?? 0) / totalOf(d)) * 100);
 
 /** one slider, one set of bars: scrub through the rounds and watch the crowd
  *  move — with an expandable table of the percentages over time */
-function SentimentSlider({ sentiment, question }: { sentiment: NonNullable<ReportSpec["sentiment"]>; question?: string }) {
+function SentimentSlider({ sentiment, question, stances = STANCES }: { sentiment: NonNullable<ReportSpec["sentiment"]>; question?: string; stances?: Stance[] }) {
   const [idx, setIdx] = useState(sentiment.length - 1); // land on the final round
   const [tableOpen, setTableOpen] = useState(false);
   const s = sentiment[idx];
@@ -49,7 +65,7 @@ function SentimentSlider({ sentiment, question }: { sentiment: NonNullable<Repor
         </div>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {STANCES.map(({ key, label: sl, color }) => {
+        {stances.map(({ key, label: sl, color }) => {
           const p = pctOf(s.dist, key);
           const delta = prev ? p - pctOf(prev.dist, key) : 0;
           return (
@@ -98,7 +114,7 @@ function SentimentSlider({ sentiment, question }: { sentiment: NonNullable<Repor
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {["ROUND", ...STANCES.map((x) => x.label), "POLLED"].map((h) => (
+                {["ROUND", ...stances.map((x) => x.label), "POLLED"].map((h) => (
                   <th key={h} style={{ ...mono, fontSize: 8, letterSpacing: ".08em", color: "var(--t6)", textAlign: "left", padding: "6px 10px", borderBottom: "1px solid var(--ln3)" }}>{h}</th>
                 ))}
               </tr>
@@ -108,7 +124,7 @@ function SentimentSlider({ sentiment, question }: { sentiment: NonNullable<Repor
                 <tr key={row.round} style={ri === idx ? { background: "var(--acc-dim)" } : undefined}
                   onClick={() => setIdx(ri)} className="rowGo">
                   <td style={{ ...mono, fontSize: 10, padding: "7px 10px", borderBottom: "1px solid var(--ln1)", color: "var(--t2)", cursor: "pointer" }}>R{row.round}</td>
-                  {STANCES.map(({ key }) => (
+                  {stances.map(({ key }) => (
                     <td key={key} style={{ ...mono, fontSize: 10, padding: "7px 10px", borderBottom: "1px solid var(--ln1)", color: "var(--t4)", cursor: "pointer" }}>{pctOf(row.dist, key)}%</td>
                   ))}
                   <td style={{ ...mono, fontSize: 10, padding: "7px 10px", borderBottom: "1px solid var(--ln1)", color: "var(--t6)" }}>{row.polled}</td>
@@ -350,7 +366,7 @@ function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
               </p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {STANCES.map(({ key, plain: pl, color }) => {
+              {instrumentOf(spec).map(({ key, plain: pl, color }) => {
                 const p = pctOf(finalPoll.dist, key);
                 return (
                   <div key={key}>
@@ -707,7 +723,7 @@ export default function ReportView({
           {(spec.sentiment?.length ?? 0) >= 2 && (
             <div style={{ marginTop: 34 }}>
               <div style={label}>CROWD SENTIMENT · SCRUB THE ROUNDS</div>
-              <SentimentSlider sentiment={spec.sentiment!} question={spec.poll_question} />
+              <SentimentSlider sentiment={spec.sentiment!} question={spec.poll_question} stances={instrumentOf(spec)} />
             </div>
           )}
 
