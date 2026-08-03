@@ -474,6 +474,9 @@ export default function ReportView({
     ...(spec.verification
       ? [{ label: "CLAIMS CHECKED", value: String(spec.verification.checks), sub: `${spec.verification.contradicted} CONTRADICTED` }]
       : []),
+    ...(spec.tool_calls
+      ? [{ label: "TOOL CALLS", value: String(spec.tool_calls), sub: `WEB RESEARCH · ${spec.web_sources?.length ?? 0} SOURCES` }]
+      : []),
     {
       label: "HOW IT ENDED",
       value: m.converged ? "CONVERGED" : m.stop === "choreography" ? "PHASES DONE" : m.stop === "budget" ? "BUDGET CAP" : m.stop === "rounds" ? "ALL ROUNDS" : m.stop === "stopped" ? "STOPPED" : "OPEN",
@@ -758,11 +761,32 @@ export default function ReportView({
             </div>
           )}
 
+          {/* 3d — web sources: the deduped URLs the panel actually pulled */}
+          {(spec.web_sources?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 36 }}>
+              <div style={label}>WEB SOURCES · WHAT THE PANEL PULLED FROM THE LIVE WEB</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12, maxWidth: 860 }}>
+                {spec.web_sources!.map((s, i) => (
+                  <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+                    style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "7px 0", borderBottom: "1px solid var(--ln1)", textDecoration: "none", minWidth: 0 }}>
+                    <span style={{ ...mono, fontSize: 8, color: "var(--acc)", flex: "none" }}>↗</span>
+                    <span style={{ fontSize: 12.5, color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title}</span>
+                    <span style={{ ...mono, fontSize: 8, letterSpacing: ".03em", color: "var(--t7)", flex: "none" }}>
+                      {(() => { try { return new URL(s.url).hostname.replace(/^www\./, "").toUpperCase(); } catch { return ""; } })()}
+                      {s.uses > 1 ? ` · ×${s.uses}` : ""}
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* methodology & limitations */}
           <div style={{ marginTop: 40, padding: "18px 22px", border: "1px solid var(--ln2)", borderRadius: 14, background: "var(--sf2)" }}>
             <div style={label}>METHODOLOGY & LIMITATIONS</div>
             <p style={{ margin: "10px 0 0", fontSize: 12, lineHeight: 1.7, color: "var(--t5)" }}>
               {m.mode} deliberation · {m.leads} leads + {m.crowd} crowd · {m.rounds} round cap · {m.posts} posts · {m.polls} member-polls · {m.tier} tier ({m.models.join(", ")}) ·
+              {(m.tools?.length ?? 0) > 0 ? ` tools enabled: ${m.tools!.join(", ")} (${spec.tool_calls ?? 0} calls) · ` : " no agent tools enabled · "}
               {m.docs.length ? ` grounded in: ${m.docs.join(", ")} · ` : " no documents attached · "}
               generated {new Date(m.generated_at).toLocaleString()}
             </p>

@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { compilePersonaPrompt, LIBRARY_PERSONAS, PersonaSpec } from "@/lib/personas";
 import { CHAT_MODEL_IDS, DEFAULT_CHAT_MODEL } from "@/lib/chat-models";
+import { normalizeEnabledTools, toolBlocksFor, toolPromptAddendum } from "@/lib/tools";
 
 /**
  * Conversations: persistent 1:1 and group chats with personas (CLAUDE.md §3.4).
@@ -69,6 +70,8 @@ export async function POST(request: Request) {
     content?: string;
     attachments?: Attachment[];
     modelOverrides?: Record<string, string>;
+    /** 3d — per-participant tool access (same menu as the model tier) */
+    toolOverrides?: Record<string, string[]>;
     /** persona keys the user explicitly picked in the @mention typeahead —
      * disambiguates two participants who share a display name */
     mentionKeys?: string[];
@@ -97,17 +100,24 @@ export async function POST(request: Request) {
   for (const [k, v] of Object.entries(body.modelOverrides ?? {})) {
     if (typeof v === "string" && CHAT_MODEL_IDS.includes(v)) requestOverrides[k] = v;
   }
+  // 3d — per-participant tool access (same menu as the model tier)
+  const requestTools: Record<string, string[]> = {};
+  for (const [k, v] of Object.entries(body.toolOverrides ?? {})) {
+    if (Array.isArray(v)) requestTools[k] = normalizeEnabledTools(v);
+  }
 
   // load or create the conversation
   let convId = body.conversationId ?? null;
   let participantKeys: string[];
   let storedOverrides: Record<string, string> = {};
+  let storedTools: Record<string, string[]> = {};
   if (convId) {
     const { data: conv } = await supabase
-      .from("conversations").select("id, participant_keys, model_overrides").eq("id", convId).single();
+      .from("conversations").select("id, participant_keys, model_overrides, tool_overrides").eq("id", convId).single();
     if (!conv) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
     participantKeys = conv.participant_keys as string[];
     storedOverrides = (conv.model_overrides ?? {}) as Record<string, string>;
+    storedTools = (conv.tool_overrides ?? {}) as Record<string, string[]>;
   } else {
     participantKeys = (body.personaKeys ?? []).slice(0, MAX_PARTICIPANTS);
     if (participantKeys.length === 0) {
@@ -134,13 +144,14 @@ export async function POST(request: Request) {
   }
 
   const modelByKey = { ...storedOverrides, ...requestOverrides };
+  const toolsByKey = { ...storedTools, ...requestTools };
 
   if (!convId) {
     const names = participants.map((p) => p.name.split(/\s+/)[0]);
     const title = names.length > 4 ? `${names.slice(0, 3).join(", ")} +${names.length - 3}` : names.join(", ");
     const { data: created, error } = await supabase
       .from("conversations")
-      .insert({ org_id: orgId, created_by: user.id, title, participant_keys: participantKeys, model_overrides: modelByKey })
+      .insert({ org_id: orgId, created_by: user.id, title, participant_keys: participantKeys, model_overrides: modelByKey, tool_overrides: toolsByKey })
       .select("id").single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     convId = created.id as string;
@@ -276,13 +287,16 @@ export async function POST(request: Request) {
         // per-participant tier (§6.4): thread-level override wins, else the
         // lightweight default — the UI toggle is the only way to spend more
         const model = modelByKey[p.key] ?? DEFAULT_REPLY_MODEL;
+        // 3d — per-participant tools: same menu as the tier; agent-decided use
+        const ptools = normalizeEnabledTools(toolsByKey[p.key] ?? []);
+        const pToolBlocks = toolBlocksFor(ptools, model);
         try {
           const resp = await anthropic.messages.create({
             model,
             // per-participant tiers reach Sonnet 5/Opus 4.8, whose adaptive
             // thinking bills against this ceiling — prose-sized caps starve it
             max_tokens: 2400,
-            system: compilePersonaPrompt(p) + groupNote + attNote,
+            system: compilePersonaPrompt(p) + groupNote + attNote + toolPromptAddendum(ptools),
             messages: [{
               role: "user",
               content: [
@@ -290,14 +304,37 @@ export async function POST(request: Request) {
                 { type: "text" as const, text: `Conversation transcript:\n\n${renderTranscript(rolling, labelFor)}\n\n---\nReply now as ${displayName(p)}. Do not prefix your reply with your name.` },
               ],
             }],
+            ...(pToolBlocks.length ? { tools: pToolBlocks as never } : {}),
           });
-          const text = resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
+          // walk the blocks: prose + any server-side searches this reply ran
+          // (a failed search is result content the model handled — fail soft)
+          let text = "";
+          const searches: { query: string; results: { title: string; url: string }[] }[] = [];
+          const sources: { title: string; url: string }[] = [];
+          let pendingQuery: string | null = null;
+          for (const b of resp.content) {
+            const blk = b as unknown as { type: string; name?: string; input?: { query?: string }; content?: unknown; text?: string; citations?: { url?: string; title?: string }[] };
+            if (blk.type === "server_tool_use" && blk.name === "web_search") pendingQuery = String(blk.input?.query ?? "");
+            else if (blk.type === "web_search_tool_result") {
+              const rows = Array.isArray(blk.content) ? (blk.content as { type?: string; url?: string; title?: string }[]) : [];
+              const results = rows.filter((r) => r.type === "web_search_result" && r.url).slice(0, 4)
+                .map((r) => ({ title: String(r.title ?? r.url).slice(0, 120), url: String(r.url) }));
+              if (pendingQuery !== null) { searches.push({ query: pendingQuery.slice(0, 200), results }); pendingQuery = null; }
+            } else if (blk.type === "text") {
+              text += blk.text ?? "";
+              for (const c of blk.citations ?? []) {
+                if (c.url && !sources.some((s) => s.url === c.url)) sources.push({ title: String(c.title ?? c.url).slice(0, 120), url: String(c.url) });
+              }
+            }
+          }
+          text = text.trim();
+          const meta = searches.length || sources.length ? { searches, sources } : null;
           rolling.push({ role: "agent", agent_key: p.key, agent_name: p.name, content: text });
           await supabase.from("conversation_messages").insert({
-            conversation_id: convId, role: "agent", agent_key: p.key, agent_name: p.name, content: text,
+            conversation_id: convId, role: "agent", agent_key: p.key, agent_name: p.name, content: text, meta,
           });
           await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model, input_tokens: resp.usage.input_tokens, output_tokens: resp.usage.output_tokens, latency_ms: Date.now() - t0 });
-          emit({ type: "reply", agentKey: p.key, name: p.name, initials: p.initials, content: text });
+          emit({ type: "reply", agentKey: p.key, name: p.name, initials: p.initials, content: text, meta });
         } catch (e) {
           const msg = e instanceof Error ? e.message : "Model call failed";
           await logInteraction({ surface: "conversation.reply", agent_key: p.key, agent_name: p.name, model, latency_ms: Date.now() - t0, status: "error", error: msg });
@@ -306,7 +343,7 @@ export async function POST(request: Request) {
         }
       }
 
-      await supabase.from("conversations").update({ updated_at: new Date().toISOString(), model_overrides: modelByKey }).eq("id", convId);
+      await supabase.from("conversations").update({ updated_at: new Date().toISOString(), model_overrides: modelByKey, tool_overrides: toolsByKey }).eq("id", convId);
       emit({ type: "done", conversationId: convId });
       controller.close();
     },

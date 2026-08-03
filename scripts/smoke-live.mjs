@@ -34,6 +34,7 @@ const ONLY = argOf("--modes", "").split(",").map((s) => s.trim()).filter(Boolean
 const KEEP = args.includes("--keep");        // skip cleanup + print the session (manual UI verification)
 const SKIP_FORUM = args.includes("--no-forum"); // matrix only
 const SKIP_WALKAWAY = args.includes("--no-walkaway"); // 3c detach + stop checks
+const SKIP_TOOLS = args.includes("--no-tools");       // 3d web-research check
 
 const env = {};
 for (const line of readFileSync(new URL("../.env.local", import.meta.url), "utf8").split("\n")) {
@@ -161,7 +162,7 @@ async function runOne(mode, personas) {
 
   // launch + follow continuations. A chained handoff (3c) means the server
   // took over — stop driving, tail the database like a closed tab would.
-  let posts = 0, stop = null, pollRounds = new Set(), errored = null, finished = false, chainedOff = false;
+  let posts = 0, stop = null, pollRounds = new Set(), errored = null, finished = false, chainedOff = false, toolEvents = 0;
   for (let slice = 0; slice < 6 && !finished && !errored && !chainedOff; slice++) {
     const res = await app(`/api/simulations/${simId}/run/launch`, { method: "POST", body: JSON.stringify(slice ? { continue: true } : {}) });
     if (!res.ok) throw new Error(`launch failed: ${res.status} ${await res.text()}`);
@@ -180,6 +181,7 @@ async function runOne(mode, personas) {
         const e = JSON.parse(line);
         if (e.type === "post") posts += 1;
         else if (e.type === "sentiment") pollRounds.add(e.round);
+        else if (e.type === "tool") toolEvents += 1;
         else if (e.type === "stage" && (e.value === "done" || e.value === "converged")) stop = e.detail ?? null;
         else if (e.type === "finished") finished = true;
         else if (e.type === "continue") { wantsContinue = true; if (e.chained) chainedOff = true; }
@@ -213,6 +215,8 @@ async function runOne(mode, personas) {
   if (posts < exp.postsMin || posts > exp.postsMax) problems.push(`posts ${posts} (want ${exp.postsMin}–${exp.postsMax})`);
   if (stop !== exp.stop) problems.push(`stop "${stop}" (want "${exp.stop}")`);
   if (JSON.stringify(polls) !== JSON.stringify(exp.polls)) problems.push(`polls [${polls}] (want [${exp.polls}])`);
+  // 3d — default OFF is a contract: an un-configured run must never touch a tool
+  if (toolEvents > 0) problems.push(`tool events ${toolEvents} on a default run (tools are OFF by default)`);
   const secs = Math.round((Date.now() - t0) / 1000);
   if (problems.length) {
     failures.push({ mode, problems });
@@ -420,6 +424,86 @@ async function walkAwayCheck(personas) {
   return simId;
 }
 
+/** 3d — agent tools: a run with web research ENABLED on a current-facts brief
+ *  must produce at least one search that lands in the feed events, tool_runs,
+ *  and the report's inputs. (Default-OFF is asserted inside runOne.) */
+async function toolsCheck(personas) {
+  const t0 = Date.now();
+  const cr = await app("/api/simulations", {
+    method: "POST",
+    body: JSON.stringify({
+      problem: "Smoke test: is now a sensible quarter for a small Sun Belt developer to lock a construction loan, given CURRENT interest rates? Use today's actual rate environment.",
+      questions: [{ label: "RATE TIMING", detail: "what do current rates say about locking now vs waiting?" }],
+      success: ["A committed answer grounded in the current rate environment"],
+    }),
+  });
+  if (!cr.ok) throw new Error(`tools: create sim failed: ${cr.status}`);
+  const simId = (await cr.json()).id;
+  simIds.push(simId);
+  const seat = await app(`/api/simulations/${simId}/agents`, {
+    method: "POST",
+    body: JSON.stringify({ personaIds: personas.leadIds.slice(0, 3) }),
+  });
+  if (!seat.ok) throw new Error(`tools: seat failed: ${seat.status}`);
+  const pc = await app(`/api/simulations/${simId}/config`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      mode: "Roundtable",
+      run: { rounds: 1, max_posts: 30, tier: "economy", convergence: "fixed", verifier: false, report_length: "brief", speaker: "round-robin", temperature: "balanced", density: "focused" },
+      tools: ["web_search"],
+    }),
+  });
+  if (!pc.ok) throw new Error(`tools: config failed: ${pc.status}`);
+
+  let toolEvents = 0, finished = false, errored = null, chainedOff = false;
+  for (let slice = 0; slice < 4 && !finished && !errored && !chainedOff; slice++) {
+    const res = await app(`/api/simulations/${simId}/run/launch`, { method: "POST", body: JSON.stringify(slice ? { continue: true } : {}) });
+    if (!res.ok) throw new Error(`tools: launch failed: ${res.status} ${await res.text()}`);
+    let wantsContinue = false;
+    const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n"); buf = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const e = JSON.parse(line);
+        if (e.type === "tool") toolEvents += 1;
+        else if (e.type === "finished") finished = true;
+        else if (e.type === "continue") { wantsContinue = true; if (e.chained) chainedOff = true; }
+        else if (e.type === "error") errored = e.error;
+      }
+    }
+    if (!wantsContinue) break;
+  }
+  if (chainedOff && !finished) {
+    for (let waited = 0; waited < 300_000 && !finished; waited += 5000) {
+      await sleep(5000);
+      const r = await admin(`/rest/v1/simulations?id=eq.${simId}&select=status`);
+      const st = (await r.json())[0]?.status;
+      if (st !== "running") { finished = st === "complete"; break; }
+    }
+    const rt = await admin(`/rest/v1/events?sim_id=eq.${simId}&type=eq.tool&select=payload`);
+    toolEvents = (await rt.json()).length;
+  }
+  const tr = await admin(`/rest/v1/tool_runs?sim_id=eq.${simId}&select=id,input`);
+  const toolRuns = await tr.json();
+  const problems = [];
+  if (errored) problems.push(`run errored: ${errored}`);
+  if (!finished) problems.push("never finished");
+  if (toolEvents < 1) problems.push("no tool events — the panel never searched a current-rates brief");
+  if (toolRuns.length !== toolEvents) problems.push(`tool_runs ${toolRuns.length} ≠ tool events ${toolEvents}`);
+  const secs = Math.round((Date.now() - t0) / 1000);
+  if (problems.length) {
+    failures.push({ mode: "agent-tools", problems });
+    console.log(`✗ agent-tools ${problems.join("; ")} · ${secs}s`);
+  } else {
+    console.log(`✓ agent-tools ${toolEvents} search${toolEvents === 1 ? "" : "es"} (e.g. "${String(toolRuns[0]?.input?.query ?? "").slice(0, 60)}") · persisted to tool_runs · ${secs}s`);
+  }
+  return simId;
+}
+
 async function synthesizeReport(simId) {
   const r = await app(`/api/simulations/${simId}/report`, { method: "POST" });
   let reportId = null, streamErr = null;
@@ -513,6 +597,9 @@ try {
   if (!SKIP_FORUM) forumSim = await livingForumCheck(personas);
   if (!SKIP_WALKAWAY) {
     try { await walkAwayCheck(personas); } catch (e) { failures.push({ mode: "walk-away", problems: [String(e.message ?? e)] }); }
+  }
+  if (!SKIP_TOOLS) {
+    try { await toolsCheck(personas); } catch (e) { failures.push({ mode: "agent-tools", problems: [String(e.message ?? e)] }); }
   }
   if (KEEP && (forumSim || firstSim)) {
     console.log(`\n--keep: session preserved for manual UI verification`);

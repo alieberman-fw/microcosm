@@ -11,6 +11,7 @@ import { CSSProperties, Fragment, useEffect, useMemo, useRef, useState } from "r
 import { createClient } from "@/lib/supabase/client";
 import { LibraryPersona, PersonaSpec } from "@/lib/personas";
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL, chatModel } from "@/lib/chat-models";
+import { TOOL_RACK } from "@/lib/tools";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import Markdown from "@/components/app/Markdown";
 import Link from "next/link";
@@ -34,6 +35,7 @@ export interface ConversationRow {
   participant_keys: string[];
   updated_at: string;
   model_overrides?: Record<string, string>;
+  tool_overrides?: Record<string, string[]>;
 }
 
 export interface Attachment {
@@ -43,6 +45,12 @@ export interface Attachment {
   size: number;
 }
 
+/** 3d — a reply that searched carries its queries + the sources it cited */
+export interface MsgMeta {
+  searches?: { query: string; results: { title: string; url: string }[] }[];
+  sources?: { title: string; url: string }[];
+}
+
 interface Msg {
   id?: number;
   role: "user" | "agent";
@@ -50,6 +58,7 @@ interface Msg {
   agent_name?: string | null;
   content: string;
   attachments?: Attachment[];
+  meta?: MsgMeta | null;
 }
 
 type Pending = Attachment & { preview?: string };
@@ -204,17 +213,19 @@ function AttachmentChips({
  * deeper model for this thread only.
  */
 function ModelChip({
-  persona, modelId, open, onToggle, onPick,
+  persona, modelId, open, onToggle, onPick, tools = [], onToggleTool,
 }: {
   persona: LibraryPersona; modelId: string; open: boolean;
   onToggle: () => void; onPick: (id: string) => void;
+  /** 3d — this participant's enabled tool keys + toggler (menu stays open) */
+  tools?: string[]; onToggleTool?: (toolKey: string) => void;
 }) {
   const m = chatModel(modelId);
   return (
     <span style={{ position: "relative", flex: "none", display: "inline-flex" }}>
       <button
         onClick={onToggle}
-        title={`${persona.name} answers on ${m.name} (${m.desc.toLowerCase()}) — click to change`}
+        title={`${persona.name} answers on ${m.name}${tools.length ? " · can search the web" : ""} — click to change model or tools`}
         style={{
           ...mono, display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
           fontSize: 9.5, letterSpacing: ".05em", color: open ? "var(--acc)" : "var(--t5)",
@@ -226,6 +237,7 @@ function ModelChip({
           {persona.initials}
         </span>
         {persona.name.split(" ")[0].toUpperCase()} · {m.short}
+        {tools.length > 0 && <span title="Web research enabled" style={{ fontSize: 9, lineHeight: 1 }}>🔎</span>}
         <span style={{ fontSize: 8, color: "var(--t7)" }}>▾</span>
       </button>
       {open && (
@@ -250,6 +262,43 @@ function ModelChip({
               </button>
             );
           })}
+          {/* 3d — TOOLS live in the same menu as the tier: one place to shape
+              how this participant thinks and what they can reach */}
+          {onToggleTool && (
+            <>
+              <div style={{ height: 1, background: "var(--ln2)", margin: "6px 4px" }} />
+              <div style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t7)", padding: "4px 11px 2px" }}>
+                TOOLS · THEY DECIDE WHEN TO USE
+              </div>
+              {TOOL_RACK.map((t) => {
+                const soon = t.status === "coming_soon";
+                const on = tools.includes(t.key);
+                return (
+                  <button
+                    key={t.key}
+                    onClick={soon ? undefined : () => onToggleTool(t.key)}
+                    disabled={soon}
+                    title={soon ? "Coming soon" : t.description}
+                    style={{
+                      display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 12,
+                      textAlign: "left", cursor: soon ? "default" : "pointer", borderRadius: 9, padding: "8px 11px",
+                      background: on ? "var(--acc-dim)" : "transparent", border: "none", opacity: soon ? 0.45 : 1,
+                    }}
+                  >
+                    <span>
+                      <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: on ? "var(--acc)" : "var(--t3)" }}>
+                        {t.key === "web_search" ? "🔎 " : ""}{t.name}
+                      </span>
+                      <span style={{ ...mono, display: "block", fontSize: 8, letterSpacing: ".05em", color: "var(--t7)", marginTop: 2 }}>{t.tagline}</span>
+                    </span>
+                    <span style={{ ...mono, fontSize: 8, letterSpacing: ".05em", flex: "none", color: soon ? "var(--t7)" : on ? "var(--acc)" : "var(--t6)" }}>
+                      {soon ? "SOON" : on ? "ON ✓" : "OFF"}
+                    </span>
+                  </button>
+                );
+              })}
+            </>
+          )}
         </div>
       )}
     </span>
@@ -299,6 +348,7 @@ export default function Conversations({
   // per-participant model tier for the open thread ({} = everyone on default)
   const [models, setModels] = useState<Record<string, string>>({});
   const [modelMenu, setModelMenu] = useState<string | null>(null);
+  const [ptools, setPtools] = useState<Record<string, string[]>>({}); // 3d — per-participant tool access
   // conversation-row ⋯ menu, inline rename, roster panel, profile card
   const [rowMenu, setRowMenu] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -359,9 +409,10 @@ export default function Conversations({
   const openConversation = async (id: string) => {
     setActive(id); setDraft(null); setErr(null); setMessages([]); setPending([]);
     setModels(convs.find((c) => c.id === id)?.model_overrides ?? {}); setModelMenu(null);
+    setPtools(convs.find((c) => c.id === id)?.tool_overrides ?? {});
     const { data } = await supabase!
       .from("conversation_messages")
-      .select("id, role, agent_key, agent_name, content, attachments")
+      .select("id, role, agent_key, agent_name, content, attachments, meta")
       .eq("conversation_id", id)
       .order("id", { ascending: true });
     const msgs = (data ?? []) as Msg[];
@@ -372,7 +423,7 @@ export default function Conversations({
   const startDraft = (keys: string[]) => {
     setDraft({ participantKeys: keys });
     setActive(null); setMessages([]); setErr(null); setPicker(false); setPicked([]); setSearch(""); setPending([]);
-    setModels({}); setModelMenu(null);
+    setModels({}); setModelMenu(null); setPtools({});
   };
 
   const setModel = async (key: string, modelId: string) => {
@@ -381,6 +432,18 @@ export default function Conversations({
     if (active) {
       setConvs((cs) => cs.map((c) => (c.id === active ? { ...c, model_overrides: next } : c)));
       await supabase!.from("conversations").update({ model_overrides: next }).eq("id", active);
+    }
+  };
+
+  // 3d — per-participant tool access, toggled from the same chip menu as the
+  // tier; the menu stays open so multi-toggling feels like a settings panel
+  const toggleParticipantTool = async (key: string, toolKey: string) => {
+    const cur = ptools[key] ?? [];
+    const next = { ...ptools, [key]: cur.includes(toolKey) ? cur.filter((t) => t !== toolKey) : [...cur, toolKey] };
+    setPtools(next);
+    if (active) {
+      setConvs((cs) => cs.map((c) => (c.id === active ? { ...c, tool_overrides: next } : c)));
+      await supabase!.from("conversations").update({ tool_overrides: next }).eq("id", active);
     }
   };
 
@@ -496,6 +559,7 @@ export default function Conversations({
           content,
           attachments: atts,
           modelOverrides: models,
+          toolOverrides: ptools,
           mentionKeys,
         }),
       });
@@ -515,13 +579,13 @@ export default function Conversations({
         const ev = JSON.parse(line) as {
           type: string; conversationId?: string; message?: string;
           responders?: { key: string; name: string; initials: string }[];
-          agentKey?: string; name?: string; content?: string;
+          agentKey?: string; name?: string; content?: string; meta?: MsgMeta | null;
         };
         if (ev.type === "responders") {
           convIdFromStream = ev.conversationId ?? null;
           setTyping(ev.responders ?? []);
         } else if (ev.type === "reply") {
-          setMessages((m) => [...m, { role: "agent", agent_key: ev.agentKey, agent_name: ev.name, content: ev.content ?? "" }]);
+          setMessages((m) => [...m, { role: "agent", agent_key: ev.agentKey, agent_name: ev.name, content: ev.content ?? "", meta: ev.meta ?? null }]);
           setTyping((t) => t.filter((x) => x.key !== ev.agentKey));
         } else if (ev.type === "error") {
           streamError = ev.message ?? "Model call failed";
@@ -783,9 +847,10 @@ export default function Conversations({
               )}
             </div>
 
-            {/* per-participant model tier strip — overflows into the roster panel */}
+            {/* per-participant model tier + tools strip — one chip per voice,
+                one menu for both (3d) — overflows into the roster panel */}
             <div style={{ flex: "none", padding: "9px 26px", borderBottom: "1px solid var(--ln2)", display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-              <span style={{ ...mono, flex: "none", fontSize: 8.5, letterSpacing: ".12em", color: "var(--t7)" }}>MODELS</span>
+              <span style={{ ...mono, flex: "none", fontSize: 8.5, letterSpacing: ".12em", color: "var(--t7)" }}>MODELS · TOOLS</span>
               {participants.slice(0, MODEL_CHIP_LIMIT).map((p) => (
                 <ModelChip
                   key={p.key}
@@ -794,6 +859,8 @@ export default function Conversations({
                   open={modelMenu === p.key}
                   onToggle={() => setModelMenu(modelMenu === p.key ? null : p.key)}
                   onPick={(id) => setModel(p.key, id)}
+                  tools={ptools[p.key] ?? []}
+                  onToggleTool={(tk) => void toggleParticipantTool(p.key, tk)}
                 />
               ))}
               {participants.length > MODEL_CHIP_LIMIT && (
@@ -843,6 +910,25 @@ export default function Conversations({
                         <div style={{ fontSize: 14, lineHeight: 1.62, color: "var(--t2)" }}>
                           <Markdown text={m.content} mentions={participants.flatMap((x) => [x.name, x.name.split(/\s+/)[0]])} />
                         </div>
+                        {/* 3d — a reply that searched shows its work: queries +
+                            clickable source pills, right under the prose */}
+                        {(m.meta?.searches?.length || m.meta?.sources?.length) ? (
+                          <div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid var(--ln2)" }}>
+                            {(m.meta?.searches ?? []).map((s, si) => (
+                              <div key={si} style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginBottom: 5 }}>
+                                🔎 SEARCHED · “{s.query}”
+                              </div>
+                            ))}
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              {(m.meta?.sources?.length ? m.meta.sources : (m.meta?.searches ?? []).flatMap((s) => s.results)).slice(0, 5).map((src, ci) => (
+                                <a key={ci} href={src.url} target="_blank" rel="noopener noreferrer" title={src.title}
+                                  style={{ ...mono, fontSize: 8, letterSpacing: ".04em", color: "var(--acc)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "3px 10px", textDecoration: "none" }}>
+                                  ↗ {(() => { try { return new URL(src.url).hostname.replace(/^www\./, "").toUpperCase(); } catch { return "SOURCE"; } })()}
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </div>

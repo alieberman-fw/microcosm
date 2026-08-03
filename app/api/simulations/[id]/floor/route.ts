@@ -4,6 +4,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { FrozenSpec } from "@/lib/casting";
 import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
 import { EngineContext, EngineEvent, PostRec, takeTheFloor } from "@/lib/engine";
+import { normalizeEnabledTools } from "@/lib/tools";
 
 export const maxDuration = 300;
 
@@ -104,6 +105,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         questions: [],
         leads, crowd: [], corpusBlocks,
         pollQuestion: brief.problem ?? "", // floor replies never poll — placeholder only
+        // 3d — mentioned agents get the same tools the run was allowed
+        tools: normalizeEnabledTools(config.tools),
+        pulledFacts: [],
         temperature: 0.7,
         deadline: Date.now() + 240_000,
         polledRounds: new Set(), votedRounds: new Set(),

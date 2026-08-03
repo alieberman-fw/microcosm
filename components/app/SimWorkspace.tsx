@@ -62,6 +62,7 @@ export default function SimWorkspace({
   initialCasting,
   initialAnswers = [],
   initialRun = null,
+  initialTools = [],
   hasRun = false,
   hasReport = false,
 }: {
@@ -72,6 +73,8 @@ export default function SimWorkspace({
   initialCasting: CastingInfo | null;
   initialAnswers?: Answer[];
   initialRun?: Partial<RunConfig> | null;
+  /** 3d — saved agent-tools allowlist (config.tools) */
+  initialTools?: string[];
   hasRun?: boolean;
   hasReport?: boolean;
 }) {
@@ -590,6 +593,7 @@ export default function SimWorkspace({
             residentSide={residentSide}
             crowd={crowd}
             initialRun={initialRun}
+            initialTools={initialTools}
           />
         );
       })()}
