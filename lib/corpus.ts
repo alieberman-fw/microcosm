@@ -154,3 +154,47 @@ export function normalizeSuccess(raw: unknown): string[] {
  */
 export const EMBEDDINGS_URL = "https://ai-gateway.vercel.sh/v1/embeddings";
 export const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL ?? "openai/text-embedding-3-small";
+
+/* ---- corpus block builder (fix for "describe 4.jpg — not found") --------
+ * ONE place that turns parsed documents into API content blocks, used by
+ * corpus Q&A, the engine, Take the Floor, and report synthesis. The old
+ * copies attached IMAGES AS ANONYMOUS BLOCKS — no name, so agents could not
+ * resolve "4.jpg" or "the second uploaded image". Every image now gets a
+ * label block carrying its filename and upload ordinal. Exported pure for
+ * tests: takes prepared descriptors, returns blocks (caller adds
+ * cache_control to the last block if it wants the prefix cached). */
+
+export interface CorpusDocInput {
+  name: string;
+  mime: string | null;
+  /** Anthropic Files API id when uploaded; else `text` is the FTS fallback */
+  file_id?: string | null;
+  text?: string | null;
+}
+
+export function buildCorpusBlocks(docs: CorpusDocInput[]): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [];
+  const images = docs.filter((d) => (d.mime ?? "").startsWith("image/"));
+  let imageOrdinal = 0;
+  for (const d of docs) {
+    if ((d.mime ?? "").startsWith("image/")) {
+      if (!d.file_id) continue;
+      imageOrdinal += 1;
+      blocks.push({
+        type: "text",
+        text: `[UPLOADED IMAGE ${imageOrdinal} OF ${images.length}: "${d.name}" — refer to it by this filename]`,
+      });
+      blocks.push({ type: "image", source: { type: "file", file_id: d.file_id } });
+    } else if (d.file_id) {
+      blocks.push({ type: "document", source: { type: "file", file_id: d.file_id }, title: d.name, citations: { enabled: true } });
+    } else if (d.text) {
+      blocks.push({
+        type: "document",
+        source: { type: "text", media_type: "text/plain", data: d.text.slice(0, 300_000) },
+        title: d.name,
+        citations: { enabled: true },
+      });
+    }
+  }
+  return blocks;
+}

@@ -46,6 +46,14 @@ export default async function ReportPage({ params, searchParams }: {
     });
   }
 
+  // PR-A: sign the decision-critical media so the report can SHOW the winning
+  // photo / key document — signed at view time, never stored in the spec
+  const mediaUrls: Record<string, string> = {};
+  for (const m of spec.media ?? []) {
+    const { data } = await supabase!.storage.from("documents").createSignedUrl(m.path, 3600);
+    if (data?.signedUrl) mediaUrls[m.path] = data.signedUrl;
+  }
+
   return (
     <ReportView
       simId={sim.id}
@@ -55,6 +63,7 @@ export default async function ReportPage({ params, searchParams }: {
       version={report.version as number}
       versions={versions}
       reportId={report.id as string}
+      mediaUrls={mediaUrls}
     />
   );
 }

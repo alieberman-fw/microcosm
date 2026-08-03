@@ -5,6 +5,7 @@ import { FrozenSpec } from "@/lib/casting";
 import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
 import { EngineContext, EngineEvent, PostRec, takeTheFloor } from "@/lib/engine";
 import { normalizeEnabledTools } from "@/lib/tools";
+import { buildCorpusBlocks } from "@/lib/corpus";
 
 export const maxDuration = 300;
 
@@ -56,12 +57,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // corpus prefix — same grounding path as the run itself
   const { data: docs } = await supabase.from("documents")
     .select("id, name, mime, anthropic_file_id").eq("sim_id", id).eq("parse_status", "parsed");
-  const corpusBlocks: (Anthropic.Beta.BetaContentBlockParam & { cache_control?: { type: "ephemeral" } })[] = [];
-  for (const d of docs ?? []) {
-    if (!d.anthropic_file_id) continue;
-    if ((d.mime ?? "").startsWith("image/")) corpusBlocks.push({ type: "image", source: { type: "file", file_id: d.anthropic_file_id } });
-    else corpusBlocks.push({ type: "document", source: { type: "file", file_id: d.anthropic_file_id }, title: d.name, citations: { enabled: true } });
-  }
+  // shared builder: images carry NAME LABELS so agents can resolve "4.jpg"
+  const corpusBlocks = buildCorpusBlocks(
+    (docs ?? []).filter((d) => d.anthropic_file_id)
+      .map((d) => ({ name: d.name as string, mime: d.mime as string | null, file_id: d.anthropic_file_id as string })),
+  ) as unknown as (Anthropic.Beta.BetaContentBlockParam & { cache_control?: { type: "ephemeral" } })[];
   if (corpusBlocks.length) corpusBlocks[corpusBlocks.length - 1].cache_control = { type: "ephemeral" };
 
   const config = (sim.config as Record<string, unknown>) ?? {};

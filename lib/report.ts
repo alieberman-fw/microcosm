@@ -59,6 +59,10 @@ export interface ReportSpec {
    *  web sources the panel actually used (the traceability appendix) */
   tool_calls?: number;
   web_sources?: { title: string; url: string; uses: number }[];
+  /** PR-A — uploaded files the DECISION turned on (the winning listing photo,
+   *  the key plan page): picked by the synthesizer by filename, resolved to
+   *  storage paths at assembly, signed for display at view time */
+  media?: { name: string; caption: string; kind: "image" | "document"; path: string }[];
   /** frozen at synthesis — the report survives re-runs and re-casts intact */
   transcript?: { seq: number; name: string; role: string; initials: string; adversarial: boolean; tag: string; content: string; round: number }[];
   cast?: { name: string; role: string; kind: string; provenance: string; adversarial: boolean }[];
@@ -155,7 +159,7 @@ export function synthBudgetFor(length: ReportLength): number {
 export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["verdict", "lead", "bottom_line", "executive_summary", "dimension_scores", "sections", "criteria", "risks", "dissents", "tripwires"],
+  required: ["verdict", "lead", "bottom_line", "executive_summary", "dimension_scores", "sections", "criteria", "risks", "dissents", "tripwires", "media"],
   properties: {
     verdict: {
       type: "object", additionalProperties: false, required: ["label", "tone", "headline"],
@@ -219,8 +223,41 @@ export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
       items: { type: "object", additionalProperties: false, required: ["name", "role", "position", "quote", "seq"], properties: { name: { type: "string" }, role: { type: "string" }, position: { type: "string" }, quote: { type: "string" }, seq: { type: "integer" } } },
     },
     tripwires: { type: "array", items: { type: "string" } },
+    // PR-A: uploaded files the decision turned on — exact filenames only;
+    // kept FLAT (two string props) per the structured-outputs complexity budget
+    media: {
+      type: "array",
+      items: { type: "object", additionalProperties: false, required: ["file", "caption"], properties: { file: { type: "string" }, caption: { type: "string" } } },
+    },
   },
 };
+
+/** PR-A — map the synthesizer's media picks (filenames) onto real uploaded
+ *  documents. Unknown names are DROPPED, matches are case-insensitive, and
+ *  the list is capped — the report can never point at a file that isn't in
+ *  the corpus. Exported pure for tests. */
+export function resolveReportMedia(
+  raw: unknown,
+  docs: { name: string; mime?: string | null; storage_path?: string | null }[],
+): NonNullable<ReportSpec["media"]> {
+  if (!Array.isArray(raw)) return [];
+  const out: NonNullable<ReportSpec["media"]> = [];
+  for (const m of raw as { file?: unknown; caption?: unknown }[]) {
+    const file = String(m?.file ?? "").trim();
+    if (!file) continue;
+    const doc = docs.find((d) => d.name.toLowerCase() === file.toLowerCase());
+    if (!doc?.storage_path) continue;
+    if (out.some((x) => x.name === doc.name)) continue;
+    out.push({
+      name: doc.name,
+      caption: String(m?.caption ?? "").slice(0, 240),
+      kind: (doc.mime ?? "").startsWith("image/") ? "image" : "document",
+      path: doc.storage_path,
+    });
+    if (out.length >= 4) break;
+  }
+  return out;
+}
 
 /** §4.1 REPORT LENGTH — depth instructions appended to the synth prompt */
 export function reportDepthRule(length: ReportLength): string {
@@ -247,7 +284,8 @@ export function reportSynthSystem(length: ReportLength = "standard"): string {
     ` "criteria": [{"criterion": "the success criterion verbatim (shortened ok)", "where": "one line: which section/part of this report delivers it"}],  // one entry per success criterion — this is the delivery receipt\n` +
     ` "risks": [{"risk": "...", "severity": "high|medium|low", "mitigation": "...", "watch_signal": "the observable that says it's happening"}],\n` +
     ` "dissents": [{"name": "...", "role": "...", "position": "one line", "quote": "VERBATIM sentence from their post", "seq": N}],\n` +
-    ` "tripwires": ["what would change this answer", ...]}\n\n` +
+    ` "tripwires": ["what would change this answer", ...],\n` +
+    ` "media": [{"file": "EXACT uploaded filename", "caption": "one line: why this file carried the decision"}]}  // ONLY files the decision genuinely turned on (the winning listing photo, the plan page the panel argued over) — [] when none; max 4; never invent filenames\n\n` +
     `THE LEAD (the report's opening visual — its kind must match what the brief ASKS; a DECISION SHAPE HINT may be provided, but re-read the brief and trust the brief):\n` +
     `- "decision" — go/no-go, choose-between, "should we": the verdict chip carries it; emit {"kind": "decision"} with no other fields.\n` +
     `- "price_range" — "what is it worth", fair price, valuation briefs: {"kind": "price_range", "low": N, "high": N, "point": N, "walk_away_value": N, "walk_away_label": "WALK AWAY ABOVE $X", "basis": "the methods triangulated (sales comparison, residual land value, income cap)"}. Numbers are PLAIN NUMBERS in dollars (4200000, never "4.2M"). Commit to the range the transcript defends.\n` +
