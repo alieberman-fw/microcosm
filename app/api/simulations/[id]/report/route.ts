@@ -5,6 +5,7 @@ import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
 import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, reportSpecIncomplete, reportSynthSystem, synthBudgetFor, verifierSystem } from "@/lib/report";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
+import { normalizeEnabledTools } from "@/lib/tools";
 
 export const maxDuration = 800; // the synthesis ladder may run a dense Opus pass more than once
 
@@ -53,6 +54,25 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   // it (constant per sim; older runs pre-date the field and show no question)
   const pollQuestion = (sentimentRows ?? []).map((e) => (e.payload as { question?: string }).question).filter(Boolean).pop() ?? null;
 
+  // 3d — the searches the panel ran: synthesis input + the WEB SOURCES appendix
+  const { data: toolRows } = await supabase.from("tool_runs")
+    .select("agent_key, tool, input, output").eq("sim_id", id).order("ts", { ascending: true });
+  const toolFindings = (toolRows ?? []).map((r) => ({
+    agent: String(r.agent_key ?? ""),
+    query: String((r.input as { query?: string } | null)?.query ?? ""),
+    results: (((r.output as { results?: { title?: string; url?: string }[] } | null)?.results) ?? [])
+      .filter((x) => x.url).map((x) => ({ title: String(x.title ?? x.url).slice(0, 120), url: String(x.url) })),
+  }));
+  const webSources = (() => {
+    const byUrl = new Map<string, { title: string; url: string; uses: number }>();
+    for (const f of toolFindings) for (const r of f.results) {
+      const cur = byUrl.get(r.url);
+      if (cur) cur.uses += 1;
+      else byUrl.set(r.url, { ...r, uses: 1 });
+    }
+    return [...byUrl.values()].sort((a, b) => b.uses - a.uses).slice(0, 20);
+  })();
+
   const { data: docs } = await supabase.from("documents")
     .select("id, name, mime, anthropic_file_id").eq("sim_id", id).eq("parse_status", "parsed");
 
@@ -88,6 +108,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     (questions.length ? `QUESTIONS TO RESOLVE (one report section EACH, in order):\n${questions.map((q) => `- ${q.label}${q.detail ? ` — ${q.detail}` : ""}`).join("\n")}\n` : "") +
     (success.length ? `SUCCESS CRITERIA (the report is held to every one):\n${success.map((x) => `- ${x}`).join("\n")}\n` : "") +
     (sentiments.length ? `CROWD SENTIMENT BY ROUND${pollQuestion ? ` (the crowd was asked: "${pollQuestion}")` : ""}:\n${sentiments.map((x) => `- round ${x.round}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
+    (toolFindings.length ? `TOOL FINDINGS (live web searches the panel ran — citable as "source: web", URLs are real):\n${toolFindings.map((f) => `- [${f.agent}] searched "${f.query}" → ${f.results.slice(0, 3).map((x) => `${x.title} <${x.url}>`).join(" · ") || "no results"}`).join("\n")}\n` : "") +
     voteText;
 
   const synthModel = TIER_MODELS[cfg.tier].synth;
@@ -301,6 +322,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           tripwires: (Array.isArray(rawSpec.tripwires) ? rawSpec.tripwires : []).slice(0, 8).map((t) => String(t).slice(0, 220)),
           sentiment: sentiments,
           poll_question: pollQuestion ? String(pollQuestion).slice(0, 240) : undefined,
+          tool_calls: toolFindings.length || undefined,
+          web_sources: webSources.length ? webSources : undefined,
           transcript: postRows.map((r) => {
             const meta = (r.cites as { name?: string; role?: string; initials?: string; adversarial?: boolean; round?: number } | null) ?? {};
             return { seq: r.seq as number, name: meta.name ?? "Agent", role: meta.role ?? "", initials: meta.initials ?? "·", adversarial: meta.adversarial ?? false, tag: r.tag as string, content: r.content as string, round: meta.round ?? 1 };
@@ -316,6 +339,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           methodology: {
             mode, rounds: cfg.rounds, leads: leadCount, crowd: crowdCount,
             polls: sentiments.reduce((s, x) => s + x.polled, 0),
+            tools: normalizeEnabledTools((sim!.config as { tools?: unknown } | null)?.tools),
             posts: postRows.length, tier: cfg.tier,
             models: [...new Set([TIER_MODELS[cfg.tier].leads, TIER_MODELS[cfg.tier].crowd, synthModel, ...(verification ? [verifyModel] : [])])],
             converged: !!runResult.converged,

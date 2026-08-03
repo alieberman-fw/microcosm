@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import RunScreen from "@/components/app/RunScreen";
-import LiveRun, { LiveLead, LivePost, LiveSentiment } from "@/components/app/LiveRun";
+import LiveRun, { LiveLead, LivePost, LiveSentiment, LiveTool } from "@/components/app/LiveRun";
 import { FrozenSpec } from "@/lib/casting";
 import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
 
@@ -50,7 +50,7 @@ export default async function RunPage({ params, searchParams }: {
 
   const [{ data: postRows }, { data: eventRows }, { count: reportCount }, { data: voteRows }] = await Promise.all([
     supabase!.from("posts").select("seq, author, agent_key, thread, reply_to, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true }),
-    supabase!.from("events").select("type, payload").eq("sim_id", id).eq("type", "sentiment").order("seq", { ascending: true }),
+    supabase!.from("events").select("type, payload").eq("sim_id", id).in("type", ["sentiment", "tool"]).order("seq", { ascending: true }),
     supabase!.from("reports").select("id", { count: "exact", head: true }).eq("sim_id", id),
     supabase!.from("post_votes").select("seq, voter_key, voter_name, voter_role, vote").eq("sim_id", id),
   ]);
@@ -64,7 +64,8 @@ export default async function RunPage({ params, searchParams }: {
       cites: meta.cites ?? [], round: meta.round ?? 1, phase: meta.phase, side: meta.side,
     };
   });
-  const initialSentiments: LiveSentiment[] = (eventRows ?? []).map((e) => e.payload as unknown as LiveSentiment);
+  const initialSentiments: LiveSentiment[] = (eventRows ?? []).filter((e) => e.type === "sentiment").map((e) => e.payload as unknown as LiveSentiment);
+  const initialTools: LiveTool[] = (eventRows ?? []).filter((e) => e.type === "tool").map((e) => e.payload as unknown as LiveTool);
   const initialVotes = (voteRows ?? []).map((v) => ({
     seq: v.seq as number, voter_key: v.voter_key as string, voter_name: v.voter_name as string,
     voter_role: (v.voter_role as string) ?? "", vote: (v.vote as number) === -1 ? -1 as const : 1 as const,
@@ -88,6 +89,7 @@ export default async function RunPage({ params, searchParams }: {
       crowdTarget={crowdTarget}
       initialPosts={initialPosts}
       initialSentiments={initialSentiments}
+      initialTools={initialTools}
       initialVotes={initialVotes}
       initialStatus={sim.status as string}
       maxRounds={cfg.rounds}

@@ -41,7 +41,7 @@ export function classify(system: string): CallKind {
   return "unknown";
 }
 
-export interface FakeCall { kind: CallKind; system: string; user: string; model: string; maxTokens: number }
+export interface FakeCall { kind: CallKind; system: string; user: string; model: string; maxTokens: number; tools?: unknown[] }
 
 export interface FakeOptions {
   /** ms the mocked clock advances per model call (drives deadline paths) */
@@ -54,6 +54,8 @@ export interface FakeOptions {
   turnText?: (call: FakeCall, n: number) => string | undefined;
   /** inject failures: called per call — "empty" | "throw" | "garbage" | undefined */
   failure?: (kind: CallKind, n: number) => "empty" | "throw" | "garbage" | undefined;
+  /** 3d — fabricate a server-side web search on this turn call (default: never) */
+  searchOnTurn?: (call: FakeCall, n: number) => boolean;
 }
 
 /* ------------------------------ the fake --------------------------------- */
@@ -63,7 +65,7 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
   let judgeN = 0;
   let turnRound = 0; // parsed from instruction when present
 
-  const respond = (params: { model: string; system?: unknown; max_tokens: number; messages: { role: string; content: unknown }[] }) => {
+  const respond = (params: { model: string; system?: unknown; max_tokens: number; messages: { role: string; content: unknown }[]; tools?: unknown[] }) => {
     clock.tick(opts.tickMs ?? 1000);
     const system = String(params.system ?? "");
     const userBlocks = params.messages[params.messages.length - 1]?.content;
@@ -71,7 +73,7 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
       ? userBlocks
       : (userBlocks as { type: string; text?: string }[]).filter((b) => b.type === "text").map((b) => b.text).join("\n");
     const kind = classify(system);
-    const call: FakeCall = { kind, system, user, model: params.model, maxTokens: params.max_tokens };
+    const call: FakeCall = { kind, system, user, model: params.model, maxTokens: params.max_tokens, tools: params.tools };
     calls.push(call);
     const n = calls.length;
 
@@ -131,8 +133,21 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
       }
     }
 
+    // 3d — a turn that carries tools MAY search (opt-in per test): fabricate
+    // the server-side block pair the real API returns before the prose
+    const content: Record<string, unknown>[] = [];
+    if (kind === "turn" && (params.tools?.length ?? 0) > 0 && opts.searchOnTurn?.(call, n)) {
+      content.push(
+        { type: "server_tool_use", name: "web_search", input: { query: `current facts (call ${n})` } },
+        { type: "web_search_tool_result", content: [
+          { type: "web_search_result", url: "https://example.com/fact-a", title: "Fact A" },
+          { type: "web_search_result", url: "https://example.com/fact-b", title: "Fact B" },
+        ] },
+      );
+    }
+    if (text) content.push({ type: "text", text });
     return {
-      content: text ? [{ type: "text", text }] : [],
+      content,
       usage: { input_tokens: 100, output_tokens: 50 },
       stop_reason: text ? "end_turn" : "max_tokens",
     };
@@ -210,6 +225,8 @@ export function makeHarness(args: {
   polledRounds?: Set<number>;
   votedRounds?: Set<number>;
   clock?: FakeClock;
+  /** 3d — enabled tool keys for the run under test */
+  tools?: string[];
 }): Harness {
   const clock = args.clock ?? new FakeClock();
   const { client, calls } = makeFakeAnthropic(clock, args.fake ?? {});
@@ -225,6 +242,8 @@ export function makeHarness(args: {
     leads: args.leads,
     crowd: args.crowd ?? [],
     pollQuestion: "Should the builder spend the leftover budget on the pool?",
+    tools: args.tools ?? [],
+    pulledFacts: [],
     corpusBlocks: [],
     temperature: 0.7,
     deadline: clock.now + (args.deadlineInMs ?? 10 ** 12),

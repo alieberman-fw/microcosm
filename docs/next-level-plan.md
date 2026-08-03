@@ -174,7 +174,7 @@ engine cancellation from stream disconnect; slices schedule their own successors
 tailing Supabase Realtime (polling fallback); Home's IN-PROGRESS strip links into live
 runs. End-state stays the Python/swarms worker (§6.3) when runs outgrow the slice chain.
 
-### 3d · Agent tools v1 — web research, agent-decided, user-controlled  ⟵ IN PROGRESS (detailed 2026-08-03, approved)
+### 3d · Agent tools v1 — web research, agent-decided, user-controlled  ✅ SHIPPED (PR #58 — tool rack, run-config cards, Conversations per-participant tools, feed/report/chat visibility)
 
 The contract: agents get a RACK of tools they may reach for; the user controls which
 tools a simulation (or chat participant) is ALLOWED to use — all off by default,
@@ -215,7 +215,7 @@ today's rates); every tool call is visible, logged, and citable.
   invariants), smoke proof of default-OFF (zero tool events) + a tools-on run with
   ≥1 search reaching feed + report, browser screenshots both themes, docs/README/§7.
 
-### 3e · The forum acts like a real forum (living threads)
+### 3e · The forum acts like a real forum (living threads)  ⟵ NEXT
 
 Agents can return to earlier posts — even prior rounds — to reply, extend sub-threads, or
 vote late (including flipping an earlier vote). Fresh discussion still dominates. UI: the

@@ -387,7 +387,7 @@ Tools are per-simulation toggles; every tool call is logged and citable in the r
 
 **Phase 1 (POC):**
 1. **Corpus RAG** — search the uploaded documents (always on).
-2. **Web research** — search + fetch for public facts; results cached per simulation so agents share one factbase.
+2. **Web research** — search + fetch for public facts; results cached per simulation so agents share one factbase. **Shipped (3d, v1):** the extensible tool rack lives in `lib/tools.ts` (one descriptor per tool — cards, wiring, prompts all read from it; add a tool = add an entry). Web research = Anthropic server-side web search on LEAD turns only, variant per model tier, max 2 searches/turn, agent-decided via prompt addendum, ALL OFF by default (`config.tools` allowlist; AGENT TOOLS cards in run config; per-participant `tool_overrides` in Conversations via the model-tier menu). Searches stream as `tool` events (§6.2), persist to `tool_runs` + events, feed the shared factbase digest, and reach the report (TOOL FINDINGS input, TOOL CALLS tile, WEB SOURCES appendix).
 
 **Phase 2:**
 3. **Census/ACS + PUMS** — demographics on demand (also powers seeding, §3.2B).

@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import ModeDiagram, { ModeKey } from "@/components/app/docs/ModeDiagram";
 import { SIM_MODES } from "@/lib/casting";
 import { RUN_DEFAULTS, RUN_RANGES, RunConfig, estimateRunCost, isFixedShape, modeFitFlags } from "@/lib/run";
+import { TOOL_RACK, availableToolKeys, normalizeEnabledTools } from "@/lib/tools";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -47,6 +48,7 @@ export default function RunConfigStage({
   residentSide,
   crowd,
   initialRun,
+  initialTools = null,
 }: {
   simId: string;
   mode: string | null;
@@ -57,10 +59,13 @@ export default function RunConfigStage({
   residentSide: number;
   crowd: number;
   initialRun?: Partial<RunConfig> | null;
+  /** 3d — the saved agent-tools allowlist (config.tools; empty = all off) */
+  initialTools?: string[] | null;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<string>(initialMode ?? "Agora");
   const [cfg, setCfg] = useState<RunConfig>({ ...RUN_DEFAULTS, ...(initialRun ?? {}) });
+  const [tools, setTools] = useState<string[]>(normalizeEnabledTools(initialTools ?? []));
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saved, setSaved] = useState(false);
   const [launching, setLaunching] = useState(false);
@@ -91,6 +96,19 @@ export default function RunConfigStage({
     persist(cfg, m);
   };
 
+  // 3d — tool toggles save immediately (discrete clicks, no debounce needed)
+  const saveTools = (next: string[]) => {
+    setTools(next);
+    setSaved(false);
+    void fetch(`/api/simulations/${simId}/config`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tools: next }),
+    }).then(() => { setSaved(true); setTimeout(() => setSaved(false), 1800); });
+  };
+  const toggleTool = (key: string) =>
+    saveTools(tools.includes(key) ? tools.filter((k) => k !== key) : [...tools, key]);
+
   // proceed = FLUSH then navigate: the debounced save raced client-side nav,
   // so the run screen could render stale defaults (ROUND x / 3) — commit any
   // in-flight drafts, PATCH synchronously, and only then open the run screen
@@ -110,7 +128,7 @@ export default function RunConfigStage({
       await fetch(`/api/simulations/${simId}/config`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run: final, mode }),
+        body: JSON.stringify({ run: final, mode, tools }),
       });
     } catch { /* launch route re-reads config server-side either way */ }
     router.push(`/sim/${simId}/run`);
@@ -239,6 +257,59 @@ export default function RunConfigStage({
         </div>
       )}
 
+      {/* 3d — AGENT TOOLS: the rack. All off by default; the user allowlists,
+          the agents decide when an allowed tool is actually worth using. */}
+      <div style={{ marginTop: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ ...mono, fontSize: 9, letterSpacing: ".1em", color: "var(--t6)" }}>
+            AGENT TOOLS · OFF BY DEFAULT — AGENTS DECIDE WHEN TO USE THEM
+          </span>
+          <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
+            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: tools.length ? "var(--acc)" : "var(--t7)" }}>
+              {tools.length} OF {availableToolKeys().length} AVAILABLE ENABLED
+            </span>
+            <button onClick={() => saveTools(availableToolKeys())} style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", background: "none", border: "none", color: "var(--acc)", cursor: "pointer", padding: 0 }}>ENABLE ALL</button>
+            <button onClick={() => saveTools([])} style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0 }}>DISABLE ALL</button>
+          </span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 10, marginTop: 12 }}>
+          {TOOL_RACK.map((t) => {
+            const soon = t.status === "coming_soon";
+            const on = tools.includes(t.key);
+            return (
+              <button
+                key={t.key}
+                onClick={soon ? undefined : () => toggleTool(t.key)}
+                disabled={soon}
+                title={soon ? "Coming soon — new tools land as new cards" : on ? "Enabled — click to disable" : "Click to enable for this simulation"}
+                style={{
+                  textAlign: "left", borderRadius: 12, padding: "13px 15px", transition: "all .15s",
+                  border: `1px solid ${on ? "var(--acc)" : "var(--ln3)"}`,
+                  background: on ? "var(--acc-dim)" : "var(--sf)",
+                  cursor: soon ? "default" : "pointer",
+                  opacity: soon ? 0.5 : 1,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: on ? "var(--acc)" : "var(--t2)", fontFamily: "var(--font-sans), sans-serif" }}>{t.name}</span>
+                  {soon ? (
+                    <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".07em", color: "var(--t6)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "2px 8px", flex: "none" }}>COMING SOON</span>
+                  ) : (
+                    <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".07em", flex: "none", borderRadius: 100, padding: "2px 8px", border: `1px solid ${on ? "var(--acc)" : "var(--ln4)"}`, color: on ? "var(--acc)" : "var(--t6)" }}>
+                      {on ? "ENABLED ✓" : "OFF"}
+                    </span>
+                  )}
+                </div>
+                <div style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--t7)", marginTop: 4 }}>{t.tagline}</div>
+                <div style={{ fontSize: 10.5, lineHeight: 1.5, color: "var(--t5)", marginTop: 7, fontFamily: "var(--font-sans), sans-serif" }}>{t.description}</div>
+                <div style={{ fontSize: 10, lineHeight: 1.45, color: "var(--t6)", marginTop: 6, fontStyle: "italic", fontFamily: "var(--font-sans), sans-serif" }}>e.g. {t.example}</div>
+                <div style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: "var(--t7)", marginTop: 7 }}>{t.costNote.toUpperCase()}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* parameters */}
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 18, padding: "16px 18px", border: "1px solid var(--ln2)", borderRadius: 12, background: "var(--sf2)" }}>
         {fixedShape ? (
@@ -328,6 +399,13 @@ export default function RunConfigStage({
               ~{est.posts.toLocaleString()} POSTS{est.polls > 0 ? ` · ${est.polls.toLocaleString()} POLLS` : ""}{est.votes > 0 ? ` · VOTES` : ""} · {cfg.density.toUpperCase()} · {cfg.tier.toUpperCase()}
             </span>
           </div>
+          {tools.includes("web_search") && (
+            // usage-based annotation, not part of the fixed estimate: assumes
+            // ~1 search per 4 lead posts at ~1¢/search + result tokens
+            <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginTop: 5 }}>
+              + WEB RESEARCH · USAGE-BASED ≈ ${(Math.ceil(est.posts / 4) * 0.01).toFixed(2)}–{(Math.ceil(est.posts / 4) * 0.04).toFixed(2)} — AGENTS SEARCH ONLY WHEN IT CHANGES THEIR ANSWER
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 7 }}>
           <button

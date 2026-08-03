@@ -55,6 +55,10 @@ export interface ReportSpec {
   tripwires: string[];
   sentiment?: { round: number; polled: number; dist: Record<string, number> }[];
   poll_question?: string; // the one proposition every crowd poll asked (engine-derived from the brief)
+  /** 3d — tool usage frozen with the report: how many calls, and the deduped
+   *  web sources the panel actually used (the traceability appendix) */
+  tool_calls?: number;
+  web_sources?: { title: string; url: string; uses: number }[];
   /** frozen at synthesis — the report survives re-runs and re-casts intact */
   transcript?: { seq: number; name: string; role: string; initials: string; adversarial: boolean; tag: string; content: string; round: number }[];
   cast?: { name: string; role: string; kind: string; provenance: string; adversarial: boolean }[];
@@ -66,6 +70,8 @@ export interface ReportSpec {
   methodology: {
     mode: string; rounds: number; leads: number; crowd: number; polls: number;
     posts: number; tier: string; models: string[]; converged: boolean;
+    /** 3d — which tools this run was allowed to use (config.tools, frozen) */
+    tools?: string[];
     /** why the run stopped: stability | rounds | budget | choreography */
     stop?: string;
     docs: string[]; generated_at: string;

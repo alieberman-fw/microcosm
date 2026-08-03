@@ -21,6 +21,7 @@ import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
 import { normalizeQuestions } from "@/lib/corpus";
 import { EngineContext, EngineEvent, EngineLead, PostRec, RunResume, runMode } from "@/lib/engine";
 import { CHAIN_PENDING, RunState, chainSecret } from "@/lib/walkaway";
+import { normalizeEnabledTools } from "@/lib/tools";
 
 /** best-effort window into the run — a dropped client NEVER touches the engine */
 export interface SliceBus {
@@ -80,6 +81,9 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
     // is the source of truth, whichever worker ran the previous slice ----
     const polledRounds = new Set<number>();
     const votedRounds = new Set<number>();
+    // 3d — the shared factbase survives slice handoffs: rebuild it from the
+    // persisted tool events so slice 2's agents see slice 1's searches
+    const pulledFacts: { query: string; results: { title: string; url: string }[] }[] = [];
     let resume: RunResume | undefined;
     const { data: prevPosts } = await db.from("posts")
       .select("seq, agent_key, tag, content, cites, reply_to").eq("sim_id", simId).order("seq", { ascending: true });
@@ -88,8 +92,13 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
         const meta = (r.cites as { name?: string; role?: string; round?: number } | null) ?? {};
         return { name: meta.name ?? "Agent", role: meta.role ?? "", content: r.content as string, tag: r.tag as string, seq: r.seq as number, agentKey: r.agent_key as string, round: meta.round ?? 1, replyTo: r.reply_to as number | null };
       });
-      const { data: prevEvents } = await db.from("events").select("type, payload").eq("sim_id", simId).in("type", ["sentiment", "votes"]);
+      const { data: prevEvents } = await db.from("events").select("type, payload").eq("sim_id", simId).in("type", ["sentiment", "votes", "tool"]);
       for (const e of prevEvents ?? []) {
+        if (e.type === "tool") {
+          const p = e.payload as { query?: string; results?: { title: string; url: string }[] };
+          if (p.query) pulledFacts.push({ query: String(p.query), results: Array.isArray(p.results) ? p.results : [] });
+          continue;
+        }
         const round = Number((e.payload as { round?: number }).round ?? 0);
         if (e.type === "sentiment") polledRounds.add(round);
         else votedRounds.add(round);
@@ -117,6 +126,15 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
         }
         evSeq += 1;
         await db.from("events").insert({ sim_id: simId, seq: evSeq, type: e.type, payload: e });
+      } else if (e.type === "tool") {
+        // 3d — searches land in tool_runs (the audit trail + report input)
+        // AND in events (feed replay + observer tail + factbase resume)
+        await db.from("tool_runs").insert({
+          sim_id: simId, agent_key: e.agent_key, tool: e.tool,
+          input: { query: e.query }, output: { results: e.results },
+        });
+        evSeq += 1;
+        await db.from("events").insert({ sim_id: simId, seq: evSeq, type: e.type, payload: e });
       } else if (e.type !== "presence" && e.type !== "polling") {
         // presence is transient UI state — streamed, never persisted
         evSeq += 1;
@@ -140,6 +158,8 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
       questions: normalizeQuestions(brief.questions).map((x) => x.label),
       leads, crowd, corpusBlocks,
       pollQuestion: String(config.poll_question ?? brief.problem ?? ""),
+      tools: normalizeEnabledTools(config.tools),
+      pulledFacts,
       temperature: 0.7,
       deadline: Date.now() + (Number(process.env.ENGINE_CHUNK_MS) || 770_000), // ~13-min slices on Pro; env override for dev tests
       polledRounds, votedRounds,

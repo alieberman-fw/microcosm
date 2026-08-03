@@ -68,7 +68,16 @@ export interface LiveVote {
   vote: 1 | -1;
 }
 
-type Item = { kind: "post"; post: LivePost } | { kind: "sentiment"; s: LiveSentiment };
+export interface LiveTool {
+  agent_key: string;
+  name: string;
+  tool: string;
+  query: string;
+  results: { title: string; url: string }[];
+  round: number;
+}
+
+type Item = { kind: "post"; post: LivePost } | { kind: "sentiment"; s: LiveSentiment } | { kind: "tool"; t: LiveTool };
 
 interface Node { x: number; y: number; label?: string; adversarial?: boolean; key?: string }
 
@@ -120,7 +129,7 @@ function layoutLeads(mode: string, leads: LiveLead[], w: number, h: number): Rec
 }
 
 export default function LiveRun({
-  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialVotes = [], initialStatus, maxRounds, hasReport = false,
+  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialVotes = [], initialTools = [], initialStatus, maxRounds, hasReport = false,
 }: {
   simId: string;
   problem: string;
@@ -134,6 +143,8 @@ export default function LiveRun({
   initialPosts: LivePost[];
   initialSentiments: LiveSentiment[];
   initialVotes?: LiveVote[];
+  /** 3d — persisted tool events (search cards) for replay */
+  initialTools?: LiveTool[];
   initialStatus: string;
   maxRounds: number;
   hasReport?: boolean;
@@ -141,6 +152,18 @@ export default function LiveRun({
   const merged: Item[] = [
     ...initialPosts.map((p) => ({ kind: "post" as const, post: p })),
   ];
+  // weave persisted search cards before their author's post that round —
+  // the feed reads "searched, then argued", same as it did live
+  for (const t of initialTools) {
+    let at = merged.length;
+    const byAuthor = merged.findIndex((it) => it.kind === "post" && it.post.round === t.round && it.post.agent_key === t.agent_key);
+    if (byAuthor >= 0) at = byAuthor;
+    else {
+      const inRound = merged.findIndex((it) => it.kind === "post" && it.post.round === t.round);
+      if (inRound >= 0) at = inRound;
+    }
+    merged.splice(at, 0, { kind: "tool", t });
+  }
   // weave persisted sentiment cards after their round's posts
   for (const s of initialSentiments) {
     let at = merged.length;
@@ -183,6 +206,7 @@ export default function LiveRun({
   const appliedSeq = useRef<Set<number>>(new Set(initialPosts.map((p) => p.seq)));
   const appliedPolls = useRef<Set<number>>(new Set(initialSentiments.map((s) => s.round)));
   const appliedVotes = useRef<Set<string>>(new Set(initialVotes.map((v) => `${v.seq}:${v.voter_key}`)));
+  const appliedTools = useRef<Set<string>>(new Set(initialTools.map((t) => `${t.agent_key}:${t.round}:${t.query}`)));
 
   // ---- §2b votes: per-post tallies with hover attribution ----
   const votesBySeq = useMemo(() => {
@@ -372,6 +396,15 @@ export default function LiveRun({
         .filter((v) => !appliedVotes.current.has(`${v.seq}:${v.voter_key}`));
       for (const v of vs) appliedVotes.current.add(`${v.seq}:${v.voter_key}`);
       if (vs.length) setVotes((prev) => [...prev, ...vs]);
+    } else if (evt.type === "tool") {
+      // 3d — a search card lands in the feed right before its author's post
+      const t = evt as unknown as LiveTool;
+      const dk = `${t.agent_key}:${t.round}:${t.query}`;
+      if (appliedTools.current.has(dk)) return null;
+      appliedTools.current.add(dk);
+      setItems((prev) => [...prev, { kind: "tool", t }]);
+      const a = nodesRef.current[t.agent_key];
+      if (a) speaker.current = { node: a, until: performance.now() + 2600 };
     } else if (evt.type === "stage") {
       if (evt.value === "running" && evt.detail) setNote(String(evt.detail));
       if (evt.value === "converged") setNote(`CONVERGED — POSITIONS STABILIZED, STOPPED BEFORE THE ROUND CAP · SET "STOP WHEN: ROUNDS EXHAUSTED" TO FORCE EVERY ROUND`);
@@ -409,6 +442,7 @@ export default function LiveRun({
       appliedSeq.current = new Set();
       appliedPolls.current = new Set();
       appliedVotes.current = new Set();
+      appliedTools.current = new Set();
     }
     setError(null);
     try {
@@ -535,7 +569,7 @@ export default function LiveRun({
         const [postsQ, evQ, simQ] = await Promise.all([
           supa.from("posts").select("seq, agent_key, author, thread, reply_to, tag, content, cites")
             .eq("sim_id", simId).gt("seq", maxSeq).order("seq", { ascending: true }).limit(200),
-          supa.from("events").select("type, payload").eq("sim_id", simId).in("type", ["sentiment", "votes"]),
+          supa.from("events").select("type, payload").eq("sim_id", simId).in("type", ["sentiment", "votes", "tool"]),
           supa.from("simulations").select("status, config").eq("id", simId).maybeSingle(),
         ]);
         const rows = (postsQ.data ?? []) as Record<string, unknown>[];
@@ -545,7 +579,7 @@ export default function LiveRun({
           handleEvt(postRowToEvt(r));
         }
         for (const e of (evQ.data ?? []) as { payload: Record<string, unknown> }[]) {
-          if (e.payload?.type === "sentiment" || e.payload?.type === "votes") handleEvt(e.payload);
+          if (e.payload?.type === "sentiment" || e.payload?.type === "votes" || e.payload?.type === "tool") handleEvt(e.payload);
         }
         const st = (simQ.data?.status as string | undefined) ?? "";
         const cfg2 = (simQ.data?.config ?? {}) as { run_state?: { heartbeat_at?: string | null }; run_result?: { stop?: string } };
@@ -1010,6 +1044,35 @@ export default function LiveRun({
               </div>
             )}
             {items.map((it, idx) => {
+              if (it.kind === "tool") {
+                // 3d — the search card: "searched, then argued", with the
+                // sources one click away
+                const t = it.t;
+                return (
+                  <div key={`t${idx}`} style={{ margin: "12px 0 12px 0", border: "1px solid var(--ln3)", borderRadius: 12, background: "var(--sf)", padding: "11px 15px" }}>
+                    <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--acc)" }}>
+                      🔎 WEB RESEARCH · {t.name.toUpperCase()}
+                    </div>
+                    <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--t3)", marginTop: 5 }}>
+                      searched “{t.query}”
+                    </div>
+                    {t.results.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 7 }}>
+                        {t.results.slice(0, 3).map((r, ri) => (
+                          <a key={ri} href={r.url} target="_blank" rel="noopener noreferrer"
+                            style={{ display: "flex", gap: 8, alignItems: "baseline", textDecoration: "none", minWidth: 0 }}>
+                            <span style={{ ...mono, fontSize: 8, color: "var(--t7)", flex: "none" }}>↗</span>
+                            <span style={{ fontSize: 11.5, color: "var(--t4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.title}</span>
+                            <span style={{ ...mono, fontSize: 8, letterSpacing: ".03em", color: "var(--t7)", flex: "none" }}>
+                              {(() => { try { return new URL(r.url).hostname.replace(/^www\./, "").toUpperCase(); } catch { return ""; } })()}
+                            </span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
               if (it.kind === "sentiment") {
                 const total = Math.max(it.s.polled, 1);
                 const open = expanded.has(idx);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { SIM_MODES } from "@/lib/casting";
 import { RUN_DEFAULTS, RUN_RANGES, RunConfig } from "@/lib/run";
+import { normalizeEnabledTools } from "@/lib/tools";
 
 /**
  * User adjustments to the casting plan (CLAUDE.md §3 Stage 3): the full-run
@@ -16,7 +17,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  let body: { scale?: { experts?: number; residents?: number }; mode?: string; qa_remove?: string; run?: Partial<RunConfig> };
+  let body: { scale?: { experts?: number; residents?: number }; mode?: string; qa_remove?: string; run?: Partial<RunConfig>; tools?: string[] };
   try {
     body = await request.json();
   } catch {
@@ -64,6 +65,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       report_length: pick(r.report_length ?? prev.report_length, ["auto", "brief", "standard", "dense"] as const, "auto"),
       density: pick(r.density ?? prev.density, ["focused", "lively", "bustling"] as const, "lively"),
     } satisfies RunConfig;
+  }
+
+  // 3d — the agent-tools allowlist (empty array = all off, the default)
+  if (Array.isArray(body.tools)) {
+    config.tools = normalizeEnabledTools(body.tools);
   }
 
   // remove one persisted corpus Q&A by id

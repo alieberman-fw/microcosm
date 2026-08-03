@@ -17,6 +17,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { FrozenSpec } from "@/lib/casting";
 import { RunConfig, TIER_MODELS, agoraReplies, burstSize, counterSlots, crossfireSlots } from "@/lib/run";
 import { parseLooseArray } from "@/lib/llm-json";
+import { toolBlocksFor, toolPromptAddendum } from "@/lib/tools";
 
 export interface EngineLead {
   key: string;
@@ -31,7 +32,8 @@ export interface EngineCrowdMember {
 /** §6.2 event payloads streamed to the client and persisted to `events` */
 export type EngineEvent =
   | { type: "stage"; value: "running" | "converged" | "done" | "error"; detail?: string }
-  | { type: "post"; seq: number; author: string; agent_key: string; name: string; role: string; initials: string; adversarial?: boolean; thread: string; reply_to: number | null; tag: string; content: string; cites: { title: string; quote: string }[]; round: number; phase?: string; side?: string; score?: number }
+  | { type: "post"; seq: number; author: string; agent_key: string; name: string; role: string; initials: string; adversarial?: boolean; thread: string; reply_to: number | null; tag: string; content: string; cites: { title: string; quote: string; url?: string }[]; round: number; phase?: string; side?: string; score?: number }
+  | { type: "tool"; agent_key: string; name: string; tool: string; query: string; results: { title: string; url: string }[]; round: number }
   | { type: "presence"; agent_key: string; name: string; state: "thinking" | "speaking" | "idle" }
   | { type: "polling"; round: number; count: number }
   | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[]; question?: string }
@@ -47,6 +49,12 @@ export interface EngineContext {
   leads: EngineLead[];
   crowd: EngineCrowdMember[];
   pollQuestion: string;                                 // the one proposition every crowd poll asks (brief-derived; falls back to the raw problem)
+  /** 3d — enabled tool keys (config.tools allowlist; empty = all off, the default).
+   *  LEADS ONLY: crowd polls/interjections/votes never carry tools. */
+  tools: string[];
+  /** the shared factbase: searches the panel already ran (seeded from
+   *  tool_runs on resume) — later turns see a digest so nobody re-searches */
+  pulledFacts: { query: string; results: { title: string; url: string }[] }[];
   corpusBlocks: Anthropic.Beta.BetaContentBlockParam[]; // document blocks with citations enabled (may be empty)
   temperature: number;
   deadline: number;                                     // ms epoch — suspend at the next safe boundary after this
@@ -131,7 +139,15 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
 }): Promise<{ seq: number; text: string }> {
   const model = TIER_MODELS[ctx.cfg.tier].leads;
   await ctx.emit({ type: "presence", agent_key: lead.key, name: lead.spec.name, state: "thinking" });
-  const system = compilePersonaPrompt(lead.spec, { mode: ctx.mode, problem: ctx.problem, temperature: ctx.cfg.temperature });
+  // 3d — tools attach to LEAD turns only, and only when the user enabled them;
+  // the addendum makes use agent-decided, never mandatory
+  const toolBlocks = toolBlocksFor(ctx.tools, model);
+  const system = compilePersonaPrompt(lead.spec, { mode: ctx.mode, problem: ctx.problem, temperature: ctx.cfg.temperature })
+    + toolPromptAddendum(ctx.tools);
+  const factDigest = toolBlocks.length && ctx.pulledFacts.length
+    ? `\n\nFACTS THE PANEL ALREADY PULLED (check before searching again):\n${ctx.pulledFacts.slice(-10).map((f) => `- "${f.query}" → ${f.results.slice(0, 2).map((r) => `${r.title} (${r.url})`).join(" · ") || "no results"}`).join("\n")}`
+    : "";
+  const turnSearches: { query: string; results: { title: string; url: string }[] }[] = [];
   // NOTE: no `temperature` param — deprecated on Sonnet 5+ (400s the call);
   // the §4.1 temperature band steers style through the prompt instead.
   // escalating output budgets: adaptive-thinking models (Sonnet 5+) can spend
@@ -139,13 +155,13 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
   // stop_reason max_tokens — retrying at the same ceiling fails identically
   // (the "Angela F.'s turn failed twice" run). Each retry must raise the
   // ceiling; only actual output tokens are billed, so headroom is free.
-  const attempt = async (extra?: string): Promise<{ text: string; cites: { title: string; quote: string }[] }> => {
+  const attempt = async (extra?: string): Promise<{ text: string; cites: { title: string; quote: string; url?: string }[] }> => {
     const userContent: Anthropic.Beta.BetaContentBlockParam[] = [
       ...ctx.corpusBlocks,
-      { type: "text", text: `${opts.transcript ? `TRANSCRIPT SO FAR (most recent last):\n${opts.transcript}\n\n` : ""}${opts.instruction}${extra ? `\n\n${extra}` : ""}` },
+      { type: "text", text: `${opts.transcript ? `TRANSCRIPT SO FAR (most recent last):\n${opts.transcript}\n\n` : ""}${opts.instruction}${factDigest}${extra ? `\n\n${extra}` : ""}` },
     ];
     let text = "";
-    const cites: { title: string; quote: string }[] = [];
+    const cites: { title: string; quote: string; url?: string }[] = [];
     let lastErr = "";
     const base = opts.maxTokens ?? 2000;
     const budgets = [base, Math.max(base * 3, 6_000), Math.max(base * 6, 12_000)];
@@ -158,13 +174,34 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
           system,
           messages: [{ role: "user", content: userContent }],
           betas: ["files-api-2025-04-14"],
+          ...(toolBlocks.length ? { tools: toolBlocks as never } : {}),
         });
+        // server-side search pairs: a server_tool_use block (the query) is
+        // followed by its web_search_tool_result block (the results). Errors
+        // come back as result content the model already handled — fail SOFT,
+        // never let a bad search kill a turn.
+        let pendingQuery: string | null = null;
         for (const b of res.content) {
+          const blk = b as unknown as { type: string; name?: string; input?: { query?: string }; content?: unknown };
+          if (blk.type === "server_tool_use" && blk.name === "web_search") {
+            pendingQuery = String(blk.input?.query ?? "");
+          } else if (blk.type === "web_search_tool_result") {
+            const rows = Array.isArray(blk.content) ? (blk.content as { type?: string; url?: string; title?: string }[]) : [];
+            const results = rows
+              .filter((r) => r.type === "web_search_result" && r.url)
+              .slice(0, 5)
+              .map((r) => ({ title: String(r.title ?? r.url).slice(0, 120), url: String(r.url) }));
+            if (pendingQuery !== null) {
+              turnSearches.push({ query: pendingQuery.slice(0, 200), results });
+              pendingQuery = null;
+            }
+          }
           if (b.type === "text") {
             text += b.text;
-            const withCites = b as { citations?: { document_title?: string | null; cited_text?: string }[] };
+            const withCites = b as { citations?: { document_title?: string | null; cited_text?: string; url?: string; title?: string }[] };
             for (const c of withCites.citations ?? []) {
               if (c.document_title) cites.push({ title: c.document_title, quote: (c.cited_text ?? "").slice(0, 160) });
+              else if (c.url) cites.push({ title: String(c.title ?? c.url).slice(0, 120), quote: (c.cited_text ?? "").slice(0, 160), url: c.url });
             }
           }
         }
@@ -204,6 +241,15 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
     } catch { /* keep the first draft rather than kill the run */ }
   }
   text = clampWords(stripSelfPrefix(text, lead.spec.name));
+  // 3d — every search this turn ran becomes a shared panel fact and a feed
+  // card, emitted BEFORE the post so the feed reads "searched, then argued"
+  const seenQueries = new Set<string>();
+  for (const s of turnSearches) {
+    if (seenQueries.has(s.query)) continue;
+    seenQueries.add(s.query);
+    ctx.pulledFacts.push(s);
+    await ctx.emit({ type: "tool", agent_key: lead.key, name: lead.spec.name, tool: "web_search", query: s.query, results: s.results, round: opts.round });
+  }
   await ctx.emit({
     type: "post", seq: opts.seq, author: "agent", agent_key: lead.key,
     name: lead.spec.name, role: lead.spec.seat?.role ?? lead.spec.role, initials: lead.spec.initials,
