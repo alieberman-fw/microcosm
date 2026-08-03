@@ -36,7 +36,7 @@ export type EngineEvent =
   | { type: "tool"; agent_key: string; name: string; tool: string; query: string; results: { title: string; url: string }[]; round: number }
   | { type: "presence"; agent_key: string; name: string; state: "thinking" | "speaking" | "idle" }
   | { type: "polling"; round: number; count: number }
-  | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[]; question?: string }
+  | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[]; question?: string; options?: string[] }
   | { type: "votes"; round: number; votes: { seq: number; voter_key: string; voter_name: string; voter_role: string; vote: 1 | -1 }[] }
   | { type: "convergence"; aligned: number; total: number; dissents: number };
 
@@ -49,6 +49,10 @@ export interface EngineContext {
   leads: EngineLead[];
   crowd: EngineCrowdMember[];
   pollQuestion: string;                                 // the one proposition every crowd poll asks (brief-derived; falls back to the raw problem)
+  /** choice instrument (PR-B): when the brief weighs NAMED alternatives, polls
+   *  offer those choices instead of support/oppose. Empty = the classic
+   *  stance poll. Derived once at launch (config.poll_options). */
+  pollOptions: string[];
   /** 3d — enabled tool keys (config.tools allowlist; empty = all off, the default).
    *  LEADS ONLY: crowd polls/interjections/votes never carry tools. */
   tools: string[];
@@ -280,32 +284,75 @@ export function normalizeStance(raw: unknown): "support" | "conditional" | "oppo
   return null; // unknown — caller decides (counted, not silently dumped)
 }
 
-/** the poll question: one plain proposition the crowd can support or oppose,
- *  derived from the brief ONCE per simulation (persisted in config so every
- *  round, resume slice, and the report ask the same thing). Fail-soft: the
- *  raw problem statement is the fallback topic. */
-export async function derivePollQuestion(
+/** match a free-text poll answer to one of the instrument's options. Exact
+ *  case-insensitive first, then a UNIQUE containment match (models love to
+ *  answer "the green one — green.png"); undecided variants get their own
+ *  bucket. null = unrecognized (caller counts it, never silently drops). */
+export function normalizeChoice(raw: unknown, options: string[]): string | null {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (["undecided", "unsure", "none", "no preference", "abstain", "can't choose", "cannot choose", "neither", "torn"].includes(s)) return "undecided";
+  const exact = options.find((o) => o.toLowerCase() === s);
+  if (exact) return exact;
+  const contained = options.filter((o) => s.includes(o.toLowerCase()) || o.toLowerCase().includes(s));
+  return contained.length === 1 ? contained[0] : null;
+}
+
+/** parse the instrument-derivation reply. Pure so tests pin the salvage
+ *  rules: fenced/prose-wrapped JSON, option cap at 5, dedupe, a lone option
+ *  degrades to the classic stance poll (one choice is a proposition). */
+export function parsePollInstrument(text: string, fallback: string): { question: string; options: string[] } {
+  const bail = { question: fallback, options: [] as string[] };
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return bail;
+  try {
+    const obj = JSON.parse(m[0]) as { question?: unknown; options?: unknown };
+    const question = String(obj.question ?? "").trim().replace(/^["“]|["”]$/g, "");
+    const seen = new Set<string>();
+    const options: string[] = [];
+    for (const o of Array.isArray(obj.options) ? obj.options : []) {
+      const label = String(o ?? "").trim().slice(0, 48);
+      if (!label || seen.has(label.toLowerCase())) continue;
+      seen.add(label.toLowerCase());
+      options.push(label);
+      if (options.length >= 5) break;
+    }
+    return {
+      question: question.length >= 12 && question.length <= 240 ? question : fallback,
+      options: options.length >= 2 ? options : [],
+    };
+  } catch {
+    return bail;
+  }
+}
+
+/** the poll instrument: derived from the brief ONCE per simulation (persisted
+ *  in config so every round, resume slice, and the report ask the same thing).
+ *  Two shapes: a proposition the crowd can support or oppose (the classic
+ *  four-stance poll), or — when the brief weighs NAMED alternatives — the
+ *  actual choices ("which photo leads the listing?" polls green.png vs
+ *  red.png vs blue.png). Fail-soft: the raw problem, classic stances. */
+export async function derivePollInstrument(
   anthropic: Anthropic, model: string, problem: string,
   logCall: EngineContext["logCall"],
-): Promise<string> {
+): Promise<{ question: string; options: string[] }> {
   const t0 = Date.now();
   try {
     const res = await anthropic.messages.create({
       model, max_tokens: 900, // headroom for adaptive thinking on Sonnet-class crowd tiers
       system:
-        `Turn a research brief into ONE neutral poll question for a crowd of ordinary people (residents, buyers, renters, neighbors). ` +
-        `It must be a single plain-language proposition someone can SUPPORT or OPPOSE — answerable YES or NO, never an either/or choice ` +
-        `(if the brief weighs options, make the brief's leading option the subject: "Should X do Y?"). ` +
-        `Max 22 words, no jargon, no acronyms. Reply ONLY the question text.`,
+        `Turn a research brief into ONE neutral poll question for a crowd of ordinary people (residents, buyers, renters, neighbors), and decide the instrument:\n` +
+        `- If the brief asks to CHOOSE AMONG named alternatives (photos, floor plans, sites, unit mixes, price points), the question asks which one — and "options" lists those alternatives EXACTLY as the brief names them (2-5, each under 6 words, brief's order; never invent an alternative).\n` +
+        `- Otherwise "options" is [] and the question is a single plain-language proposition someone can SUPPORT or OPPOSE — answerable YES or NO, never an either/or choice (if the brief weighs unnamed options, make the leading one the subject: "Should X do Y?").\n` +
+        `Question max 22 words, no jargon, no acronyms. Reply ONLY JSON: {"question": "...", "options": []}`,
       messages: [{ role: "user", content: problem.slice(0, 4000) }],
     });
     await logCall("engine.poll_question", model, res.usage, t0);
-    const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim()
-      .replace(/^["“]|["”]$/g, "");
-    return text.length >= 12 && text.length <= 240 ? text : problem;
+    const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+    return parsePollInstrument(text, problem);
   } catch (e) {
     await logCall("engine.poll_question", model, null, t0, e instanceof Error ? e.message : "derive failed");
-    return problem;
+    return { question: problem, options: [] };
   }
 }
 
@@ -322,7 +369,10 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
   await ctx.emit({ type: "polling", round, count: ctx.crowd.length }); // canvas animates WHILE the poll runs
   const model = TIER_MODELS[ctx.cfg.tier].crowd;
   const BATCH = 20;
-  const dist: Record<string, number> = { support: 0, conditional: 0, oppose: 0, disengaged: 0 };
+  const choice = ctx.pollOptions.length >= 2; // the brief named alternatives — poll the actual choices
+  const dist: Record<string, number> = choice
+    ? Object.fromEntries(ctx.pollOptions.map((o) => [o, 0])) // insertion order = display order
+    : { support: 0, conditional: 0, oppose: 0, disengaged: 0 };
   const quotes: { name: string; stance: string; quote: string }[] = [];
   const batches: EngineCrowdMember[][] = [];
   for (let i = 0; i < ctx.crowd.length; i += BATCH) batches.push(ctx.crowd.slice(i, i + BATCH));
@@ -338,14 +388,19 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
           // headroom over the strict per-row need: on frontier tier the crowd
           // model is Sonnet 5, whose adaptive thinking bills against this cap
           max_tokens: 200 * batch.length + 800,
-          system:
-            `You simulate a sentiment poll. THE POLL QUESTION: "${ctx.pollQuestion}". For EACH member listed, answer AS THEM${digest ? ", reacting to the question AND to what the panel just argued" : ""}. ` +
-            `Stances — exactly one per member:\n` +
-            `- "support": they would say yes to the question.\n` +
-            `- "conditional": yes, but only if a specific concern is handled — name it in the quote.\n` +
-            `- "oppose": they would say no.\n` +
-            `- "disengaged": the outcome truly would not touch their life and they would pay no attention. Most people have SOME leaning — use this sparingly, and NEVER as a stand-in for neutral or undecided (that is "conditional").\n` +
-            `Reply ONLY a JSON array in the same order: [{"name": "...", "stance": "support|conditional|oppose|disengaged", "quote": "one short in-character sentence"}]`,
+          system: choice
+            ? `You simulate a preference poll. THE POLL QUESTION: "${ctx.pollQuestion}". For EACH member listed, answer AS THEM${digest ? ", reacting to the question AND to what the panel just argued" : ""}. ` +
+              `THE CHOICES — pick EXACTLY ONE per member, verbatim:\n` +
+              ctx.pollOptions.map((o) => `- "${o}"`).join("\n") + "\n" +
+              `A member who genuinely cannot pick may answer "undecided" — use it sparingly; most people lean somewhere.\n` +
+              `Reply ONLY a JSON array in the same order: [{"name": "...", "choice": "one of the choices verbatim", "quote": "one short in-character sentence on why"}]`
+            : `You simulate a sentiment poll. THE POLL QUESTION: "${ctx.pollQuestion}". For EACH member listed, answer AS THEM${digest ? ", reacting to the question AND to what the panel just argued" : ""}. ` +
+              `Stances — exactly one per member:\n` +
+              `- "support": they would say yes to the question.\n` +
+              `- "conditional": yes, but only if a specific concern is handled — name it in the quote.\n` +
+              `- "oppose": they would say no.\n` +
+              `- "disengaged": the outcome truly would not touch their life and they would pay no attention. Most people have SOME leaning — use this sparingly, and NEVER as a stand-in for neutral or undecided (that is "conditional").\n` +
+              `Reply ONLY a JSON array in the same order: [{"name": "...", "stance": "support|conditional|oppose|disengaged", "quote": "one short in-character sentence"}]`,
           messages: [{
             role: "user",
             content:
@@ -355,12 +410,20 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
         });
         await ctx.logCall("engine.poll", model, res.usage, t0, undefined, { mode: ctx.mode, round, batch: batch.length, crowd: ctx.crowd.length });
         const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-        const rows = (parseLooseArray(text) ?? []) as { name?: string; stance?: string; quote?: string }[];
+        const rows = (parseLooseArray(text) ?? []) as { name?: string; stance?: string; choice?: string; quote?: string }[];
         let coerced = 0;
         for (const r of rows) {
-          const norm = normalizeStance(r.stance);
-          const stance = norm ?? "disengaged"; // truly unrecognized only — counted below, no longer the neutral dumping ground
-          if (!norm) coerced += 1;
+          let stance: string;
+          if (choice) {
+            const norm = normalizeChoice(r.choice ?? r.stance, ctx.pollOptions);
+            stance = norm ?? "undecided"; // unrecognized answers are counted honestly, never assigned a choice
+            if (!norm) coerced += 1;
+            if (!(stance in dist)) dist[stance] = 0;
+          } else {
+            const norm = normalizeStance(r.stance);
+            stance = norm ?? "disengaged"; // truly unrecognized only — counted below, no longer the neutral dumping ground
+            if (!norm) coerced += 1;
+          }
           dist[stance] += 1;
           if (r.quote && quotes.length < 6) quotes.push({ name: String(r.name ?? "Crowd member"), stance, quote: String(r.quote).slice(0, 160) });
         }
@@ -376,7 +439,7 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
   // aborted poll gets re-run in full on the next slice
   if (polled > 0) {
     ctx.polledRounds.add(round);
-    await ctx.emit({ type: "sentiment", round, polled, dist, quotes, question: ctx.pollQuestion });
+    await ctx.emit({ type: "sentiment", round, polled, dist, quotes, question: ctx.pollQuestion, ...(choice ? { options: ctx.pollOptions } : {}) });
   }
 }
 

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { derivePollQuestion, normalizeStance, runMode } from "@/lib/engine";
+import { derivePollInstrument, normalizeChoice, normalizeStance, parsePollInstrument, runMode } from "@/lib/engine";
 import { FakeClock, makeCrowd, makeFakeAnthropic, makeHarness, makeLeads } from "../helpers/fake-anthropic";
 
 describe("normalizeStance", () => {
@@ -73,27 +73,114 @@ describe("poll prompt", () => {
   });
 });
 
-describe("derivePollQuestion", () => {
-  it("returns the model's one-line proposition and prompts for a supportable question", async () => {
+describe("derivePollInstrument", () => {
+  it("returns the model's question, prompts for both instrument shapes", async () => {
     const clock = new FakeClock();
     const { client, calls } = makeFakeAnthropic(clock);
-    const q = await derivePollQuestion(client, "claude-haiku-4-5", "Should we rezone the mall site?", async () => {});
-    expect(q).toBe("Should the town let the project go ahead?");
+    const inst = await derivePollInstrument(client, "claude-haiku-4-5", "Should we rezone the mall site?", async () => {});
+    expect(inst).toEqual({ question: "Should the town let the project go ahead?", options: [] });
     expect(calls[0].kind).toBe("pollq");
     expect(calls[0].system).toContain("SUPPORT or OPPOSE");
+    expect(calls[0].system).toContain("CHOOSE AMONG named alternatives");
   });
 
-  it("falls back to the raw problem on API failure — the poll never blocks a run", async () => {
+  it("falls back to the raw problem + classic stances on API failure — the poll never blocks a run", async () => {
     const clock = new FakeClock();
     const { client } = makeFakeAnthropic(clock, { failure: () => "throw" });
-    const q = await derivePollQuestion(client, "claude-haiku-4-5", "Should we rezone the mall site?", async () => {});
-    expect(q).toBe("Should we rezone the mall site?");
+    const inst = await derivePollInstrument(client, "claude-haiku-4-5", "Should we rezone the mall site?", async () => {});
+    expect(inst).toEqual({ question: "Should we rezone the mall site?", options: [] });
   });
 
   it("falls back to the raw problem on an empty response", async () => {
     const clock = new FakeClock();
     const { client } = makeFakeAnthropic(clock, { failure: (k) => (k === "pollq" ? "empty" : undefined) });
-    const q = await derivePollQuestion(client, "claude-haiku-4-5", "Should we rezone the mall site?", async () => {});
-    expect(q).toBe("Should we rezone the mall site?");
+    const inst = await derivePollInstrument(client, "claude-haiku-4-5", "Should we rezone the mall site?", async () => {});
+    expect(inst.question).toBe("Should we rezone the mall site?");
+  });
+});
+
+describe("parsePollInstrument (PR-B — the choice instrument)", () => {
+  const FB = "the raw problem statement goes here";
+
+  it("parses a choice instrument, preserving option order", () => {
+    const out = parsePollInstrument(`{"question": "Which photo should lead the listing?", "options": ["green.png", "red.png", "blue.png"]}`, FB);
+    expect(out).toEqual({ question: "Which photo should lead the listing?", options: ["green.png", "red.png", "blue.png"] });
+  });
+
+  it("salvages prose-wrapped and fenced JSON", () => {
+    const out = parsePollInstrument("Here you go:\n```json\n{\"question\": \"Which floor plan fits best?\", \"options\": [\"Plan A\", \"Plan B\"]}\n```", FB);
+    expect(out.options).toEqual(["Plan A", "Plan B"]);
+  });
+
+  it("caps at 5 options, dedupes case-insensitively, truncates long labels", () => {
+    const out = parsePollInstrument(JSON.stringify({
+      question: "Which of the seven sites should the campus take?",
+      options: ["Site 1", "site 1", "Site 2", "Site 3", "Site 4", "Site 5", "Site 6", "x".repeat(80)],
+    }), FB);
+    expect(out.options).toEqual(["Site 1", "Site 2", "Site 3", "Site 4", "Site 5"]);
+  });
+
+  it("a lone option degrades to the classic stance poll — one choice is a proposition", () => {
+    const out = parsePollInstrument(`{"question": "Should the tower go ahead as proposed?", "options": ["the tower"]}`, FB);
+    expect(out.options).toEqual([]);
+  });
+
+  it("garbage and out-of-bounds questions fall back to the problem", () => {
+    expect(parsePollInstrument("not json at all", FB)).toEqual({ question: FB, options: [] });
+    expect(parsePollInstrument(`{"question": "short", "options": []}`, FB).question).toBe(FB);
+  });
+});
+
+describe("normalizeChoice", () => {
+  const OPTS = ["green.png", "red.png", "blue.png"];
+
+  it("matches exactly, case-insensitively", () => {
+    expect(normalizeChoice("green.png", OPTS)).toBe("green.png");
+    expect(normalizeChoice("RED.PNG", OPTS)).toBe("red.png");
+  });
+
+  it("matches a UNIQUE containment ('the green one — green.png')", () => {
+    expect(normalizeChoice("the green one — green.png", OPTS)).toBe("green.png");
+    expect(normalizeChoice("blue", OPTS)).toBe("blue.png");
+  });
+
+  it("undecided variants get their own bucket; ambiguity and unknowns return null", () => {
+    expect(normalizeChoice("undecided", OPTS)).toBe("undecided");
+    expect(normalizeChoice("none", OPTS)).toBe("undecided");
+    expect(normalizeChoice("green.png or red.png", OPTS)).toBeNull(); // two matches — never guess
+    expect(normalizeChoice("banana", OPTS)).toBeNull();
+    expect(normalizeChoice("", OPTS)).toBeNull();
+  });
+});
+
+describe("choice-instrument polls (PR-B)", () => {
+  const OPTS = ["green.png", "red.png", "blue.png"];
+
+  it("polls the brief's actual alternatives, verbatim, and tallies by option", async () => {
+    const h = makeHarness({ mode: "Agora", leads: makeLeads(3), crowd: makeCrowd(8), cfg: { rounds: 1, convergence: "fixed" }, pollOptions: OPTS });
+    await runMode(h.ctx);
+    const polls = h.calls.filter((c) => c.kind === "pollx");
+    expect(polls.length).toBeGreaterThan(0);
+    for (const p of polls) {
+      expect(p.system).toContain("preference poll");
+      for (const o of OPTS) expect(p.system).toContain(`- "${o}"`);
+      expect(p.system).toContain("pick EXACTLY ONE");
+    }
+    // no classic stance poll ran
+    expect(h.calls.filter((c) => c.kind === "poll").length).toBe(0);
+    const s = h.events.find((e): e is Extract<typeof e, { type: "sentiment" }> => e.type === "sentiment");
+    expect(s).toBeDefined();
+    expect(s!.options).toEqual(OPTS);
+    expect(s!.polled).toBe(8);
+    // fake picks round-robin: 8 members over 3 options
+    expect(s!.dist).toEqual({ "green.png": 3, "red.png": 3, "blue.png": 2 });
+  });
+
+  it("classic runs stay exactly as they were — no options field on the event", async () => {
+    const h = makeHarness({ mode: "Agora", leads: makeLeads(3), crowd: makeCrowd(4), cfg: { rounds: 1, convergence: "fixed" } });
+    await runMode(h.ctx);
+    const s = h.events.find((e): e is Extract<typeof e, { type: "sentiment" }> => e.type === "sentiment");
+    expect(s!.options).toBeUndefined();
+    expect(Object.keys(s!.dist).sort()).toEqual(["conditional", "disengaged", "oppose", "support"]);
   });
 });
