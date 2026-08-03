@@ -18,7 +18,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FrozenSpec } from "@/lib/casting";
 import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
-import { normalizeQuestions } from "@/lib/corpus";
+import { CorpusDocInput, buildCorpusBlocks, normalizeQuestions } from "@/lib/corpus";
 import { EngineContext, EngineEvent, EngineLead, PostRec, RunResume, runMode } from "@/lib/engine";
 import { CHAIN_PENDING, RunState, chainSecret } from "@/lib/walkaway";
 import { normalizeEnabledTools } from "@/lib/tools";
@@ -63,18 +63,18 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
     // ---- corpus prefix: same grounding path as Test-the-corpus (§2 Stage 2) ----
     const { data: docs } = await db.from("documents")
       .select("id, name, mime, anthropic_file_id").eq("sim_id", simId).eq("parse_status", "parsed");
-    const corpusBlocks: (Anthropic.Beta.BetaContentBlockParam & { cache_control?: { type: "ephemeral" } })[] = [];
+    const docInputs: CorpusDocInput[] = [];
     for (const d of docs ?? []) {
-      if (d.anthropic_file_id) {
-        if ((d.mime ?? "").startsWith("image/")) corpusBlocks.push({ type: "image", source: { type: "file", file_id: d.anthropic_file_id } });
-        else corpusBlocks.push({ type: "document", source: { type: "file", file_id: d.anthropic_file_id }, title: d.name, citations: { enabled: true } });
-      } else {
+      if (d.anthropic_file_id) docInputs.push({ name: d.name as string, mime: d.mime as string | null, file_id: d.anthropic_file_id as string });
+      else {
         const { data: chunks } = await db.from("doc_chunks")
           .select("content").eq("document_id", d.id).order("seq", { ascending: true }).limit(120);
         const text = (chunks ?? []).map((c) => c.content).join("\n\n");
-        if (text) corpusBlocks.push({ type: "document", source: { type: "text", media_type: "text/plain", data: text.slice(0, 300_000) }, title: d.name, citations: { enabled: true } });
+        if (text) docInputs.push({ name: d.name as string, mime: d.mime as string | null, text });
       }
     }
+    // shared builder: images carry NAME LABELS so agents can resolve "4.jpg"
+    const corpusBlocks = buildCorpusBlocks(docInputs) as unknown as (Anthropic.Beta.BetaContentBlockParam & { cache_control?: { type: "ephemeral" } })[];
     if (corpusBlocks.length) corpusBlocks[corpusBlocks.length - 1].cache_control = { type: "ephemeral" };
 
     // ---- resume state ALWAYS reconstructs from the database — the transcript

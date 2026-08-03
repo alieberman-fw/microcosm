@@ -7,7 +7,7 @@
  * documents in context via Files API ids, native citations, cached prefix.
  */
 
-import { CSSProperties, useRef, useState } from "react";
+import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BriefComposer, { Brief } from "@/components/app/BriefComposer";
 import Markdown from "@/components/app/Markdown";
@@ -162,6 +162,27 @@ export default function SimWorkspace({
     if (res.ok && data.url) window.open(data.url, "_blank", "noopener");
   };
 
+  // PR-A — image uploads get THUMBNAILS on their rows and a click-to-view
+  // lightbox, so "which file is 4.jpg" is answerable at a glance
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
+  useEffect(() => {
+    const imageDocs = docs.filter((d) => (d.mime ?? "").startsWith("image/") && d.parse_status === "parsed" && !thumbs[d.id]);
+    if (!imageDocs.length) return;
+    void (async () => {
+      const entries: [string, string][] = [];
+      for (const d of imageDocs) {
+        try {
+          const res = await fetch(`/api/documents/${d.id}`);
+          const data = await res.json();
+          if (res.ok && data.url) entries.push([d.id, data.url as string]);
+        } catch { /* row falls back to the file icon */ }
+      }
+      if (entries.length) setThumbs((t) => ({ ...t, ...Object.fromEntries(entries) }));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docs]);
+
   const ask = async () => {
     const q = question.trim();
     if (!q || asking || parsedDocs.length === 0) return;
@@ -306,7 +327,15 @@ export default function SimWorkspace({
               className="doc-row"
               style={{ display: "flex", alignItems: "center", gap: 14, border: "1px solid var(--ln3)", borderRadius: 10, padding: "11px 16px", animation: "fadeUp .35s ease both" }}
             >
-              {d.name.startsWith("Field notes") ? (
+              {thumbs[d.id] ? (
+                // eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL
+                <img
+                  src={thumbs[d.id]}
+                  alt={d.name}
+                  onClick={() => setLightbox({ url: thumbs[d.id], name: d.name })}
+                  style={{ width: 38, height: 28, objectFit: "cover", borderRadius: 6, border: "1px solid var(--ln4)", cursor: "zoom-in", flex: "none" }}
+                />
+              ) : d.name.startsWith("Field notes") ? (
                 <span style={{ color: "var(--acc)", fontSize: 13, flex: "none", lineHeight: 1 }}>✎</span>
               ) : (
                 <svg width="14" height="16" viewBox="0 0 14 17" fill="none" stroke="currentColor" strokeWidth="1.3" style={{ color: "var(--t6)", flex: "none" }}>
@@ -314,8 +343,8 @@ export default function SimWorkspace({
                 </svg>
               )}
               <button
-                onClick={() => openDoc(d.id)}
-                title="Open the original"
+                onClick={() => thumbs[d.id] ? setLightbox({ url: thumbs[d.id], name: d.name }) : void openDoc(d.id)}
+                title={thumbs[d.id] ? "Preview the image" : "Open the original"}
                 style={{ ...mono, fontSize: 11, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}
               >
                 {d.name}
@@ -470,15 +499,35 @@ export default function SimWorkspace({
         )}
       </div>
 
+      {/* PR-A — image lightbox for uploaded photos */}
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 96, background: "rgba(10,11,12,.82)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 32, cursor: "zoom-out" }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL */}
+          <img src={lightbox.url} alt={lightbox.name} style={{ maxWidth: "88vw", maxHeight: "80vh", borderRadius: 14, border: "1px solid var(--ln5)" }} />
+          <span style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--t3)" }}>{lightbox.name.toUpperCase()} · CLICK ANYWHERE TO CLOSE</span>
+        </div>
+      )}
+
       {/* test the corpus */}
       <div className="card" style={{ padding: "26px 30px", marginTop: 20 }}>
-        <div style={label}>TEST THE CORPUS · ASK A QUESTION, GET A CITED ANSWER</div>
-        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+        <div style={label}>TEST THE CORPUS · ASK A QUESTION, GET A CITED ANSWER · TYPE @ TO REFERENCE A FILE</div>
+        <div style={{ display: "flex", gap: 10, marginTop: 14, position: "relative" }}>
           <input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void ask(); }}
-            placeholder={parsedDocs.length ? "What does the survey say about the utility easement?" : "Upload a document first"}
+            onKeyDown={(e) => {
+              const frag = question.match(/@([^@\s"]*)$/);
+              const menu = frag ? parsedDocs.filter((d) => d.name.toLowerCase().includes(frag[1].toLowerCase())).slice(0, 6) : [];
+              if (e.key === "Escape" && frag) { setQuestion((q) => q.replace(/@[^@\s"]*$/, "")); return; }
+              if (e.key === "Enter") {
+                if (menu.length) { e.preventDefault(); setQuestion((q) => q.replace(/@[^@\s"]*$/, `"${menu[0].name}" `)); return; }
+                void ask();
+              }
+            }}
+            placeholder={parsedDocs.length ? "What does the survey say about the utility easement? Type @ to name a file" : "Upload a document first"}
             disabled={parsedDocs.length === 0}
             style={{
               flex: 1, padding: "12px 16px", background: "var(--sf2)", border: "1px solid var(--ln3)",
@@ -486,6 +535,32 @@ export default function SimWorkspace({
               color: "var(--t1)", outline: "none",
             }}
           />
+          {/* @file typeahead — Enter or click inserts the exact filename */}
+          {(() => {
+            const frag = question.match(/@([^@\s"]*)$/);
+            if (!frag) return null;
+            const menu = parsedDocs.filter((d) => d.name.toLowerCase().includes(frag[1].toLowerCase())).slice(0, 6);
+            if (!menu.length) return null;
+            return (
+              <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, zIndex: 40, minWidth: 280, background: "var(--sf)", border: "1px solid var(--ln5)", borderRadius: 12, padding: 5, boxShadow: "0 18px 44px rgba(0,0,0,.35)", animation: "fadeUp .12s ease both" }}>
+                {menu.map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => setQuestion((q) => q.replace(/@[^@\s"]*$/, `"${d.name}" `))}
+                    style={{ display: "flex", width: "100%", alignItems: "center", gap: 9, textAlign: "left", cursor: "pointer", borderRadius: 8, padding: "7px 10px", background: "transparent", border: "none" }}
+                  >
+                    {thumbs[d.id] ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL
+                      <img src={thumbs[d.id]} alt="" style={{ width: 30, height: 22, objectFit: "cover", borderRadius: 5, border: "1px solid var(--ln4)", flex: "none" }} />
+                    ) : (
+                      <span style={{ ...mono, fontSize: 9, color: "var(--t6)", flex: "none" }}>📄</span>
+                    )}
+                    <span style={{ ...mono, fontSize: 10.5, color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
           <button
             onClick={() => void ask()}
             disabled={!question.trim() || asking || parsedDocs.length === 0}

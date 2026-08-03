@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { CORPUS_QA_MODEL, CORPUS_QA_MODEL_LARGE, DIRECT_CONTEXT_BUDGET } from "@/lib/corpus";
+import { CORPUS_QA_MODEL, CORPUS_QA_MODEL_LARGE, CorpusDocInput, DIRECT_CONTEXT_BUDGET, buildCorpusBlocks } from "@/lib/corpus";
 
 export const maxDuration = 60;
 
@@ -51,35 +51,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .eq("sim_id", id).eq("parse_status", "parsed").order("created_at", { ascending: true });
   if (!docs?.length) return NextResponse.json({ error: "Upload at least one document first" }, { status: 400 });
 
-  // build the corpus prefix: one native block per document, citations on
-  const corpusBlocks: (Anthropic.Beta.BetaContentBlockParam & { cache_control?: { type: "ephemeral" } })[] = [];
+  // build the corpus prefix: one native block per document, citations on.
+  // The shared builder LABELS images with their filenames — "describe 4.jpg"
+  // failed before because image blocks carried no name at all.
+  const docInputs: CorpusDocInput[] = [];
   for (const d of docs) {
     if (d.anthropic_file_id) {
-      if ((d.mime ?? "").startsWith("image/")) {
-        corpusBlocks.push({ type: "image", source: { type: "file", file_id: d.anthropic_file_id } });
-      } else {
-        corpusBlocks.push({
-          type: "document",
-          source: { type: "file", file_id: d.anthropic_file_id },
-          title: d.name,
-          citations: { enabled: true },
-        });
-      }
+      docInputs.push({ name: d.name, mime: d.mime, file_id: d.anthropic_file_id });
     } else {
       // Files API upload failed at parse time — ground on the extracted text
       const { data: chunks } = await supabase.from("doc_chunks")
         .select("content").eq("document_id", d.id).order("seq", { ascending: true }).limit(200);
       const text = (chunks ?? []).map((c) => c.content).join("\n\n");
-      if (text) {
-        corpusBlocks.push({
-          type: "document",
-          source: { type: "text", media_type: "text/plain", data: text.slice(0, 400_000) },
-          title: d.name,
-          citations: { enabled: true },
-        });
-      }
+      if (text) docInputs.push({ name: d.name, mime: d.mime, text });
     }
   }
+  const corpusBlocks = buildCorpusBlocks(docInputs) as unknown as (Anthropic.Beta.BetaContentBlockParam & { cache_control?: { type: "ephemeral" } })[];
   if (!corpusBlocks.length) return NextResponse.json({ error: "No readable documents in the corpus" }, { status: 400 });
   // cache the corpus prefix — follow-up questions read it at ~0.1× price
   corpusBlocks[corpusBlocks.length - 1].cache_control = { type: "ephemeral" };

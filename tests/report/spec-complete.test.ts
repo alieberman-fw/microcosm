@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { fmtMoney, plainSpecIncomplete, reportSpecIncomplete, synthBudgetFor } from "@/lib/report";
+import { fmtMoney, plainSpecIncomplete, reportSpecIncomplete, resolveReportMedia, synthBudgetFor } from "@/lib/report";
 
 const complete = (): Record<string, unknown> => ({
   verdict: { label: "GO — WAIVER REQUIRED", tone: "conditional", headline: "Proceed at $34M with three conditions." },
@@ -140,6 +140,31 @@ describe("plainSpecIncomplete (the translation gate)", () => {
     expect(plainSpecIncomplete(short, 2)).toBe("covers 1/2 sections");
     const noBl = plain(); delete noBl.bottom_line;
     expect(plainSpecIncomplete(noBl, 2)).toBe("missing bottom line");
+  });
+});
+
+describe("resolveReportMedia (PR-A — files the decision turned on)", () => {
+  const docs = [
+    { name: "Photo-3.jpg", mime: "image/jpeg", storage_path: "org/sim/photo-3.jpg" },
+    { name: "survey.pdf", mime: "application/pdf", storage_path: "org/sim/survey.pdf" },
+    { name: "orphan.png", mime: "image/png", storage_path: null },
+  ];
+
+  it("matches filenames case-insensitively and resolves kind + path", () => {
+    const out = resolveReportMedia([{ file: "photo-3.JPG", caption: "The twilight shot the panel picked" }], docs);
+    expect(out).toEqual([{ name: "Photo-3.jpg", caption: "The twilight shot the panel picked", kind: "image", path: "org/sim/photo-3.jpg" }]);
+  });
+
+  it("drops invented filenames, unpathed docs, and duplicates; caps at 4", () => {
+    const out = resolveReportMedia([
+      { file: "made-up.png", caption: "x" },
+      { file: "orphan.png", caption: "no storage path" },
+      { file: "survey.pdf", caption: "a" },
+      { file: "SURVEY.pdf", caption: "duplicate" },
+    ], docs);
+    expect(out.map((m) => m.name)).toEqual(["survey.pdf"]);
+    expect(out[0].kind).toBe("document");
+    expect(resolveReportMedia("garbage", docs)).toEqual([]);
   });
 });
 

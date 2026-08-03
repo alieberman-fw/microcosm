@@ -213,6 +213,40 @@ function OddsMeter({ lead }: { lead: ReportLead }) {
   );
 }
 
+/** PR-A — the uploaded files the decision turned on: images render inline
+ *  (the winning listing photo IS the finding), documents open signed */
+function KeyMaterials({ media, urls }: { media: NonNullable<ReportSpec["media"]>; urls: Record<string, string> }) {
+  return (
+    <div style={{ marginTop: 34 }}>
+      <div style={label}>KEY MATERIALS · WHAT THE DECISION TURNED ON</div>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 14 }}>
+        {media.map((m, i) => {
+          const url = urls[m.path];
+          if (m.kind === "image" && url) {
+            return (
+              <figure key={i} style={{ margin: 0, maxWidth: 420, border: "1px solid var(--ln3)", borderRadius: 14, overflow: "hidden", background: "var(--sf)" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL */}
+                <img src={url} alt={m.name} style={{ display: "block", width: "100%", maxHeight: 340, objectFit: "cover" }} />
+                <figcaption style={{ padding: "12px 16px" }}>
+                  <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", color: "var(--acc)" }}>{m.name.toUpperCase()}</div>
+                  <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--t4)", marginTop: 4 }}>{m.caption}</div>
+                </figcaption>
+              </figure>
+            );
+          }
+          return (
+            <a key={i} href={url ?? "#"} target="_blank" rel="noopener noreferrer"
+              style={{ display: "block", minWidth: 240, maxWidth: 420, border: "1px solid var(--ln3)", borderRadius: 14, padding: "16px 18px", background: "var(--sf)", textDecoration: "none" }}>
+              <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", color: "var(--acc)" }}>↗ {m.name.toUpperCase()}</div>
+              <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--t4)", marginTop: 5 }}>{m.caption}</div>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** decimal scores → word grades for the simplified read */
 function gradeOf(score: number): { word: string; color: string } {
   if (score >= 7) return { word: "STRONG", color: "var(--acc)" };
@@ -223,8 +257,9 @@ function gradeOf(score: number): { word: string; color: string } {
 /** SIMPLIFY: a different page, not the expert page with softer words.
  *  Answer-first hero, Q&A cards, word grades, everyday crowd labels,
  *  card risks — nothing that needs a finance or engineering vocabulary. */
-function PlainBody({ spec, plain, problem, onExpert }: {
+function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
   spec: ReportSpec; plain: ReportPlain; problem: string; onExpert: () => void;
+  mediaUrls?: Record<string, string>;
 }) {
   const v = VERDICT_STYLE[spec.verdict.tone] ?? VERDICT_STYLE.split;
   const m = spec.methodology;
@@ -260,6 +295,9 @@ function PlainBody({ spec, plain, problem, onExpert }: {
           {plain.executive_summary}
         </p>
       </div>
+
+      {/* PR-A — the winning photo / key file speaks for itself in plain view too */}
+      {(spec.media?.length ?? 0) > 0 && <KeyMaterials media={spec.media!} urls={mediaUrls} />}
 
       {/* every brief question, answered like a person would */}
       <div style={{ marginTop: 34 }}>
@@ -418,7 +456,7 @@ function PlainBody({ spec, plain, problem, onExpert }: {
 }
 
 export default function ReportView({
-  simId, problem, spec, posts, version, versions = [], reportId,
+  simId, problem, spec, posts, version, versions = [], reportId, mediaUrls = {},
 }: {
   simId: string;
   problem: string;
@@ -427,6 +465,8 @@ export default function ReportView({
   version: number;
   versions?: number[];
   reportId?: string;
+  /** PR-A — signed URLs for spec.media, keyed by storage path */
+  mediaUrls?: Record<string, string>;
 }) {
   const [flash, setFlash] = useState<number | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
@@ -524,7 +564,7 @@ export default function ReportView({
       {plainErr && <div style={{ ...mono, fontSize: 10, color: "var(--warn)", marginTop: 10 }}>{plainErr}</div>}
 
       {showPlain ? (
-        <PlainBody spec={spec} plain={plain!} problem={problem} onExpert={() => setView("expert")} />
+        <PlainBody spec={spec} plain={plain!} problem={problem} onExpert={() => setView("expert")} mediaUrls={mediaUrls} />
       ) : (
         <>
           {/* the lead — its kind matches the ask (3b); pre-3b reports and
@@ -609,6 +649,9 @@ export default function ReportView({
               </div>
             ))}
           </div>
+
+          {/* PR-A — decision-critical uploads, shown not just cited */}
+          {(spec.media?.length ?? 0) > 0 && <KeyMaterials media={spec.media!} urls={mediaUrls} />}
 
           {/* dimension scores */}
           {spec.dimension_scores.length > 0 && (

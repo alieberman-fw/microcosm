@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
-import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, reportSpecIncomplete, reportSynthSystem, synthBudgetFor, verifierSystem } from "@/lib/report";
+import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, synthBudgetFor, verifierSystem } from "@/lib/report";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { normalizeEnabledTools } from "@/lib/tools";
 
@@ -74,7 +74,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   })();
 
   const { data: docs } = await supabase.from("documents")
-    .select("id, name, mime, anthropic_file_id").eq("sim_id", id).eq("parse_status", "parsed");
+    .select("id, name, mime, anthropic_file_id, storage_path").eq("sim_id", id).eq("parse_status", "parsed");
 
   // §2b: vote totals are a citable endorsement signal for the synthesizer
   const { data: voteRows } = await supabase.from("post_votes").select("seq, vote").eq("sim_id", id);
@@ -109,6 +109,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     (success.length ? `SUCCESS CRITERIA (the report is held to every one):\n${success.map((x) => `- ${x}`).join("\n")}\n` : "") +
     (sentiments.length ? `CROWD SENTIMENT BY ROUND${pollQuestion ? ` (the crowd was asked: "${pollQuestion}")` : ""}:\n${sentiments.map((x) => `- round ${x.round}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
     (toolFindings.length ? `TOOL FINDINGS (live web searches the panel ran — citable as "source: web", URLs are real):\n${toolFindings.map((f) => `- [${f.agent}] searched "${f.query}" → ${f.results.slice(0, 3).map((x) => `${x.title} <${x.url}>`).join(" · ") || "no results"}`).join("\n")}\n` : "") +
+    ((docs?.length ?? 0) > 0 ? `UPLOADED MATERIALS (exact filenames — usable in "media" when the decision turned on one):\n${docs!.map((d) => `- ${d.name} (${(d.mime ?? "").startsWith("image/") ? "image" : "document"})`).join("\n")}\n` : "") +
     voteText;
 
   const synthModel = TIER_MODELS[cfg.tier].synth;
@@ -324,6 +325,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           poll_question: pollQuestion ? String(pollQuestion).slice(0, 240) : undefined,
           tool_calls: toolFindings.length || undefined,
           web_sources: webSources.length ? webSources : undefined,
+          // PR-A: media picks resolve against REAL uploads only (unknown names drop)
+          media: (() => {
+            const resolved = resolveReportMedia((rawSpec as { media?: unknown }).media, (docs ?? []).map((d) => ({ name: d.name as string, mime: d.mime as string | null, storage_path: d.storage_path as string | null })));
+            return resolved.length ? resolved : undefined;
+          })(),
           transcript: postRows.map((r) => {
             const meta = (r.cites as { name?: string; role?: string; initials?: string; adversarial?: boolean; round?: number } | null) ?? {};
             return { seq: r.seq as number, name: meta.name ?? "Agent", role: meta.role ?? "", initials: meta.initials ?? "·", adversarial: meta.adversarial ?? false, tag: r.tag as string, content: r.content as string, round: meta.round ?? 1 };
