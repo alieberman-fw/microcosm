@@ -347,7 +347,7 @@ function WhatIsMicrocosm() {
         { title: "Brief", body: "State the problem in one clear question, list the questions to resolve, and define what a decision-grade answer must deliver. The report is built from exactly these." },
         { title: "Corpus", body: "Upload your documents — surveys, offering memos, zoning letters, rent rolls. Agents cite them by name and page; no documents? Write what you know and it becomes one." },
         { title: "Population", body: "Cast the leads (the voices that speak) and the crowd (the population behind them). Auto-cast from your brief, or hand-pick from the 1,800-persona library." },
-        { title: "Run", body: "Pick an interaction mode and watch the deliberation live — a network graph of who's talking to whom, and a forum feed of every post. You can take the floor yourself." },
+        { title: "Run", body: "Pick an interaction mode and watch the deliberation live — a network graph of who's talking to whom, and a forum feed of every post. You can take the floor yourself. And you can walk away: the run lives server-side, so closing the tab never stops it — reopen the simulation (or follow Home's in-progress strip) and you're watching the same run live, from any device. A STOP button ends a run gracefully at the next safe point, keeping the transcript for the report." },
         { title: "Report", body: "One click after the run: verdict chip, dimension scores, findings cited to specific posts (click a citation — the transcript scrolls to it), risk register, claims checked against your documents, and — deliberately — the preserved dissents." },
       ]} />
       <H>Why it works — four principles</H>

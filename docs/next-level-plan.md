@@ -166,7 +166,7 @@ Commitment is mandatory in every kind. Technical: typed `lead{kind,…}` beside 
 `brief.template`, per-kind lead visuals in ReportView, Reports tab + Home outcomes gain an
 insight bucket, gate checks kind-appropriate fields.
 
-### 3c · Runs you can walk away from  ⟵ NEXT
+### 3c · Runs you can walk away from  ✅ SHIPPED (PR #57 — waitUntil worker, self-scheduling slices, observer run screen, graceful STOP)
 
 Close the tab and the run keeps going server-side; any tab watches live. v1: decouple
 engine cancellation from stream disconnect; slices schedule their own successors
@@ -174,7 +174,7 @@ engine cancellation from stream disconnect; slices schedule their own successors
 tailing Supabase Realtime (polling fallback); Home's IN-PROGRESS strip links into live
 runs. End-state stays the Python/swarms worker (§6.3) when runs outgrow the slice chain.
 
-### 3d · Agent tools v1 — web research, agent-decided, user-controlled
+### 3d · Agent tools v1 — web research, agent-decided, user-controlled  ⟵ NEXT
 
 Agents decide **when** a tool is worth using (a lawyer answering from expertise doesn't
 search; an economist citing current rates does) — tool use is never per-post mandatory.

@@ -476,7 +476,7 @@ export default function ReportView({
       : []),
     {
       label: "HOW IT ENDED",
-      value: m.converged ? "CONVERGED" : m.stop === "choreography" ? "PHASES DONE" : m.stop === "budget" ? "BUDGET CAP" : m.stop === "rounds" ? "ALL ROUNDS" : "OPEN",
+      value: m.converged ? "CONVERGED" : m.stop === "choreography" ? "PHASES DONE" : m.stop === "budget" ? "BUDGET CAP" : m.stop === "rounds" ? "ALL ROUNDS" : m.stop === "stopped" ? "STOPPED" : "OPEN",
       sub: `${spec.dissents.length} DISSENT${spec.dissents.length === 1 ? "" : "S"} PRESERVED`,
     },
   ];

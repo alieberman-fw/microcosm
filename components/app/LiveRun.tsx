@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MiniSwarm } from "@/components/app/CastingTheater";
 import PersonaProfile from "@/components/app/PersonaProfile";
+import { createClient } from "@/lib/supabase/client";
 import type { PersonaSpec } from "@/lib/personas";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -172,6 +173,17 @@ export default function LiveRun({
   const floorMentions = useRef<Map<string, string>>(new Map());  // display name → agent_key
   const router = useRouter();
 
+  // ---- 3c walk-away state: the run lives server-side; this screen is a
+  // WINDOW (attached stream) or an OBSERVER (database tail) ----
+  const [stale, setStale] = useState(false);           // orphaned run (no heartbeat) — offer RESUME
+  const [confirmStop, setConfirmStop] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const observing = useRef(false);
+  // dedupe across sources (stream ↔ observer handoff must never double-apply)
+  const appliedSeq = useRef<Set<number>>(new Set(initialPosts.map((p) => p.seq)));
+  const appliedPolls = useRef<Set<number>>(new Set(initialSentiments.map((s) => s.round)));
+  const appliedVotes = useRef<Set<string>>(new Set(initialVotes.map((v) => `${v.seq}:${v.voter_key}`)));
+
   // ---- §2b votes: per-post tallies with hover attribution ----
   const votesBySeq = useMemo(() => {
     const m = new Map<number, { up: LiveVote[]; down: LiveVote[] }>();
@@ -298,10 +310,106 @@ export default function LiveRun({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** apply one engine event to the screen — shared by the attached stream
+   *  and the observer tail; dedupes so a stream→observer handoff never
+   *  double-applies. Returns "terminal" when the run ended. */
+  const handleEvt = (evt: Record<string, unknown>): "terminal" | null => {
+    if (evt.type === "config") {
+      // the engine's real parameters win over the server-rendered props —
+      // including the MODE: a re-run after a mode change switches the
+      // arrangement the moment the new run starts
+      if (Number(evt.rounds)) setMaxR(Number(evt.rounds));
+      if (typeof evt.mode === "string" && evt.mode) setViewMode(evt.mode);
+    } else if (evt.type === "post") {
+      const p = evt as unknown as LivePost & { type: string };
+      if (appliedSeq.current.has(p.seq)) return null;
+      appliedSeq.current.add(p.seq);
+      setItems((prev) => [...prev, { kind: "post", post: p }]);
+      setThinking(null);
+      // canvas: pulse + speaker — in lockstep with the feed item landing
+      authorBySeq.current.set(p.seq, p.agent_key);
+      composing.current = null;
+      const a = nodesRef.current[p.agent_key] ?? nodesRef.current["__judge"] ?? nodesRef.current["__agg"];
+      if (a) {
+        // a reply pulses to the ACTUAL author being answered; an open post broadcasts
+        const replyAuthor = p.reply_to != null ? authorBySeq.current.get(p.reply_to) : undefined;
+        const replyNode = replyAuthor ? nodesRef.current[replyAuthor] : undefined;
+        const now = performance.now();
+        const targets = replyNode && replyNode !== a
+          ? [replyNode]
+          : Object.values(nodesRef.current).filter((n) => n.key !== p.agent_key && n.key !== "__judge").slice(0, 8);
+        targets.forEach((t, i) => pulses.current.push({ a, b: t, t0: now + i * 90, dur: targets.length === 1 ? 3600 : 2200, strong: targets.length === 1 }));
+        // replies also hold a steady line while the post is read
+        if (replyNode && replyNode !== a) {
+          edges.current = [...edges.current.filter((e) => e.until > now), { a, b: replyNode, until: now + 7000 }].slice(-3);
+        }
+        speaker.current = { node: a, until: now + 4200 };
+      }
+    } else if (evt.type === "presence") {
+      if (evt.state === "thinking") {
+        setThinking(String(evt.name));
+        const key = String(evt.agent_key ?? "");
+        if (nodesRef.current[key]) composing.current = { key, until: performance.now() + 30_000 };
+      }
+    } else if (evt.type === "polling") {
+      polling.current = { t0: performance.now(), n: Number(evt.count) || crowdCount };
+    } else if (evt.type === "sentiment") {
+      const s = evt as unknown as LiveSentiment;
+      if (appliedPolls.current.has(s.round)) return null;
+      appliedPolls.current.add(s.round);
+      polling.current = null;
+      setItems((prev) => [...prev, { kind: "sentiment", s }]);
+      // canvas: the crowd lights up and pulses inward while the poll lands
+      pollWave.current = performance.now();
+      const ring = crowdRef.current;
+      const cx = (canvasEl.current?.width ?? 0) / 2, cy = (canvasEl.current?.height ?? 0) / 2;
+      const now = performance.now();
+      for (let i = 0; i < ring.length; i += Math.max(1, Math.floor(ring.length / 14))) {
+        pulses.current.push({ a: ring[i], b: { x: cx, y: cy }, t0: now + (i % 7) * 120, dur: 2200, strong: false });
+      }
+    } else if (evt.type === "votes") {
+      const vs = ((evt as unknown as { votes: LiveVote[] }).votes ?? [])
+        .filter((v) => !appliedVotes.current.has(`${v.seq}:${v.voter_key}`));
+      for (const v of vs) appliedVotes.current.add(`${v.seq}:${v.voter_key}`);
+      if (vs.length) setVotes((prev) => [...prev, ...vs]);
+    } else if (evt.type === "stage") {
+      if (evt.value === "running" && evt.detail) setNote(String(evt.detail));
+      if (evt.value === "converged") setNote(`CONVERGED — POSITIONS STABILIZED, STOPPED BEFORE THE ROUND CAP · SET "STOP WHEN: ROUNDS EXHAUSTED" TO FORCE EVERY ROUND`);
+      if (evt.value === "done") {
+        // honest stop reasons — "converged" is reserved for the stability rule
+        const reason = String(evt.detail ?? "");
+        if (reason === "choreography") setNote(`RUN COMPLETE — THIS MODE RUNS A FIXED CHOREOGRAPHY (PHASES, NOT ROUNDS), AND EVERY PHASE DELIVERED`);
+        else if (reason === "budget") setNote(`STOPPED AT THE MAX-POSTS BUDGET — RAISE IT IN RUN CONFIG FOR A LONGER RUN`);
+        else if (reason === "rounds") setNote(`ALL ROUNDS COMPLETE`);
+        else if (reason === "stopped") setNote(`STOPPED BY YOU — THE TRANSCRIPT IS PRESERVED AND THE REPORT CAN SYNTHESIZE IT`);
+      }
+      if (evt.value === "converged" || evt.value === "done") { setStatus("done"); setStopping(false); return "terminal"; }
+      if (evt.value === "error") { setStatus("idle"); setStopping(false); setError(String(evt.detail ?? "Run failed")); return "terminal"; }
+    } else if (evt.type === "error") {
+      setStatus("idle");
+      setStopping(false);
+      setError(String(evt.error ?? "Run failed"));
+      return "terminal";
+    } else if (evt.type === "finished") {
+      setStatus("done");
+      setStopping(false);
+      return "terminal";
+    }
+    return null;
+  };
+
   const launch = async (cont = false) => {
     if (!cont && status === "running") return;
+    observing.current = false; // an explicit launch takes over from any tail
     setStatus("running");
-    if (!cont) { setItems([]); chunkCount.current = 0; }
+    setStale(false);
+    if (!cont) {
+      setItems([]); chunkCount.current = 0;
+      setVotes([]);
+      appliedSeq.current = new Set();
+      appliedPolls.current = new Set();
+      appliedVotes.current = new Set();
+    }
     setError(null);
     try {
       // the run needs its crowd: auto-materialize when the target says there
@@ -335,8 +443,14 @@ export default function LiveRun({
         body: JSON.stringify({ continue: cont }),
       });
       if (!res.ok || !res.body) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error((data as { error?: string }).error ?? "Launch failed");
+        const data = (await res.json().catch(() => ({}))) as { error?: string; live?: boolean };
+        if (data.live) {
+          // 3c: a worker is already driving this run — watch it instead
+          setNote("THIS RUN IS ALREADY GOING SERVER-SIDE — WATCHING LIVE");
+          void observe();
+          return;
+        }
+        throw new Error(data.error ?? "Launch failed");
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -352,84 +466,22 @@ export default function LiveRun({
         for (const line of lines) {
           if (!line.trim()) continue;
           const evt = JSON.parse(line) as Record<string, unknown>;
-          if (evt.type === "config") {
-            // the engine's real parameters win over the server-rendered props —
-            // including the MODE: a re-run after a mode change switches the
-            // arrangement the moment the new run starts
-            if (Number(evt.rounds)) setMaxR(Number(evt.rounds));
-            if (typeof evt.mode === "string" && evt.mode) setViewMode(evt.mode);
-          } else if (evt.type === "post") {
-            const p = evt as unknown as LivePost & { type: string };
-            setItems((prev) => [...prev, { kind: "post", post: p }]);
-            setThinking(null);
-            // canvas: pulse + speaker — in lockstep with the feed item landing
-            authorBySeq.current.set(p.seq, p.agent_key);
-            composing.current = null;
-            const a = nodesRef.current[p.agent_key] ?? nodesRef.current["__judge"] ?? nodesRef.current["__agg"];
-            if (a) {
-              // a reply pulses to the ACTUAL author being answered; an open post broadcasts
-              const replyAuthor = p.reply_to != null ? authorBySeq.current.get(p.reply_to) : undefined;
-              const replyNode = replyAuthor ? nodesRef.current[replyAuthor] : undefined;
-              const now = performance.now();
-              const targets = replyNode && replyNode !== a
-                ? [replyNode]
-                : Object.values(nodesRef.current).filter((n) => n.key !== p.agent_key && n.key !== "__judge").slice(0, 8);
-              targets.forEach((t, i) => pulses.current.push({ a, b: t, t0: now + i * 90, dur: targets.length === 1 ? 3600 : 2200, strong: targets.length === 1 }));
-              // replies also hold a steady line while the post is read
-              if (replyNode && replyNode !== a) {
-                edges.current = [...edges.current.filter((e) => e.until > now), { a, b: replyNode, until: now + 7000 }].slice(-3);
-              }
-              speaker.current = { node: a, until: now + 4200 };
-            }
-          } else if (evt.type === "presence") {
-            if (evt.state === "thinking") {
-              setThinking(String(evt.name));
-              const key = String(evt.agent_key ?? "");
-              if (nodesRef.current[key]) composing.current = { key, until: performance.now() + 30_000 };
-            }
-          } else if (evt.type === "polling") {
-            polling.current = { t0: performance.now(), n: Number(evt.count) || crowdCount };
-          } else if (evt.type === "sentiment") {
-            polling.current = null;
-            setItems((prev) => [...prev, { kind: "sentiment", s: evt as unknown as LiveSentiment }]);
-            // canvas: the crowd lights up and pulses inward while the poll lands
-            pollWave.current = performance.now();
-            const ring = crowdRef.current;
-            const cx = (canvasEl.current?.width ?? 0) / 2, cy = (canvasEl.current?.height ?? 0) / 2;
-            const now = performance.now();
-            for (let i = 0; i < ring.length; i += Math.max(1, Math.floor(ring.length / 14))) {
-              pulses.current.push({ a: ring[i], b: { x: cx, y: cy }, t0: now + (i % 7) * 120, dur: 2200, strong: false });
-            }
-          } else if (evt.type === "votes") {
-            const vs = (evt as unknown as { votes: LiveVote[] }).votes ?? [];
-            setVotes((prev) => [...prev, ...vs]);
-          } else if (evt.type === "stage") {
-            if (evt.value === "running" && evt.detail) setNote(String(evt.detail));
-            if (evt.value === "converged") setNote(`CONVERGED — POSITIONS STABILIZED, STOPPED BEFORE THE ROUND CAP · SET "STOP WHEN: ROUNDS EXHAUSTED" TO FORCE EVERY ROUND`);
-            if (evt.value === "done") {
-              // honest stop reasons — "converged" is reserved for the stability rule
-              const reason = String(evt.detail ?? "");
-              if (reason === "choreography") setNote(`RUN COMPLETE — THIS MODE RUNS A FIXED CHOREOGRAPHY (PHASES, NOT ROUNDS), AND EVERY PHASE DELIVERED`);
-              else if (reason === "budget") setNote(`STOPPED AT THE MAX-POSTS BUDGET — RAISE IT IN RUN CONFIG FOR A LONGER RUN`);
-              else if (reason === "rounds") setNote(`ALL ROUNDS COMPLETE`);
-            }
-            if (evt.value === "converged" || evt.value === "done") { sawTerminal = true; setStatus("done"); }
-            if (evt.value === "error") { sawTerminal = true; setStatus("idle"); setError(String(evt.detail ?? "Run failed")); }
-          } else if (evt.type === "error") {
-            sawTerminal = true;
-            setStatus("idle");
-            setError(String(evt.error ?? "Run failed"));
-          } else if (evt.type === "finished") {
-            sawTerminal = true;
-            setStatus("done");
-          } else if (evt.type === "continue") {
-            // the slice hit the serverless window — reconnect for the next one
+          if (evt.type === "continue") {
+            // the slice hit the serverless window; the worker hands off
             sawContinue = true;
             chunkCount.current += 1;
-            if (chunkCount.current < 40) {
+            if (evt.chained) {
+              // 3c: the next slice is already scheduled SERVER-SIDE — stop
+              // driving from the tab and just watch the transcript land
+              setNote(`LONG RUN · CONTINUING SERVER-SIDE (SLICE ${chunkCount.current + 1}) — ROUND ${evt.round} · SAFE TO CLOSE THE TAB`);
+              setTimeout(() => void observe(), 800);
+            } else if (chunkCount.current < 40) {
+              // no service key on this deployment — legacy client-driven chain
               setNote(`LONG RUN · CONTINUING SEAMLESSLY (SLICE ${chunkCount.current + 1}) — ROUND ${evt.round}`);
               setTimeout(() => void launch(true), 400);
             }
+          } else if (handleEvt(evt) === "terminal") {
+            sawTerminal = true;
           }
         }
       }
@@ -439,16 +491,11 @@ export default function LiveRun({
         setStatus((s) => (s === "running" ? "done" : s));
         router.refresh(); // the persisted run replaces any cached empty payload
       } else if (!sawContinue && !sawTerminal) {
-        // the stream died WITHOUT a verdict (platform hard-kill mid-slice,
-        // network drop) — the run is NOT done; resume it from the transcript
-        chunkCount.current += 1;
-        if (chunkCount.current < 40) {
-          setNote(`CONNECTION DROPPED MID-SLICE — RESUMING FROM THE PERSISTED TRANSCRIPT (SLICE ${chunkCount.current + 1})`);
-          setTimeout(() => void launch(true), 1500);
-        } else {
-          setStatus("idle");
-          setError("The run was interrupted repeatedly — hit RE-RUN to continue; every post so far is persisted");
-        }
+        // 3c: the WINDOW died, not the run — the worker survives stream loss
+        // under waitUntil. Switch to observing the persisted transcript; the
+        // observer itself sorts out complete/error/orphaned on its first poll.
+        setNote("STREAM DETACHED — THE RUN CONTINUES SERVER-SIDE; WATCHING THE TRANSCRIPT LIVE");
+        void observe();
       }
     } catch (e) {
       polling.current = null;
@@ -456,6 +503,111 @@ export default function LiveRun({
       setStatus("idle");
     }
   };
+
+  /** a persisted post row → the §6.2 post event handleEvt expects */
+  const postRowToEvt = (r: Record<string, unknown>): Record<string, unknown> => {
+    const meta = (r.cites as { cites?: { title: string; quote: string }[]; name?: string; role?: string; initials?: string; adversarial?: boolean; round?: number; phase?: string | null; side?: string | null } | null) ?? {};
+    return {
+      type: "post", seq: r.seq, agent_key: r.agent_key, author: r.author,
+      name: meta.name ?? "Agent", role: meta.role ?? "", initials: meta.initials ?? "·", adversarial: meta.adversarial ?? false,
+      thread: r.thread, reply_to: r.reply_to, tag: r.tag, content: r.content,
+      cites: meta.cites ?? [], round: meta.round ?? 1, phase: meta.phase ?? null, side: meta.side ?? null,
+    };
+  };
+
+  /** 3c OBSERVER: the run lives server-side; tail the database until it ends.
+   *  This is how a reopened tab (or a teammate's tab) watches a run it did
+   *  not launch — and how the launcher keeps watching after slice handoffs. */
+  const observe = async () => {
+    if (observing.current) return;
+    observing.current = true;
+    setStale(false);
+    setError(null);
+    setStatus("running");
+    setNote("WATCHING LIVE — THIS RUN IS GOING SERVER-SIDE; CLOSING THE TAB WON'T STOP IT");
+    const supa = createClient();
+    if (!supa) { observing.current = false; return; }
+    let lastProgress = Date.now();
+    let maxSeq = appliedSeq.current.size ? Math.max(...appliedSeq.current) : 0;
+    try {
+      for (;;) {
+        if (!observing.current) return;
+        const [postsQ, evQ, simQ] = await Promise.all([
+          supa.from("posts").select("seq, agent_key, author, thread, reply_to, tag, content, cites")
+            .eq("sim_id", simId).gt("seq", maxSeq).order("seq", { ascending: true }).limit(200),
+          supa.from("events").select("type, payload").eq("sim_id", simId).in("type", ["sentiment", "votes"]),
+          supa.from("simulations").select("status, config").eq("id", simId).maybeSingle(),
+        ]);
+        const rows = (postsQ.data ?? []) as Record<string, unknown>[];
+        if (rows.length) lastProgress = Date.now();
+        for (const r of rows) {
+          maxSeq = Math.max(maxSeq, Number(r.seq) || 0);
+          handleEvt(postRowToEvt(r));
+        }
+        for (const e of (evQ.data ?? []) as { payload: Record<string, unknown> }[]) {
+          if (e.payload?.type === "sentiment" || e.payload?.type === "votes") handleEvt(e.payload);
+        }
+        const st = (simQ.data?.status as string | undefined) ?? "";
+        const cfg2 = (simQ.data?.config ?? {}) as { run_state?: { heartbeat_at?: string | null }; run_result?: { stop?: string } };
+        if (st === "complete") {
+          observing.current = false;
+          polling.current = null;
+          setThinking(null);
+          setStatus("done");
+          setStopping(false);
+          const reason = cfg2.run_result?.stop ?? "";
+          if (reason === "stability") setNote(`CONVERGED — POSITIONS STABILIZED, STOPPED BEFORE THE ROUND CAP`);
+          else if (reason === "choreography") setNote(`RUN COMPLETE — EVERY PHASE DELIVERED`);
+          else if (reason === "budget") setNote(`STOPPED AT THE MAX-POSTS BUDGET`);
+          else if (reason === "stopped") setNote(`STOPPED BY YOU — THE TRANSCRIPT IS PRESERVED AND THE REPORT CAN SYNTHESIZE IT`);
+          else if (reason === "rounds") setNote(`ALL ROUNDS COMPLETE`);
+          router.refresh();
+          return;
+        }
+        if (st !== "running") {
+          observing.current = false;
+          polling.current = null;
+          setThinking(null);
+          setStatus("idle");
+          setStopping(false);
+          setError("The run stopped with an error — every post so far is persisted; RE-RUN starts fresh");
+          return;
+        }
+        // liveness: a fresh heartbeat OR new posts count as progress; a null
+        // heartbeat is a between-slice handoff (the chain child claims within
+        // seconds), so only a long silence marks the run orphaned
+        const hb = cfg2.run_state?.heartbeat_at ? Date.parse(cfg2.run_state.heartbeat_at) : NaN;
+        if (Number.isFinite(hb) && Date.now() - hb < 60_000) lastProgress = Date.now();
+        if (Date.now() - lastProgress > 180_000) {
+          observing.current = false;
+          setStale(true);
+          setStatus("idle");
+          setNote("NO HEARTBEAT FROM THE RUN — IT LOOKS ORPHANED (DEPLOY OR CRASH). RESUME CONTINUES FROM THE PERSISTED TRANSCRIPT");
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 2500));
+      }
+    } catch {
+      // transient network failure — drop out quietly; the header RESUME/refresh path re-enters
+      observing.current = false;
+    }
+  };
+
+  /** 3c graceful stop: the worker suspends at the next safe boundary and the
+   *  run completes with reason "stopped" — transcript preserved */
+  const stopRun = async () => {
+    setConfirmStop(false);
+    setStopping(true);
+    setNote("STOPPING AT THE NEXT SAFE BOUNDARY — THE TRANSCRIPT IS PRESERVED AND THE REPORT CAN SYNTHESIZE IT");
+    try { await fetch(`/api/simulations/${simId}/run/stop`, { method: "POST" }); } catch { /* the poll below will surface reality */ }
+  };
+
+  // 3c: landing on a RUNNING sim means the run is going server-side — watch it
+  useEffect(() => {
+    if (initialStatus === "running") void observe();
+    return () => { observing.current = false; }; // leaving the page stops the tail, never the run
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // scroll-position-aware autoscroll: follow the live feed only while the
   // user is AT the bottom — scrolled up to read means stay put, count what
@@ -779,8 +931,38 @@ export default function LiveRun({
               {viewMode === "Jury" ? "VERDICTS" : viewMode === "Desk" ? "THE MEMO, ASSEMBLING" : viewMode === "Expedition" ? "FINDINGS LOG" : "FORUM FEED"}
             </span>
             {/* one launch control at a time: empty feed → the hero button below; a finished
-                run → two-step RE-RUN (it REPLACES the persisted transcript) */}
-            {status !== "running" && items.length > 0 && (
+                run → two-step RE-RUN (it REPLACES the persisted transcript); a live run →
+                two-step STOP (3c graceful: suspends at the next safe boundary); an
+                orphaned run → RESUME from the persisted transcript */}
+            {status === "running" && !stopping && (
+              <button
+                onClick={() => { if (confirmStop) void stopRun(); else setConfirmStop(true); }}
+                onBlur={() => setConfirmStop(false)}
+                style={{
+                  ...mono, fontSize: 9, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100,
+                  background: confirmStop ? "var(--warn)" : "transparent",
+                  color: confirmStop ? "var(--acc-c)" : "var(--warn)",
+                  border: `1px solid var(--warn)`, cursor: "pointer",
+                }}
+              >
+                {confirmStop ? "■ STOPS AT THE NEXT SAFE POINT — CONFIRM" : "■ STOP RUN"}
+              </button>
+            )}
+            {status === "running" && stopping && (
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--warn)" }}>STOPPING…</span>
+            )}
+            {stale && status !== "running" && (
+              <button
+                onClick={() => { setStale(false); void launch(true); }}
+                style={{
+                  ...mono, fontSize: 9, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100,
+                  background: "var(--acc)", color: "var(--acc-c)", border: "none", cursor: "pointer",
+                }}
+              >
+                ▶ RESUME THE RUN
+              </button>
+            )}
+            {status !== "running" && !stale && items.length > 0 && (
               <button
                 onClick={() => { if (confirmRerun) { setConfirmRerun(false); void launch(false); } else setConfirmRerun(true); }}
                 onBlur={() => setConfirmRerun(false)}
@@ -794,7 +976,7 @@ export default function LiveRun({
             )}
           </div>
           <div ref={feedEl} onScroll={onFeedScroll} style={{ flex: 1, overflowY: "auto", padding: "14px 18px" }}>
-            {items.length === 0 && status !== "running" && (
+            {items.length === 0 && status !== "running" && !stale && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: "60px 24px", textAlign: "center" }}>
                 <div style={{ fontSize: 14, lineHeight: 1.7, color: "var(--t4)", maxWidth: 420 }}>
                   Watch the {configuredMode ?? viewMode} deliberation live — every post persists, the crowd is polled between rounds, and citations link back to your documents.

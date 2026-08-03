@@ -33,6 +33,7 @@ const BASE = argOf("--base", "http://localhost:3000").replace(/\/$/, "");
 const ONLY = argOf("--modes", "").split(",").map((s) => s.trim()).filter(Boolean);
 const KEEP = args.includes("--keep");        // skip cleanup + print the session (manual UI verification)
 const SKIP_FORUM = args.includes("--no-forum"); // matrix only
+const SKIP_WALKAWAY = args.includes("--no-walkaway"); // 3c detach + stop checks
 
 const env = {};
 for (const line of readFileSync(new URL("../.env.local", import.meta.url), "utf8").split("\n")) {
@@ -158,9 +159,10 @@ async function runOne(mode, personas) {
   });
   if (!pc.ok) throw new Error(`config failed: ${pc.status} ${await pc.text()}`);
 
-  // launch + follow chunked continuations
-  let posts = 0, stop = null, pollRounds = new Set(), errored = null, finished = false;
-  for (let slice = 0; slice < 6 && !finished && !errored; slice++) {
+  // launch + follow continuations. A chained handoff (3c) means the server
+  // took over — stop driving, tail the database like a closed tab would.
+  let posts = 0, stop = null, pollRounds = new Set(), errored = null, finished = false, chainedOff = false;
+  for (let slice = 0; slice < 6 && !finished && !errored && !chainedOff; slice++) {
     const res = await app(`/api/simulations/${simId}/run/launch`, { method: "POST", body: JSON.stringify(slice ? { continue: true } : {}) });
     if (!res.ok) throw new Error(`launch failed: ${res.status} ${await res.text()}`);
     let wantsContinue = false;
@@ -180,11 +182,27 @@ async function runOne(mode, personas) {
         else if (e.type === "sentiment") pollRounds.add(e.round);
         else if (e.type === "stage" && (e.value === "done" || e.value === "converged")) stop = e.detail ?? null;
         else if (e.type === "finished") finished = true;
-        else if (e.type === "continue") wantsContinue = true;
+        else if (e.type === "continue") { wantsContinue = true; if (e.chained) chainedOff = true; }
         else if (e.type === "error") errored = e.error;
       }
     }
     if (!wantsContinue) break;
+  }
+  if (chainedOff && !finished && !errored) {
+    for (let waited = 0; waited < 360_000 && !finished; waited += 5000) {
+      await sleep(5000);
+      const r = await admin(`/rest/v1/simulations?id=eq.${simId}&select=status,config`);
+      const row = (await r.json())[0];
+      if (row?.status !== "running") {
+        finished = row?.status === "complete";
+        stop = row?.config?.run_result?.stop ?? stop;
+        break;
+      }
+    }
+    const rp = await admin(`/rest/v1/posts?sim_id=eq.${simId}&select=seq`);
+    posts = (await rp.json()).length;
+    const re = await admin(`/rest/v1/events?sim_id=eq.${simId}&type=eq.sentiment&select=payload`);
+    pollRounds = new Set((await re.json()).map((x) => x.payload.round));
   }
 
   const exp = EXPECT[mode];
@@ -222,8 +240,8 @@ async function livingForumCheck(personas) {
     body: JSON.stringify({ mode: "Agora", run: { rounds: 2, max_posts: 80, tier: "economy", convergence: "fixed", verifier: false, report_length: "brief", speaker: "round-robin", density: "lively" } }),
   });
 
-  const postEvents = []; let voteEvents = 0; let finished = false;
-  for (let slice = 0; slice < 6 && !finished; slice++) {
+  const postEvents = []; let voteEvents = 0; let finished = false; let chainedOff = false;
+  for (let slice = 0; slice < 6 && !finished && !chainedOff; slice++) {
     const res = await app(`/api/simulations/${simId}/run/launch`, { method: "POST", body: JSON.stringify(slice ? { continue: true } : {}) });
     if (!res.ok) throw new Error(`lively launch failed: ${res.status}`);
     let wantsContinue = false;
@@ -239,11 +257,28 @@ async function livingForumCheck(personas) {
         if (e.type === "post") postEvents.push(e);
         else if (e.type === "votes") voteEvents += 1;
         else if (e.type === "finished") finished = true;
-        else if (e.type === "continue") wantsContinue = true;
+        else if (e.type === "continue") { wantsContinue = true; if (e.chained) chainedOff = true; }
         else if (e.type === "error") throw new Error(`lively run errored: ${e.error}`);
       }
     }
     if (!wantsContinue) break;
+  }
+  if (chainedOff && !finished) {
+    // 3c: the server took over — tail the DB, then hydrate the assertions
+    // from the persisted transcript (same fields the stream carried)
+    for (let waited = 0; waited < 360_000 && !finished; waited += 5000) {
+      await sleep(5000);
+      const r = await admin(`/rest/v1/simulations?id=eq.${simId}&select=status`);
+      const st = (await r.json())[0]?.status;
+      if (st !== "running") { finished = st === "complete"; break; }
+    }
+    const rp = await admin(`/rest/v1/posts?sim_id=eq.${simId}&select=seq,reply_to,tag,agent_key,cites&order=seq`);
+    postEvents.length = 0;
+    for (const r of await rp.json()) {
+      postEvents.push({ seq: r.seq, reply_to: r.reply_to, tag: r.tag, agent_key: r.agent_key, name: r.cites?.name });
+    }
+    const rv = await admin(`/rest/v1/events?sim_id=eq.${simId}&type=eq.votes&select=payload`);
+    voteEvents = (await rv.json()).length;
   }
 
   // threading depth from reply_to chains
@@ -290,6 +325,97 @@ async function livingForumCheck(personas) {
     console.log(`✗ living-forum ${leadPosts}+${interjections} posts · depth ${maxDepth} · votes ${voteEvents} · floor ${floorReplies} · ${secs}s — ${problems.join("; ")}`);
   } else {
     console.log(`✓ living-forum ${leadPosts} lead + ${interjections} interjection posts · chain depth ${maxDepth} · ${voteEvents} vote rounds · floor ${floorReplies} repl${floorReplies === 1 ? "y" : "ies"} · ${secs}s`);
+  }
+  return simId;
+}
+
+/** 3c — walk-away semantics: kill the stream right after the first post and
+ *  the run must finish server-side on its own (the stream is a WINDOW, not
+ *  the engine's home). Then a fresh run on the same sim gets a graceful
+ *  STOP: complete status, honest "stopped" reason, transcript preserved. */
+async function walkAwayCheck(personas) {
+  const t0 = Date.now();
+  const cr = await app("/api/simulations", {
+    method: "POST",
+    body: JSON.stringify({ problem: PROBLEM, questions: [{ label: "POOL VS FINISHES", detail: "which spend returns more at sale?" }], success: ["A committed answer"] }),
+  });
+  if (!cr.ok) throw new Error(`walkaway: create sim failed: ${cr.status}`);
+  const simId = (await cr.json()).id;
+  simIds.push(simId);
+  const seat = await app(`/api/simulations/${simId}/agents`, {
+    method: "POST",
+    body: JSON.stringify({ personaIds: personas.leadIds, crowdPersonaIds: personas.crowdIds }),
+  });
+  if (!seat.ok) throw new Error(`walkaway: seat failed: ${seat.status}`);
+  const pc = await app(`/api/simulations/${simId}/config`, {
+    method: "PATCH",
+    body: JSON.stringify({ mode: "Agora", run: { rounds: ROUNDS, max_posts: 60, tier: "economy", convergence: "fixed", verifier: false, report_length: "brief", speaker: "round-robin", temperature: "balanced", density: "focused" } }),
+  });
+  if (!pc.ok) throw new Error(`walkaway: config failed: ${pc.status}`);
+
+  const launchAndDrop = async (body) => {
+    const res = await app(`/api/simulations/${simId}/run/launch`, { method: "POST", body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`walkaway: launch failed: ${res.status} ${await res.text()}`);
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    outer: for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const e = JSON.parse(line);
+        if (e.type === "post") break outer;              // first post landed — "close the tab"
+        if (e.type === "error") throw new Error(`walkaway: run error: ${e.error}`);
+      }
+    }
+    await reader.cancel().catch(() => {});
+  };
+  const pollDone = async (maxMs) => {
+    let waited = 0;
+    for (;;) {
+      await sleep(5000);
+      waited += 5000;
+      const r = await admin(`/rest/v1/simulations?id=eq.${simId}&select=status,config`);
+      const row = (await r.json())[0];
+      if (row?.status !== "running") return row;
+      if (waited > maxMs) return row;
+    }
+  };
+  const countPosts = async () => {
+    const r = await admin(`/rest/v1/posts?sim_id=eq.${simId}&select=seq`);
+    return (await r.json()).length;
+  };
+
+  const problems = [];
+  // 1 · detach: the run must complete with NOBODY watching
+  await launchAndDrop({});
+  const row1 = await pollDone(300_000);
+  const posts1 = await countPosts();
+  const rr1 = row1?.config?.run_result ?? {};
+  if (row1?.status !== "complete") problems.push(`detached run ended "${row1?.status}" (want complete)`);
+  if (posts1 < EXPECT.Agora.postsMin) problems.push(`detached run persisted ${posts1} posts (want ≥${EXPECT.Agora.postsMin})`);
+  if (rr1.stop !== "rounds") problems.push(`detached run stop "${rr1.stop}" (want rounds)`);
+
+  // 2 · graceful stop: re-run, drop the stream, request a stop mid-flight
+  await launchAndDrop({});
+  await app(`/api/simulations/${simId}/run/stop`, { method: "POST" });
+  const row2 = await pollDone(240_000);
+  const rr2 = row2?.config?.run_result ?? {};
+  const posts2 = await countPosts();
+  if (row2?.status !== "complete") problems.push(`stopped run ended "${row2?.status}" (want complete)`);
+  if (rr2.stop !== "stopped") problems.push(`stopped run reason "${rr2.stop}" (want stopped)`);
+  if (posts2 < 1) problems.push("stopped run preserved no posts");
+
+  const secs = Math.round((Date.now() - t0) / 1000);
+  if (problems.length) {
+    failures.push({ mode: "walk-away", problems });
+    console.log(`✗ walk-away  ${problems.join("; ")} · ${secs}s`);
+  } else {
+    console.log(`✓ walk-away  detached run completed alone (${posts1} posts · stop ${rr1.stop}) · graceful stop honored (${posts2} posts · stop ${rr2.stop}) · ${secs}s`);
   }
   return simId;
 }
@@ -385,6 +511,9 @@ try {
   if (firstSim) await synthesizeReport(firstSim);
   let forumSim = null;
   if (!SKIP_FORUM) forumSim = await livingForumCheck(personas);
+  if (!SKIP_WALKAWAY) {
+    try { await walkAwayCheck(personas); } catch (e) { failures.push({ mode: "walk-away", problems: [String(e.message ?? e)] }); }
+  }
   if (KEEP && (forumSim || firstSim)) {
     console.log(`\n--keep: session preserved for manual UI verification`);
     console.log(`  run screen: ${BASE}/sim/${forumSim ?? firstSim}/run`);
