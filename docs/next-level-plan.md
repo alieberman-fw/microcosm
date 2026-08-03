@@ -174,17 +174,46 @@ engine cancellation from stream disconnect; slices schedule their own successors
 tailing Supabase Realtime (polling fallback); Home's IN-PROGRESS strip links into live
 runs. End-state stays the Python/swarms worker (§6.3) when runs outgrow the slice chain.
 
-### 3d · Agent tools v1 — web research, agent-decided, user-controlled  ⟵ NEXT
+### 3d · Agent tools v1 — web research, agent-decided, user-controlled  ⟵ IN PROGRESS (detailed 2026-08-03, approved)
 
-Agents decide **when** a tool is worth using (a lawyer answering from expertise doesn't
-search; an economist citing current rates does) — tool use is never per-post mandatory.
-**Default OFF**; a TOOLS section in run config shows each tool as a card with a plain
-explanation — enable all or pick some. Built as a **rack**: one generic tool interface so
-parcel data / historical web / economic series become new cards later, no re-architecture.
-Searches render as clickable cards in the feed, logged to `tool_runs`, citable by the
-report as "source: tool". Technical: Anthropic server-side web search tool on lead turns,
-model-appropriate variant per tier, per-simulation result cache so the panel shares one
-factbase, `config.tools` allowlist.
+The contract: agents get a RACK of tools they may reach for; the user controls which
+tools a simulation (or chat participant) is ALLOWED to use — all off by default,
+multi-select, or all on; agents decide when using an allowed tool is actually worth it
+(never per-post mandatory — the lawyer answers from expertise, the economist checks
+today's rates); every tool call is visible, logged, and citable.
+
+- **The rack** (`lib/tools.ts`, single source of truth): each tool = one descriptor
+  (key · name · tagline · plain description · concrete example · cost note · status ·
+  wiring). v1 ships **Web research** (Anthropic server-side web search, variant per
+  model tier from the registry, max 2 searches/turn) as `available`, plus greyed-out
+  COMING SOON cards (parcel & lot data · economic series · census · historical web ·
+  flood/climate) — the accessible tools list from day one; future tools are new
+  entries, never re-architecture (function-tool slots: schema/runner/citer).
+- **Simulations**: `config.tools` allowlist (empty = OFF, the default) · AGENT TOOLS
+  card section in run config (click to multi-select, ENABLE ALL / DISABLE ALL, enabled
+  = accent border, coming-soon dimmed + pill) · usage-based cost-estimator line ·
+  enabled set frozen into the report's run_config. LEADS ONLY — crowd polls/
+  interjections/votes never carry tools. Prompt addendum only when enabled ("search
+  only when it would change your answer; cite what you find"). **Shared factbase**:
+  every search persists (`tool_runs` + events) and later turns receive a "facts the
+  panel already pulled" digest so the panel argues from one set of pulled facts.
+  Failures soft — a failed search never fails a turn.
+- **Visibility**: new §6.2 `tool` event (streamed + persisted, observer-tailed) ·
+  feed renders each search as an expandable 🔎 card (query + clickable results) under
+  the agent's post · Monitoring counts searches in spend.
+- **Report**: TOOL FINDINGS block in synthesis input · TOOL CALLS stat tile ·
+  tools in methodology · WEB SOURCES appendix (deduped clickable URLs the panel used).
+  Verifier stays docs-only in v1.
+- **Conversations too** (approved 2026-08-03): per-participant tool access, selected
+  in the SAME menu as the model tier (the MODELS strip chip / roster card) with a
+  clean toggle UI; persisted like model_overrides. Replies that searched show it
+  beautifully — a "searched: …" line and clickable source chips under the bubble.
+- **Not in v1**: function-tool runners (coming-soon cards only) · full-page fetch ·
+  per-seat assignment in sims (persona `knowledge.tools` is the future hook) ·
+  web-checking verifier.
+- **Bar**: offline pins (tools only when enabled; crowd never; failure-soft; registry
+  invariants), smoke proof of default-OFF (zero tool events) + a tools-on run with
+  ≥1 search reaching feed + report, browser screenshots both themes, docs/README/§7.
 
 ### 3e · The forum acts like a real forum (living threads)
 
