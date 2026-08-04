@@ -6,10 +6,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildCorpusBlocks, corpusQaSystem } from "@/lib/corpus";
+import { buildCorpusBlocks, corpusQaSystem, imageOrdinalsSafe } from "@/lib/corpus";
 
 describe("buildCorpusBlocks", () => {
-  it("labels every image with its filename and ordinal (the 4.jpg fix)", () => {
+  it("digit-named images get filename-ONLY labels (field report 3: 'IMAGE 1' vs '1.jpg' collided)", () => {
     const blocks = buildCorpusBlocks([
       { name: "1.jpg", mime: "image/jpeg", file_id: "f1" },
       { name: "survey.pdf", mime: "application/pdf", file_id: "f2" },
@@ -17,11 +17,24 @@ describe("buildCorpusBlocks", () => {
     ]);
     const labels = blocks.filter((b) => b.type === "text").map((b) => String(b.text));
     expect(labels).toHaveLength(2);
-    expect(labels[0]).toContain('UPLOADED IMAGE 1 OF 2: "1.jpg"');
-    expect(labels[1]).toContain('UPLOADED IMAGE 2 OF 2: "4.jpg"');
+    expect(labels[0]).toContain('UPLOADED IMAGE: "1.jpg"');
+    expect(labels[0]).not.toMatch(/IMAGE \d+ OF/);
+    expect(labels[1]).toContain('UPLOADED IMAGE: "4.jpg"');
     // the label sits IMMEDIATELY before its image block
     const idx = blocks.findIndex((b) => b.type === "text" && String(b.text).includes("4.jpg"));
     expect((blocks[idx + 1] as { type: string }).type).toBe("image");
+  });
+
+  it("digit-free image names keep the ordinal labels (no collision possible)", () => {
+    const blocks = buildCorpusBlocks([
+      { name: "green.png", mime: "image/png", file_id: "f1" },
+      { name: "red.png", mime: "image/png", file_id: "f2" },
+    ]);
+    const labels = blocks.filter((b) => b.type === "text").map((b) => String(b.text));
+    expect(labels[0]).toContain('UPLOADED IMAGE 1 OF 2: "green.png"');
+    expect(labels[1]).toContain('UPLOADED IMAGE 2 OF 2: "red.png"');
+    expect(imageOrdinalsSafe(["green.png", "red.png"])).toBe(true);
+    expect(imageOrdinalsSafe(["3.webp", "front.jpg"])).toBe(false);
   });
 
   it("documents keep their titled, citation-enabled block; text fallback too", () => {

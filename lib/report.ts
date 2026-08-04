@@ -287,6 +287,7 @@ export function reportSynthSystem(length: ReportLength = "standard"): string {
     ` "dissents": [{"name": "...", "role": "...", "position": "one line", "quote": "VERBATIM sentence from their post", "seq": N}],\n` +
     ` "tripwires": ["what would change this answer", ...],\n` +
     ` "media": [{"file": "EXACT uploaded filename", "caption": "one line: why this file carried the decision"}]}  // ONLY files the decision genuinely turned on (the winning listing photo, the plan page the panel argued over) — [] when none; max 4; never invent filenames\n\n` +
+    `FILE NAMING (non-negotiable): refer to uploaded files by their EXACT filename ("1.jpg", "survey.pdf") in every headline, finding, and caption. NEVER invent your own "Image 1/2/3" numbering — when filenames contain digits, a made-up ordinal points at the WRONG file.\n` +
     `THE LEAD (the report's opening visual — its kind must match what the brief ASKS; a DECISION SHAPE HINT may be provided, but re-read the brief and trust the brief):\n` +
     `- "decision" — go/no-go, choose-between, "should we": the verdict chip carries it; emit {"kind": "decision"} with no other fields.\n` +
     `- "price_range" — "what is it worth", fair price, valuation briefs: {"kind": "price_range", "low": N, "high": N, "point": N, "walk_away_value": N, "walk_away_label": "WALK AWAY ABOVE $X", "basis": "the methods triangulated (sales comparison, residual land value, income cap)"}. Numbers are PLAIN NUMBERS in dollars (4200000, never "4.2M"). Commit to the range the transcript defends.\n` +

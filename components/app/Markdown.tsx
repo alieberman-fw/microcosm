@@ -19,7 +19,9 @@ function esc(s: string) {
 
 function inline(text: string, mentionPat: string | null, keyBase: string): ReactNode[] {
   const pat = new RegExp(
-    `(\`[^\`]+\`|\\*\\*[^*]+\\*\\*|\\*[^*\\s][^*]*\\*${mentionPat ? `|${mentionPat}` : ""})`,
+    // bold may CONTAIN single asterisks (nested *italics* — the field showed
+    // `**…what do they *need* to see…**` shattering into literal stars)
+    `(\`[^\`]+\`|\\*\\*(?:[^*]|\\*(?!\\*))+\\*\\*|\\*[^*\\s][^*]*\\*${mentionPat ? `|${mentionPat}` : ""})`,
     "g"
   );
   const out: ReactNode[] = [];
@@ -43,7 +45,9 @@ function inline(text: string, mentionPat: string | null, keyBase: string): React
     } else if (mentionPat && part.startsWith("@")) {
       out.push(<span key={key} style={{ color: "var(--acc)", fontWeight: 600 }}>{part}</span>);
     } else {
-      out.push(<Fragment key={key}>{part}</Fragment>);
+      // an UNPAIRED ** is never intentional prose — models drop one side of a
+      // bold span mid-thought; render the words, not the markers
+      out.push(<Fragment key={key}>{part.replace(/\*\*/g, "")}</Fragment>);
     }
   });
   return out;

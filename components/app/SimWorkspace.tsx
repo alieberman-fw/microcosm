@@ -14,7 +14,7 @@ import Markdown from "@/components/app/Markdown";
 import PopulationStage, { CastingInfo, WorkspaceSeat } from "@/components/app/PopulationStage";
 import RunConfigStage from "@/components/app/RunConfigStage";
 import { RunConfig } from "@/lib/run";
-import { DIRECT_CONTEXT_BUDGET, MAX_DOC_BYTES } from "@/lib/corpus";
+import { DIRECT_CONTEXT_BUDGET, MAX_DOC_BYTES, imageOrdinalsSafe } from "@/lib/corpus";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -120,9 +120,14 @@ export default function SimWorkspace({
 
   const parsedDocs = docs.filter((d) => d.parse_status === "parsed");
   // C6: "IMAGE n" = position among parsed images in corpus order (created_at
-  // asc — the docs array's order) — EXACTLY the label agents see in context
+  // asc — the docs array's order) — EXACTLY the label agents see in context.
+  // Field report 3: ordinals are suppressed when any image filename contains
+  // a digit (1.jpg as "IMAGE 2" is worse than no number at all).
   const imageOrdinals = new Map<string, number>();
-  parsedDocs.filter((d) => (d.mime ?? "").startsWith("image/")).forEach((d, i) => imageOrdinals.set(d.id, i + 1));
+  const parsedImages = parsedDocs.filter((d) => (d.mime ?? "").startsWith("image/"));
+  if (imageOrdinalsSafe(parsedImages.map((d) => d.name))) {
+    parsedImages.forEach((d, i) => imageOrdinals.set(d.id, i + 1));
+  }
   const totalTokens = parsedDocs.reduce((s, d) => s + (d.token_estimate ?? 0), 0);
   // a stage is DONE when its artifact exists: parsed docs, a cast panel,
   // persisted run posts, a synthesized report — never mere saved config
@@ -674,19 +679,35 @@ export default function SimWorkspace({
         const expertSide = initialSeats.length - residentSide;
         const scale = initialCasting?.scale ?? { experts: expertSide, residents: residentSide };
         const crowd = Math.max(scale.experts - expertSide, 0) + Math.max(scale.residents - residentSide, 0);
+        const runLive = sim.status === "running";
         return (
-          <RunConfigStage
-            key={`${modeSel ?? "none"}-${initialSeats.length}`}
-            simId={sim.id}
-            mode={modeSel}
-            recommendedMode={initialCasting?.recommended_mode ?? (initialCasting?.user_set?.mode ? null : initialCasting?.mode ?? null)}
-            leads={initialSeats.length}
-            expertSide={expertSide}
-            residentSide={residentSide}
-            crowd={crowd}
-            initialRun={initialRun}
-            initialTools={initialTools}
-          />
+          <div style={{ position: "relative" }}>
+            {/* field report 3: a LIVE run's settings are frozen — the config
+                PATCH also rejects changes server-side while the heartbeat is
+                fresh; this banner explains instead of silently failing */}
+            {runLive && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--warn)", background: "var(--warn-dim)", borderRadius: 12, padding: "12px 18px", margin: "18px 0 0" }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--warn)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />
+                <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--warn)" }}>
+                  A SIMULATION IS RUNNING — SETTINGS ARE LOCKED UNTIL IT FINISHES (OR YOU STOP IT FROM THE RUN SCREEN)
+                </span>
+              </div>
+            )}
+            <div style={runLive ? { opacity: 0.45, pointerEvents: "none", userSelect: "none" } : undefined} aria-disabled={runLive}>
+              <RunConfigStage
+                key={`${modeSel ?? "none"}-${initialSeats.length}`}
+                simId={sim.id}
+                mode={modeSel}
+                recommendedMode={initialCasting?.recommended_mode ?? (initialCasting?.user_set?.mode ? null : initialCasting?.mode ?? null)}
+                leads={initialSeats.length}
+                expertSide={expertSide}
+                residentSide={residentSide}
+                crowd={crowd}
+                initialRun={initialRun}
+                initialTools={initialTools}
+              />
+            </div>
+          </div>
         );
       })()}
     </div>

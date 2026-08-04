@@ -36,8 +36,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const brief = (sim.brief ?? {}) as { problem?: string; questions?: unknown; success?: unknown; template?: string };
   const config = (sim.config as Record<string, unknown>) ?? {};
   const cfg: RunConfig = { ...RUN_DEFAULTS, ...((config.run as Partial<RunConfig>) ?? {}) };
-  const mode = String((config.casting as { mode?: string } | undefined)?.mode ?? "Agora");
-  const runResult = (config.run_result as { posts?: number; converged?: boolean; stop?: string } | undefined) ?? {};
+  const runResult = (config.run_result as { posts?: number; converged?: boolean; stop?: string; mode?: string } | undefined) ?? {};
+  // field report 3: the report's mode is the mode the TRANSCRIPT was produced
+  // under (run_result.mode, written at run end) — casting.mode is the CURRENT
+  // config and mislabels a report after the user switches modes between runs
+  const mode = String(runResult.mode ?? (config.casting as { mode?: string } | undefined)?.mode ?? "Agora");
 
   const { data: postRows } = await supabase.from("posts")
     .select("seq, agent_key, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true });

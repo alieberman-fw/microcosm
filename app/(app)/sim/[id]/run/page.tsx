@@ -48,10 +48,10 @@ export default async function RunPage({ params, searchParams }: {
     return <RunScreen simId={sim.id} problem={problem} />;
   }
 
-  const [{ data: postRows }, { data: eventRows }, { count: reportCount }, { data: voteRows }] = await Promise.all([
+  const [{ data: postRows }, { data: eventRows }, { data: latestReportRows }, { data: voteRows }] = await Promise.all([
     supabase!.from("posts").select("seq, author, agent_key, thread, reply_to, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true }),
     supabase!.from("events").select("type, payload").eq("sim_id", id).in("type", ["sentiment", "tool"]).order("seq", { ascending: true }),
-    supabase!.from("reports").select("id", { count: "exact", head: true }).eq("sim_id", id),
+    supabase!.from("reports").select("created_at").eq("sim_id", id).order("created_at", { ascending: false }).limit(1),
     supabase!.from("post_votes").select("seq, voter_key, voter_name, voter_role, vote").eq("sim_id", id),
   ]);
   const initialPosts: LivePost[] = (postRows ?? []).map((r) => {
@@ -93,7 +93,15 @@ export default async function RunPage({ params, searchParams }: {
       initialVotes={initialVotes}
       initialStatus={sim.status as string}
       maxRounds={cfg.rounds}
-      hasReport={(reportCount ?? 0) > 0}
+      hasReport={(() => {
+        // field report 3: a report is only "ready to read" if it covers the
+        // LATEST run — after a re-run, the primary CTA must be SYNTHESIZE
+        const latest = latestReportRows?.[0]?.created_at as string | undefined;
+        if (!latest) return false;
+        const runAt = (sim.config as { run_result?: { at?: string } } | null)?.run_result?.at;
+        return !runAt || new Date(latest).getTime() >= new Date(runAt).getTime();
+      })()}
+      hasStaleReport={(latestReportRows?.length ?? 0) > 0}
     />
   );
 }
