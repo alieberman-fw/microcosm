@@ -522,6 +522,63 @@ export function juryTallyLine(cur: Map<string, number>, prev: Map<string, number
   );
 }
 
+/* ---- Jury × choice briefs (field report 3) — a choose-between question has
+ * no single scoreable proposition, so "SCORE: n/10" collapsed: every juror
+ * anchored on the first uploaded image and the whole panel read 2/10. When
+ * the poll instrument derived OPTIONS, the jury PICKS one (verbatim, resolved
+ * through normalizeChoice) with a confidence score; the tally counts picks
+ * and convergence = nobody switched. All pure, pinned by tests. ---- */
+
+export function juryPickOf(text: string, options: string[]): { pick: string; confidence: number | null } | null {
+  const m = text.match(/PICK:\s*"?([^"·|—–\n]+?)"?\s*[·|\-–—]\s*CONFIDENCE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i);
+  if (!m) return null;
+  const pick = normalizeChoice(m[1], options);
+  if (!pick || pick === "undecided") return null;
+  return { pick, confidence: Math.min(Math.max(parseFloat(m[2]), 0), 10) };
+}
+
+export function juryPicksAt(
+  posts: Pick<PostRec, "tag" | "round" | "agentKey" | "content">[],
+  round: number,
+  options: string[],
+): Map<string, { pick: string; confidence: number | null }> {
+  const out = new Map<string, { pick: string; confidence: number | null }>();
+  for (const p of posts) {
+    if (p.tag !== "VERDICT" || p.round !== round) continue;
+    const v = juryPickOf(p.content, options);
+    if (v) out.set(p.agentKey, v);
+  }
+  return out;
+}
+
+/** returning jurors whose pick CHANGED — the choice jury's movement metric */
+export function jurySwitches(prev: Map<string, { pick: string }>, cur: Map<string, { pick: string }>): number {
+  let switched = 0;
+  for (const [k, v] of cur) {
+    const pv = prev.get(k);
+    if (pv && pv.pick !== v.pick) switched += 1;
+  }
+  return switched;
+}
+
+export function juryChoiceTallyLine(
+  cur: Map<string, { pick: string; confidence: number | null }>,
+  prev: Map<string, { pick: string; confidence: number | null }>,
+  round: number,
+  options: string[],
+): string | null {
+  if (cur.size === 0) return null;
+  const counts = options.map((o) => ({ o, n: [...cur.values()].filter((v) => v.pick === o).length }));
+  const confs = [...cur.values()].map((v) => v.confidence).filter((c): c is number => c !== null);
+  const meanConf = confs.length ? (confs.reduce((a, b) => a + b, 0) / confs.length).toFixed(1) : "—";
+  const leader = [...counts].sort((a, b) => b.n - a.n)[0];
+  const switched = jurySwitches(prev, cur);
+  return (
+    `ROUND ${round} TALLY — ${counts.map((c) => `${c.o} ${c.n}`).join(" · ")} · LEADER ${leader.o} (${leader.n}/${cur.size}) · mean confidence ${meanConf}/10` +
+    (round > 1 ? ` · ${switched === 0 ? "NO JUROR SWITCHED PICKS" : `${switched} JUROR${switched === 1 ? "" : "S"} SWITCHED PICKS`}` : "")
+  );
+}
+
 /* ---- reply targeting (§2a threading) — exported PURE so tests pin it ---- */
 
 /** 3e — how much of a round's reply budget may reach BACK to earlier rounds.
@@ -924,6 +981,16 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     // movement (no judge call): stable = nobody moved a full point.
     // (arithmetic lives in the exported jury* helpers so tests pin it)
     const scoresAt = (round: number) => juryScoresAt(posts, round);
+    // field report 3: a choose-between brief has NO single scoreable
+    // proposition ("which of my 3 images?" → every juror anchored the first
+    // image and the panel read 2/10 across the board). When the poll
+    // instrument derived options, jurors PICK one with a confidence score.
+    const choice = ctx.pollOptions.length >= 2;
+    const picksAt = (round: number) => juryPicksAt(posts, round, ctx.pollOptions);
+    const optList = ctx.pollOptions.map((o) => `"${o}"`).join(" | ");
+    const r1Instruction = choice
+      ? `Independent verdict — you have NOT seen the others. THE QUESTION: "${ctx.pollQuestion}" THE OPTIONS — pick EXACTLY ONE, verbatim: ${optList}. Defend your pick in 3–4 sentences. Start EXACTLY with "PICK: <option> · CONFIDENCE: <n>/10 — ". ${q}`
+      : `Independent verdict — you have NOT seen the others. Score the proposition 0–10 and defend it in 3–4 sentences. Start EXACTLY with "SCORE: <n>/10 — ". ${q}`;
     for (let round = startRound; round <= ctx.cfg.rounds && budget(); round++) {
       if (round === 1) {
         // 3e: round 1 is BLIND — verdicts are independent by definition, so
@@ -936,7 +1003,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
           const slots = pending.slice(0, Math.max(ctx.cfg.max_posts - posts.length, 1)).map((lead) => { seq += 1; return { lead, mySeq: seq }; });
           const results = await Promise.all(slots.map((s) => speak(ctx, s.lead, {
             seq: s.mySeq, round: 1, thread: "JURY", tag: "VERDICT", transcript: "",
-            instruction: `Independent verdict — you have NOT seen the others. Score the proposition 0–10 and defend it in 3–4 sentences. Start EXACTLY with "SCORE: <n>/10 — ". ${q}`,
+            instruction: r1Instruction,
             deferEmit: true,
           })));
           for (let s = 0; s < slots.length; s++) {
@@ -953,13 +1020,17 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
           await turn(lead, {
             round, thread: "JURY", tag: "VERDICT",
             transcript: windowOf(posts, ctx.leads.length + 3),
-            instruction: `Deliberation round ${round} of ${ctx.cfg.rounds}. The tally and your peers' verdicts are above. Re-score: HOLD or MOVE — if you move, name exactly which argument moved you; if you hold against the majority, defend why they're wrong. Start EXACTLY with "SCORE: <n>/10 — ".`,
+            instruction: choice
+              ? `Deliberation round ${round} of ${ctx.cfg.rounds}. The tally and your peers' verdicts are above. Re-verdict: HOLD your pick or SWITCH — if you switch, name exactly which argument moved you; if you hold against the majority, defend why they're wrong. Options, verbatim: ${optList}. Start EXACTLY with "PICK: <option> · CONFIDENCE: <n>/10 — ".`
+              : `Deliberation round ${round} of ${ctx.cfg.rounds}. The tally and your peers' verdicts are above. Re-score: HOLD or MOVE — if you move, name exactly which argument moved you; if you hold against the majority, defend why they're wrong. Start EXACTLY with "SCORE: <n>/10 — ".`,
           });
         }
       }
       // the tally is pure arithmetic over the round's scores — no model call
       const cur = scoresAt(round);
-      const tallyContent = juryTallyLine(cur, round > 1 ? scoresAt(round - 1) : new Map(), round);
+      const tallyContent = choice
+        ? juryChoiceTallyLine(picksAt(round), round > 1 ? picksAt(round - 1) : new Map(), round, ctx.pollOptions)
+        : juryTallyLine(cur, round > 1 ? scoresAt(round - 1) : new Map(), round);
       if (tallyContent && !did("The Tally", "TALLY", round)) {
         const content = tallyContent;
         currentRound = round;
@@ -975,9 +1046,18 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
       await roundClose(round);
       if (ctx.cfg.convergence === "stability" && round >= 2) {
-        const prev = scoresAt(round - 1);
-        const { movedOrNew } = juryMovement(prev, cur);
-        if (cur.size > 0 && prev.size > 0 && movedOrNew === 0) { converged = true; stopReason = "stability"; break; }
+        if (choice) {
+          const prevP = picksAt(round - 1);
+          const curP = picksAt(round);
+          // stable = every returning juror HELD their pick (and everyone who
+          // picked this round also picked last round — a new voice = movement)
+          const allReturning = [...curP.keys()].every((k) => prevP.has(k));
+          if (curP.size > 0 && prevP.size > 0 && allReturning && jurySwitches(prevP, curP) === 0) { converged = true; stopReason = "stability"; break; }
+        } else {
+          const prev = scoresAt(round - 1);
+          const { movedOrNew } = juryMovement(prev, cur);
+          if (cur.size > 0 && prev.size > 0 && movedOrNew === 0) { converged = true; stopReason = "stability"; break; }
+        }
       }
     }
   } else if (ctx.mode === "Desk") {

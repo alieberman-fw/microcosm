@@ -147,7 +147,7 @@ function layoutLeads(mode: string, leads: LiveLead[], w: number, h: number): Rec
 }
 
 export default function LiveRun({
-  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialVotes = [], initialTools = [], initialStatus, maxRounds, hasReport = false,
+  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialVotes = [], initialTools = [], initialStatus, maxRounds, hasReport = false, hasStaleReport = false,
 }: {
   simId: string;
   problem: string;
@@ -166,6 +166,8 @@ export default function LiveRun({
   initialStatus: string;
   maxRounds: number;
   hasReport?: boolean;
+  /** a report exists but predates the latest run — reachable, never primary */
+  hasStaleReport?: boolean;
 }) {
   const merged: Item[] = [
     ...initialPosts.map((p) => ({ kind: "post" as const, post: p })),
@@ -493,6 +495,7 @@ export default function LiveRun({
     } else if (evt.type === "finished") {
       setStatus("done");
       setStopping(false);
+      setReportReady(false); // a FRESH transcript makes any earlier report stale — the CTA is SYNTHESIZE
       return "terminal";
     }
     return null;
@@ -946,7 +949,13 @@ export default function LiveRun({
     return null;
   };
 
-  const scoreOf = (p: LivePost): string | null => p.content.match(/SCORE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i)?.[1] ?? null;
+  const scoreOf = (p: LivePost): string | null => {
+    const s = p.content.match(/SCORE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i)?.[1];
+    if (s) return `SCORE ${s}/10`;
+    // choice juries (field report 3) verdict with a PICK + confidence
+    const pick = p.content.match(/PICK:\s*"?([^"·|—–\n]+?)"?\s*[·|\-–—]\s*CONFIDENCE:\s*(\d+(?:\.\d+)?)\s*\/\s*10/i);
+    return pick ? `PICK ${pick[1].trim().toUpperCase().slice(0, 18)} · ${pick[2]}/10` : null;
+  };
   const posts = items.filter((i) => i.kind === "post").length;
   const currentRound = items.reduce((m, i) => (i.kind === "post" ? Math.max(m, i.post.round) : m), 0);
 
@@ -1255,7 +1264,7 @@ export default function LiveRun({
                           <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", marginLeft: 8, padding: "2px 7px", borderRadius: 100, border: `1px solid ${isFloor ? "var(--acc)" : p.tag === "REBUTTAL" || p.tag === "COUNTER" || p.adversarial ? "var(--warn)" : "var(--ln4)"}`, color: isFloor ? "var(--acc)" : p.tag === "REBUTTAL" || p.tag === "COUNTER" ? "var(--warn)" : p.tag.startsWith("POST") || judge ? "var(--acc)" : "var(--t6)" }}>
                             {isFloor ? "YOU · TAKING THE FLOOR" : p.tag}
                           </span>
-                          {score && <span style={{ ...mono, fontSize: 9, marginLeft: 8, color: "var(--acc)" }}>SCORE {score}/10</span>}
+                          {score && <span style={{ ...mono, fontSize: 9, marginLeft: 8, color: "var(--acc)" }}>{score}</span>}
                           {topPost && <span style={{ ...mono, fontSize: 8, letterSpacing: ".05em", marginLeft: 8, color: "var(--acc)" }}>▲ MOST ENDORSED · ROUND {p.round}</span>}
                           {p.reply_to != null && (postMetaBySeq.get(p.reply_to)?.round ?? p.round) < p.round && (
                             <button
@@ -1353,16 +1362,23 @@ export default function LiveRun({
                         </button>
                       </>
                     ) : (
-                      <button
-                        onClick={() => void synthesize()}
-                        style={{
-                          background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 13.5,
-                          padding: "10px 22px", borderRadius: 100, border: "none", cursor: "pointer",
-                          fontFamily: "var(--font-sans), sans-serif",
-                        }}
-                      >
-                        Synthesize the report →
-                      </button>
+                      <>
+                        <button
+                          onClick={() => void synthesize()}
+                          style={{
+                            background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 13.5,
+                            padding: "10px 22px", borderRadius: 100, border: "none", cursor: "pointer",
+                            fontFamily: "var(--font-sans), sans-serif",
+                          }}
+                        >
+                          Synthesize the report →
+                        </button>
+                        {hasStaleReport && (
+                          <Link href={`/sim/${simId}/report`} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "8px 16px", borderRadius: 100, border: "1px solid var(--ln6)", color: "var(--t5)" }}>
+                            READ THE PREVIOUS RUN&apos;S REPORT →
+                          </Link>
+                        )}
+                      </>
                     )}
                   </div>
                 )}

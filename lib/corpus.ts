@@ -172,9 +172,18 @@ export interface CorpusDocInput {
   text?: string | null;
 }
 
+/** ordinal labels ("IMAGE 2") are only safe when they can't contradict the
+ *  filenames themselves — with uploads named 1.jpg / 3.webp, "IMAGE 1" and
+ *  "1.jpg" pointed at DIFFERENT files in the field. Digits in any image name
+ *  → filenames become the only naming system, everywhere. */
+export function imageOrdinalsSafe(imageNames: string[]): boolean {
+  return imageNames.every((n) => !/\d/.test(n));
+}
+
 export function buildCorpusBlocks(docs: CorpusDocInput[]): Record<string, unknown>[] {
   const blocks: Record<string, unknown>[] = [];
   const images = docs.filter((d) => (d.mime ?? "").startsWith("image/"));
+  const useOrdinals = imageOrdinalsSafe(images.map((d) => d.name));
   let imageOrdinal = 0;
   for (const d of docs) {
     if ((d.mime ?? "").startsWith("image/")) {
@@ -182,7 +191,9 @@ export function buildCorpusBlocks(docs: CorpusDocInput[]): Record<string, unknow
       imageOrdinal += 1;
       blocks.push({
         type: "text",
-        text: `[UPLOADED IMAGE ${imageOrdinal} OF ${images.length}: "${d.name}" — refer to it by this filename]`,
+        text: useOrdinals
+          ? `[UPLOADED IMAGE ${imageOrdinal} OF ${images.length}: "${d.name}" — refer to it by this filename]`
+          : `[UPLOADED IMAGE: "${d.name}" — refer to it ONLY by this exact filename, never by a number]`,
       });
       blocks.push({ type: "image", source: { type: "file", file_id: d.file_id } });
     } else if (d.file_id) {

@@ -72,7 +72,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // so every round, resume slice, and the report ask the crowd the same thing).
   // Choose-between briefs poll the brief's actual alternatives; everything
   // else gets the classic stance poll (options stays empty). ----
-  if (!config.poll_question && crowdCount > 0) {
+  // field report 3: Jury needs the instrument even with NO crowd — a choice
+  // brief without options collapses to "score the proposition" and every
+  // juror anchors the first uploaded file
+  const castMode = String((config.casting as { mode?: string } | undefined)?.mode ?? "Agora");
+  if (!config.poll_question && (crowdCount > 0 || castMode === "Jury")) {
     const instrument = await derivePollInstrument(
       new Anthropic(), TIER_MODELS[cfg.tier].crowd, brief.problem!,
       async (surface, model, usage, t0, error) => {

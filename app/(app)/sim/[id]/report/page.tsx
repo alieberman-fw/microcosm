@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import ReportView from "@/components/app/ReportView";
 import { ReportSpec } from "@/lib/report";
+import { imageOrdinalsSafe } from "@/lib/corpus";
 import { LivePost } from "@/components/app/LiveRun";
 
 export const metadata = { title: "Report — Microcosm" };
@@ -61,6 +62,10 @@ export default async function ReportPage({ params, searchParams }: {
   const { data: docRows } = await supabase!
     .from("documents").select("name, mime, storage_path, parse_status").eq("sim_id", id)
     .eq("parse_status", "parsed").order("created_at", { ascending: true });
+  // ordinal chips only when they can't contradict filename digits (field
+  // report 3: "IMAGE 1 = 3.webp" vs the panel's "Image 1 = 1.jpg")
+  const imageNames = (docRows ?? []).filter((d) => ((d.mime as string | null) ?? "").startsWith("image/")).map((d) => d.name as string);
+  const useOrdinals = imageOrdinalsSafe(imageNames);
   let imageOrdinal = 0;
   const files: { name: string; kind: "image" | "document"; ordinal: number | null; url?: string }[] = [];
   for (const d of docRows ?? []) {
@@ -70,7 +75,8 @@ export default async function ReportPage({ params, searchParams }: {
       const { data } = await supabase!.storage.from("documents").createSignedUrl(d.storage_path as string, 3600);
       url = data?.signedUrl;
     }
-    files.push({ name: d.name as string, kind: isImage ? "image" : "document", ordinal: isImage ? ++imageOrdinal : null, url });
+    if (isImage) imageOrdinal += 1;
+    files.push({ name: d.name as string, kind: isImage ? "image" : "document", ordinal: isImage && useOrdinals ? imageOrdinal : null, url });
   }
 
   return (

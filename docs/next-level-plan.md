@@ -504,6 +504,14 @@ diffs** (backlog) — the stress-grid mechanism (+1%/+2%/+3% forks, diff the ver
 
 ## Backlog
 
+**Convergence-quality audit (Adam, 2026-08-04):** a live study across brief styles
+verifying that round-over-round movement reads TRUE — polls trend as arguments land,
+juries hold/switch for named reasons, hard questions keep honest splits while easy
+ones converge. The mechanisms exist (digest-aware polls, tally-aware re-verdicts,
+stability rules, choice instruments); the audit grades their OUTPUT quality across
+~10 varied briefs and tunes prompts where movement looks like noise. Natural
+companion to 5e calibration.
+
 DOCX/XLSX uploads + per-doc viewer with citation deep-links · saved panels & per-seat
 swap · weighted poll tallies (PUMS weights in the dist) · a "choice" report lead kind
 (winner + share split for preference briefs) · historical-web tool · per-seat tool

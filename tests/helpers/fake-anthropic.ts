@@ -52,6 +52,8 @@ export interface FakeOptions {
   /** 3e — override the votes responder (e.g. a greedy voter who blows past
    *  the per-voter budget so the enforcement path is exercised) */
   votesScript?: (names: string[], seqs: number[]) => { voter: string; votes: { seq: number; vote: string }[] }[];
+  /** field report 3 — script a choice jury's pick per juror per round */
+  juryPick?: (name: string, round: number) => string;
   /** juror score for (agentName, round) — drives Jury arithmetic */
   juryScore?: (name: string, round: number) => number;
   /** turn text override; return undefined for the default */
@@ -136,6 +138,15 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
       const override = opts.turnText?.(call, n);
       if (override !== undefined) {
         text = override;
+      } else if (user.includes('Start EXACTLY with "PICK:')) {
+        // choice jury (field report 3): pick the options round-robin by call
+        // order unless juryPick scripts it (options are the quoted, |-joined
+        // list after "verbatim:")
+        const optBlock = user.match(/verbatim:\s*((?:"[^"]+"\s*\|?\s*)+)/)?.[1] ?? "";
+        const options = [...optBlock.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+        const pick = opts.juryPick?.(name, turnRound) ?? options[n % Math.max(options.length, 1)] ?? "option";
+        const score = opts.juryScore?.(name, turnRound) ?? 7;
+        text = `PICK: ${pick} · CONFIDENCE: ${score}/10 — ${name} verdict for round ${turnRound}.`;
       } else if (user.includes('Start EXACTLY with "SCORE:')) {
         const score = opts.juryScore?.(name, turnRound) ?? 5;
         text = `SCORE: ${score}/10 — ${name} verdict for round ${turnRound}.`;

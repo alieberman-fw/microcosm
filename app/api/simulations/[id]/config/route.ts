@@ -3,6 +3,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { SIM_MODES } from "@/lib/casting";
 import { RUN_DEFAULTS, RUN_RANGES, RunConfig } from "@/lib/run";
 import { normalizeEnabledTools } from "@/lib/tools";
+import { RunState, heartbeatFresh } from "@/lib/walkaway";
 
 /**
  * User adjustments to the casting plan (CLAUDE.md §3 Stage 3): the full-run
@@ -24,9 +25,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { data: sim } = await supabase.from("simulations").select("id, config").eq("id", id).maybeSingle();
+  const { data: sim } = await supabase.from("simulations").select("id, status, config").eq("id", id).maybeSingle();
   if (!sim) return NextResponse.json({ error: "Simulation not found" }, { status: 404 });
   const config = (sim.config as Record<string, unknown>) ?? {};
+  // field report 3: a LIVE run's settings are frozen — changing rounds/mode
+  // mid-flight mutated the running simulation's header and semantics. Only
+  // qa_remove (Q&A housekeeping) passes while the heartbeat is fresh.
+  const touchesRun = body.mode !== undefined || body.run !== undefined || body.scale !== undefined || body.tools !== undefined;
+  if (touchesRun && sim.status === "running" && heartbeatFresh((config.run_state as RunState | undefined) ?? null, Date.now())) {
+    return NextResponse.json({ error: "The simulation is running — settings are locked until it finishes (or you stop it)" }, { status: 409 });
+  }
   const casting = (config.casting as Record<string, unknown>) ?? {};
   const userSet = (casting.user_set as Record<string, boolean>) ?? {};
 
