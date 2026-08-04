@@ -662,7 +662,7 @@ export default function ReportView({
           </button>
         )}
         <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
-          {versions.length > 1 && versions.map((vn) => (
+          {versions.length > 1 && versions.length <= 6 && versions.map((vn) => (
             <Link key={vn} href={`/sim/${simId}/report?v=${vn}`} style={{
               ...mono, fontSize: 8.5, letterSpacing: ".05em", padding: "3px 10px", borderRadius: 100,
               border: `1px solid ${vn === version ? "var(--acc)" : "var(--ln4)"}`,
@@ -672,6 +672,17 @@ export default function ReportView({
               V{vn}
             </Link>
           ))}
+          {versions.length > 6 && (
+            /* twenty versions would mean twenty pills — past six, a picker */
+            <select
+              value={version}
+              onChange={(e) => (window.location.href = `/sim/${simId}/report?v=${e.target.value}`)}
+              aria-label="Open a report version"
+              style={{ ...mono, fontSize: 9, letterSpacing: ".05em", padding: "4px 8px", borderRadius: 8, background: "var(--sf2)", border: "1px solid var(--ln4)", color: "var(--acc)", cursor: "pointer" }}
+            >
+              {versions.map((vn) => <option key={vn} value={vn}>V{vn}{vn === versions[0] ? " · LATEST" : ""}</option>)}
+            </select>
+          )}
           <span style={{ ...mono, fontSize: 9, letterSpacing: ".07em", color: "var(--t7)" }}>
             {versions.length > 1 ? "· " : `REPORT V${version} · `}SYNTHETIC & DIRECTIONAL
           </span>
