@@ -378,6 +378,51 @@ report's PRICE RANGE lead must cite the three triangulated numbers it reconciled
 (completeness-gate enforced). Small change; makes the flagship §2 valuation case read
 like an appraisal instead of a vibe.
 
+### 5g · Cast-a-room — premise-cast Conversations with PUMS-grounded people (approved 2026-08-04)
+
+**The ask (Adam):** "I'm deciding between a listing description and some images for a
+$3.2M Beverly Hills listing — give me 14 prospective buyers who could afford this home
+to chat with." Start a group chat from a PREMISE and get the right room, instantly —
+the instant rehearsal surface: a grounded focus group in two minutes, no run required.
+
+**Entry point:** `/conversations/new` (and the quick picker) gains **CAST FROM A
+PREMISE** alongside smart search and manual picking — a text box for who you want in
+the room and why. Manual creation and 5b describe-to-create remain side doors into the
+same room.
+
+**The casting pass (reuses the sim machinery, chat-scoped):** one Casting-Director call
+(Sonnet minimum, same rule — casting quality bounds the room) reads the premise and
+drafts seats: the count (≤20, the existing room cap), the mix (buyers here; "3 land-use
+attorneys to stress-test my CUP strategy" works the same way), and a one-line WHY THIS
+PERSON per seat. Resolution ladder identical to simulations: org custom personas →
+global library → generate true gaps (saved back to the org's custom library — the
+catalog self-heals from chat too).
+
+**PUMS grounding (the 5a/5b payoff):** when the premise implies a demographic cohort +
+place, the caster derives constraints — geography → PUMAs, affordability → a
+**transparent income heuristic** (e.g. $3.2M at 4–5× income → household income ≥
+~$650K, tenure/age spread free) — and constrained-samples N real household records, so
+the 14 buyers carry the JOINT distribution that actually exists at that affordability
+tier in that place: the real mix of ages, households, occupations — not 14 clones.
+Sparse strata widen the geography ring with a visible note. Every card carries the
+provenance chip ("ACS PUMS 2023 · LA COUNTY") and the roster shows the honesty line
+("filtered to income ≥ $650K — the $3.2M affordability band at 4–5×").
+
+**Then it's just a conversation** — everything already shipped composes: attach the
+two listing variants (images + PDFs already work), @mention or address the room, the
+router picks respondents, per-participant model tiers and tools apply. **POLL THE
+ROOM** (one-click): every participant answers a choice instrument in character —
+"listing A or listing B?" — rendered as the PR-B option bars in-thread. Same honesty
+framing as everywhere: synthetic and directional, a well-argued panel, not a survey.
+
+**Bar:** casting-ladder reuse unit-tested (no sim tables touched — rooms are
+`conversations`, not `simulations`); PUMS constraint parser pinned (income heuristic,
+geography widening); E2E: the Beverly Hills premise casts 14 PUMS-tagged buyers, a
+two-image attachment poll returns per-option bars; docs (Conversations page) + README.
+
+**Sequencing note:** 5g lands immediately after 5b (it composes 5a's sampler, 5b's
+describe pipeline, and the existing chat surface) — before the data tools.
+
 ---
 
 ## Parked — deliberately (needs its own planning session; do not rush)
@@ -400,7 +445,9 @@ tools → 5c · calibration start → 5e.)
 
 ## Sequencing (updated 2026-08-04)
 
-**3e → 5a → 5b → 5c → 5d (5e + 5f ride alongside as small PRs) → 3f → Phase 4 docs.**
+**3e → 5a → 5b → 5g → 5c → 5d (5e + 5f ride alongside as small PRs) → 3f → Phase 4 docs.**
+(5g jumps its letter: cast-a-room composes 5a's sampler + 5b's describe pipeline
+directly and is a pure-upside retention surface — it ships before the data tools.)
 
 Rationale: 3e closes the approved field-report batch (one day). Then grounding beats
 polish — 5a upgrades every demand/preference/consent question at once and 5b depends on
