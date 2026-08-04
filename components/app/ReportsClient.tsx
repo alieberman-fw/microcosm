@@ -51,6 +51,7 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
   const [rows, setRows] = useState<ReportRow[]>(initialRows);
   const [q, setQ] = useState("");
   const [tone, setTone] = useState<string>("all");
+  const [view, setView] = useState<"grouped" | "flat">("grouped"); // flat = every version, one row each
   const [page, setPage] = useState(0);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [confirmFor, setConfirmFor] = useState<string | null>(null);
@@ -79,15 +80,26 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
   }, [rows]);
 
   const needle = q.trim().toLowerCase();
+  const matches = (r: ReportRow) => !needle || `${r.problem} ${r.headline} ${r.label}`.toLowerCase().includes(needle);
   const visible = grouped.filter((g) => {
     if (tone !== "all" && bucketOf(g.latest) !== tone) return false;
-    if (!needle) return true;
-    return `${g.latest.problem} ${g.latest.headline} ${g.latest.label}`.toLowerCase().includes(needle);
+    return matches(g.latest);
   });
-  const countFor = (t: string) => (t === "all" ? grouped.length : grouped.filter((g) => bucketOf(g.latest) === t).length);
-  const pages = Math.max(1, Math.ceil(visible.length / PAGE));
+  // FLAT: every version is its own row, newest first
+  const flatRows = useMemo(() =>
+    [...rows].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
+      .filter((r) => (tone === "all" || bucketOf(r) === tone) && matches(r)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, tone, needle]);
+  const countFor = (t: string) => view === "flat"
+    ? (t === "all" ? rows.length : rows.filter((r) => bucketOf(r) === t).length)
+    : (t === "all" ? grouped.length : grouped.filter((g) => bucketOf(g.latest) === t).length);
+  const perPage = view === "flat" ? 20 : PAGE;
+  const total = view === "flat" ? flatRows.length : visible.length;
+  const pages = Math.max(1, Math.ceil(total / perPage));
   const pageRows = visible.slice(page * PAGE, page * PAGE + PAGE);
-  useEffect(() => { setPage(0); }, [q, tone]);
+  const pageFlat = flatRows.slice(page * perPage, page * perPage + perPage);
+  useEffect(() => { setPage(0); }, [q, tone, view]);
 
   const remove = async (report: ReportRow, wholeSet: boolean) => {
     const ids = wholeSet ? rows.filter((r) => r.sim_id === report.sim_id).map((r) => r.id) : [report.id];
@@ -148,15 +160,66 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
             );
           })}
         </div>
+        {/* GROUPED (one card per simulation) vs FLAT (every version, one row) */}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          {(["grouped", "flat"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              title={v === "grouped" ? "One card per simulation — latest version leads" : "Every version as its own row"}
+              style={{
+                ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "5px 12px", borderRadius: 100,
+                cursor: "pointer", transition: "all .15s",
+                background: view === v ? "var(--acc-dim)" : "transparent",
+                border: `1px solid ${view === v ? "var(--acc)" : "var(--ln4)"}`,
+                color: view === v ? "var(--acc)" : "var(--t6)",
+              }}
+            >
+              {v === "grouped" ? "▦ GROUPED" : "☰ ALL VERSIONS"}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14, marginTop: 18 }}>
+      {view === "flat" && (
+        <div style={{ marginTop: 18, border: "1px solid var(--ln3)", borderRadius: 14, background: "var(--sf)", overflow: "hidden" }}>
+          {pageFlat.map((r, i) => (
+            <Link
+              key={r.id}
+              href={`/sim/${r.sim_id}/report?v=${r.version}`}
+              className="rowGo"
+              style={{
+                display: "flex", alignItems: "center", gap: 14, padding: "13px 20px",
+                borderTop: i === 0 ? "none" : "1px solid var(--ln1)",
+              }}
+            >
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--acc)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "3px 10px", flex: "none" }}>
+                V{r.version}
+              </span>
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", flex: "none", padding: "3px 10px", borderRadius: 100, border: `1px solid ${bucketOf(r) === "insight" ? "var(--acc)" : toneColor(r.tone)}`, color: bucketOf(r) === "insight" ? "var(--acc)" : toneColor(r.tone), maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {bucketOf(r) === "insight" ? (r.leadMetric ?? "KEY FINDING") : r.label}
+              </span>
+              <span style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {r.problem}
+              </span>
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", flex: "none" }}>
+                {r.mode.toUpperCase()} · {r.posts} POSTS
+              </span>
+              <span style={{ ...mono, fontSize: 8.5, color: "var(--t7)", flex: "none" }}>
+                {new Date(r.created_at).toLocaleDateString()}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: view === "grouped" ? "grid" : "none", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14, marginTop: 18 }}>
         {pageRows.map((g) => {
           const r = g.latest;
           const menuOpen = menuFor === r.id;
           return (
-            <div key={r.id} className="card simCard" style={{ position: "relative", opacity: deleting === r.sim_id ? 0.4 : 1, transition: "opacity .2s" }}>
-              <Link href={`/sim/${r.sim_id}/report`} style={{ display: "block", padding: "22px 24px", height: "100%", boxSizing: "border-box" }}>
+            <div key={r.id} className="card simCard" style={{ position: "relative", display: "flex", flexDirection: "column", opacity: deleting === r.sim_id ? 0.4 : 1, transition: "opacity .2s" }}>
+              <Link href={`/sim/${r.sim_id}/report`} style={{ display: "block", padding: "22px 24px", flex: 1, boxSizing: "border-box" }}>
                 <div style={{ ...mono, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 9, letterSpacing: ".07em", color: "var(--t6)", paddingRight: 22 }}>
                   {bucketOf(r) === "insight" ? (
                     <span style={{ fontSize: 9, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, border: "1px solid var(--acc)", color: "var(--acc)" }}>
@@ -179,6 +242,41 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
                   V{r.version}{g.versions > 1 ? ` OF ${g.versions}` : ""} · {r.mode.toUpperCase()} · {r.posts} POSTS · {r.dissents} DISSENT{r.dissents === 1 ? "" : "S"}
                 </div>
               </Link>
+              {/* every version is one click away — chips through 6, a picker beyond */}
+              {g.versions > 1 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", padding: "0 24px 16px" }}>
+                  {g.versions <= 6 ? (
+                    [...g.all].sort((a, b) => b.version - a.version).map((v) => (
+                      <Link
+                        key={v.id}
+                        href={`/sim/${v.sim_id}/report?v=${v.version}`}
+                        title={`${v.label} · ${new Date(v.created_at).toLocaleDateString()}`}
+                        style={{
+                          ...mono, fontSize: 8, letterSpacing: ".05em", padding: "3px 9px", borderRadius: 100,
+                          border: `1px solid ${v.version === r.version ? "var(--acc)" : "var(--ln4)"}`,
+                          color: v.version === r.version ? "var(--acc)" : "var(--t6)",
+                          background: v.version === r.version ? "var(--acc-dim)" : "transparent",
+                        }}
+                      >
+                        V{v.version}
+                      </Link>
+                    ))
+                  ) : (
+                    <select
+                      value={r.version}
+                      onChange={(e) => router.push(`/sim/${r.sim_id}/report?v=${e.target.value}`)}
+                      aria-label="Open a report version"
+                      style={{ ...mono, fontSize: 9, letterSpacing: ".05em", padding: "4px 8px", borderRadius: 8, background: "var(--sf2)", border: "1px solid var(--ln4)", color: "var(--t3)", cursor: "pointer" }}
+                    >
+                      {[...g.all].sort((a, b) => b.version - a.version).map((v) => (
+                        <option key={v.id} value={v.version}>
+                          V{v.version} · {v.mode.toUpperCase()} · {new Date(v.created_at).toLocaleDateString()}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
 
               <button
                 className="rowActions"
@@ -250,7 +348,7 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
             ← PREV
           </button>
           <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t6)" }}>
-            PAGE {page + 1}/{pages} · {visible.length} REPORT{visible.length === 1 ? "" : "S"}
+            PAGE {page + 1}/{pages} · {total} {view === "flat" ? "VERSION" : "REPORT"}{total === 1 ? "" : "S"}
           </span>
           <button
             onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
