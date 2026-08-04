@@ -49,6 +49,9 @@ export interface FakeOptions {
   tickMs?: number;
   /** stability judge script: verdict for the Nth judge call (1-based); default all "moving" */
   judgeScript?: (n: number) => "stable" | "moving";
+  /** 3e — override the votes responder (e.g. a greedy voter who blows past
+   *  the per-voter budget so the enforcement path is exercised) */
+  votesScript?: (names: string[], seqs: number[]) => { voter: string; votes: { seq: number; vote: string }[] }[];
   /** juror score for (agentName, round) — drives Jury arithmetic */
   juryScore?: (name: string, round: number) => number;
   /** turn text override; return undefined for the default */
@@ -108,7 +111,7 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
       // every voter upvotes the first post and downvotes the second (if any)
       const seqs = user.split("\n").map((l) => l.match(/^(\d+) · /)).filter(Boolean).map((m) => Number(m![1]));
       const names = user.split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).split(":")[0]);
-      text = JSON.stringify(names.map((name) => ({
+      text = JSON.stringify(opts.votesScript?.(names, seqs) ?? names.map((name) => ({
         voter: name,
         votes: [{ seq: seqs[0], vote: "up" }, ...(seqs.length > 1 ? [{ seq: seqs[1], vote: "down" }] : [])],
       })));

@@ -273,6 +273,22 @@ export default function LiveRun({
     for (const it of items) if (it.kind === "post") depthOf(it.post.seq);
     return { depthBySeq: depth, childrenBySeq: children };
   }, [items]);
+  // 3e breadcrumbs: a reply that revives an EARLIER round gets a chip that
+  // names the parent and jumps to it
+  const postMetaBySeq = useMemo(() => {
+    const m = new Map<number, { name: string; round: number }>();
+    for (const it of items) if (it.kind === "post") m.set(it.post.seq, { name: it.post.name, round: it.post.round });
+    return m;
+  }, [items]);
+  const [flashSeq, setFlashSeq] = useState<number | null>(null);
+  const jumpToSeq = (seqN: number) => {
+    const el = feedEl.current?.querySelector(`[data-seq="${seqN}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      setFlashSeq(seqN);
+      setTimeout(() => setFlashSeq((s) => (s === seqN ? null : s)), 1600);
+    }
+  };
   const descendantCount = (seq: number): number => {
     const kids = childrenBySeq.get(seq) ?? [];
     return kids.length + kids.reduce((s, k) => s + descendantCount(k), 0);
@@ -976,7 +992,7 @@ export default function LiveRun({
                 boxShadow: "0 6px 22px rgba(0,0,0,.35)", animation: "fadeUp .2s ease both",
               }}
             >
-              ↓ {newBelow} NEW POST{newBelow === 1 ? "" : "S"} — JUMP TO LATEST
+              ↓ GO TO BOTTOM · {newBelow} NEW
             </button>
           )}
           <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--ln2)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1196,8 +1212,9 @@ export default function LiveRun({
                     ...(judge ? { border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 12, padding: "12px 14px" } : {}),
                     ...(isFloor ? { border: "1px solid var(--acc)", borderRadius: 12, padding: "12px 14px", background: "var(--sf2)" } : {}),
                     ...(topPost ? { boxShadow: "0 0 0 1px var(--acc)", borderRadius: 12, padding: "10px 12px" } : {}),
+                    ...(flashSeq === p.seq ? { boxShadow: "0 0 0 2px var(--acc)", borderRadius: 12, transition: "box-shadow .3s ease" } : {}),
                     animation: "fadeUp .3s ease both",
-                  }}>
+                  }} data-seq={p.seq}>
                     <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                       <span style={{ width: isInterjection ? 22 : 30, height: isInterjection ? 22 : 30, borderRadius: "50%", background: isFloor ? "var(--acc-dim)" : "var(--sf2)", border: `1px solid ${isFloor ? "var(--acc)" : p.adversarial ? "var(--warn)" : "var(--ln5)"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: isInterjection ? 7.5 : 9.5, color: isFloor ? "var(--acc)" : "var(--t3)", flex: "none" }}>{p.initials}</span>
                       <div style={{ minWidth: 0 }}>
@@ -1208,6 +1225,15 @@ export default function LiveRun({
                           </span>
                           {score && <span style={{ ...mono, fontSize: 9, marginLeft: 8, color: "var(--acc)" }}>SCORE {score}/10</span>}
                           {topPost && <span style={{ ...mono, fontSize: 8, letterSpacing: ".05em", marginLeft: 8, color: "var(--acc)" }}>▲ MOST ENDORSED · ROUND {p.round}</span>}
+                          {p.reply_to != null && (postMetaBySeq.get(p.reply_to)?.round ?? p.round) < p.round && (
+                            <button
+                              onClick={() => jumpToSeq(p.reply_to!)}
+                              title="This reply revives an earlier thread — jump to the post it answers"
+                              style={{ ...mono, fontSize: 7.5, letterSpacing: ".06em", marginLeft: 8, padding: "2px 8px", borderRadius: 100, border: "1px solid var(--ln4)", background: "transparent", color: "var(--acc)", cursor: "pointer" }}
+                            >
+                              ↩ ROUND {postMetaBySeq.get(p.reply_to)!.round} · {postMetaBySeq.get(p.reply_to)!.name.split(" ")[0].toUpperCase()}
+                            </button>
+                          )}
                         </div>
                         {!isFloor && <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginTop: 2 }}>{p.role.toUpperCase()}</div>}
                       </div>

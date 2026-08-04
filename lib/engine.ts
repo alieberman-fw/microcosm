@@ -140,7 +140,11 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
   /** this speaker's earlier posts this round — a near-duplicate draft gets ONE
    *  do-not-restate retry (the "Benjamin K. said it twice" fix) */
   dedupeAgainst?: string[];
-}): Promise<{ seq: number; text: string }> {
+  /** 3e parallel waves: generate WITHOUT emitting the post — the caller emits
+   *  the returned event in slot order so the feed stays seq-ordered even
+   *  though generation overlapped. Presence + tool events still stream live. */
+  deferEmit?: boolean;
+}): Promise<{ seq: number; text: string; post?: EngineEvent }> {
   const model = TIER_MODELS[ctx.cfg.tier].leads;
   await ctx.emit({ type: "presence", agent_key: lead.key, name: lead.spec.name, state: "thinking" });
   // 3d — tools attach to LEAD turns only, and only when the user enabled them;
@@ -254,13 +258,15 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
     ctx.pulledFacts.push(s);
     await ctx.emit({ type: "tool", agent_key: lead.key, name: lead.spec.name, tool: "web_search", query: s.query, results: s.results, round: opts.round });
   }
-  await ctx.emit({
+  const postEvt: EngineEvent = {
     type: "post", seq: opts.seq, author: "agent", agent_key: lead.key,
     name: lead.spec.name, role: lead.spec.seat?.role ?? lead.spec.role, initials: lead.spec.initials,
     adversarial: lead.spec.seat?.adversarial || lead.spec.kind === "adversarial",
     thread: opts.thread, reply_to: opts.reply_to ?? null, tag: opts.tag, content: text,
     cites: cites.slice(0, 4), round: opts.round, phase: opts.phase, side: opts.side,
-  });
+  };
+  if (opts.deferEmit) return { seq: opts.seq, text, post: postEvt };
+  await ctx.emit(postEvt);
   return { seq: opts.seq, text };
 }
 
@@ -518,26 +524,49 @@ export function juryTallyLine(cur: Map<string, number>, prev: Map<string, number
 
 /* ---- reply targeting (§2a threading) — exported PURE so tests pin it ---- */
 
-/** Pick which post a reply should target: any substantive post from this
- *  round, weighted toward RECENT and CONTESTED (already drawing replies) —
- *  real chains (John → Sarah → Bob) instead of a strict last-post relay.
- *  `salt` rotates among the top candidates so chains fork deterministically. */
+/** 3e — how much of a round's reply budget may reach BACK to earlier rounds.
+ *  focused keeps the tight v1 rhythm (0% — the Phase-1 matrix stays pinned);
+ *  lively/bustling let the forum revive old threads without necro takeover. */
+export function necroFrac(density: RunConfig["density"]): number {
+  return density === "bustling" ? 0.35 : density === "lively" ? 0.25 : 0;
+}
+
+/** Pick which post a reply should target: any substantive post — this round
+ *  at full weight, earlier rounds decayed λ≈0.4 per round of age (3e) —
+ *  weighted toward RECENT and CONTESTED (already drawing replies), so real
+ *  chains form and old threads revive instead of dying at the round line.
+ *  The NECRO GATE keeps revivals a minority: a cross-round target is only
+ *  eligible while this round's revivals stay within the density's share of
+ *  replies made so far. `salt` rotates among the top candidates so chains
+ *  fork deterministically. Pure — recomputed from persisted posts on resume,
+ *  so suspend/continue can never double-count the gate. */
 export function pickReplyTarget(
   posts: Pick<PostRec, "seq" | "round" | "tag" | "agentKey" | "name" | "content" | "replyTo">[],
   round: number,
   salt: number,
   excludeAgentKey?: string,
+  density: RunConfig["density"] = "focused",
 ): (typeof posts)[number] | null {
   const replyCount = new Map<number, number>();
+  const roundOf = new Map<number, number>();
+  for (const p of posts) roundOf.set(p.seq, p.round);
   for (const p of posts) {
     if (p.replyTo != null) replyCount.set(p.replyTo, (replyCount.get(p.replyTo) ?? 0) + 1);
   }
+  const frac = necroFrac(density);
+  // the gate, from persisted state alone: how many of this round's replies
+  // already went to earlier rounds vs the share the density allows
+  const repliesThisRound = posts.filter((p) => p.round === round && p.replyTo != null);
+  const necroUsed = repliesThisRound.filter((p) => (roundOf.get(p.replyTo!) ?? round) < round).length;
+  const necroAllowed = frac > 0 && necroUsed + 1 <= Math.ceil(frac * (repliesThisRound.length + 1));
+  const substantive = (p: (typeof posts)[number]) =>
+    p.tag !== "TALLY" && p.tag !== "INTERJECTION" && p.agentKey !== excludeAgentKey;
   const cands = posts.filter((p) =>
-    p.round === round && p.tag !== "TALLY" && p.tag !== "INTERJECTION" && p.agentKey !== excludeAgentKey);
+    substantive(p) && (p.round === round || (necroAllowed && p.round < round)));
   if (cands.length === 0) return null;
   const scored = cands.map((p, i) => ({
     p,
-    w: 1 / (1 + (cands.length - 1 - i)) + 0.7 * (replyCount.get(p.seq) ?? 0),
+    w: Math.pow(0.4, round - p.round) * (1 / (1 + (cands.length - 1 - i))) + 0.7 * (replyCount.get(p.seq) ?? 0),
   }));
   scored.sort((a, b) => b.w - a.w || b.p.seq - a.p.seq);
   return scored[Math.abs(salt) % Math.min(3, scored.length)].p;
@@ -645,6 +674,10 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
    *  Emitted as `votes` events; persisted to post_votes. Skipped when out of
    *  time — garnish, never a suspension. */
   const votedPairs = new Map<number, Set<string>>(); // round → "seq:voterKey"
+  // 3e selective voting: per-voter per-round budgets (endorse ≤2, reject ≤1)
+  // shared by the realtime layer and the closing sweep — a vote on every post
+  // reads fake; scarcity is what makes ▲/▼ a citable signal
+  const voteBudget = new Map<number, Map<string, { up: number; down: number }>>();
   const votePass = async (round: number, targets: PostRec[], voters: (EngineLead | EngineCrowdMember)[], micro: boolean) => {
     if (ctx.isCancelled() || Date.now() > ctx.deadline) return;
     if (targets.length === 0 || voters.length === 0) return;
@@ -662,7 +695,9 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
           max_tokens: 90 * batch.length + 600,
           system:
             `You simulate panelists and crowd members casting votes on forum arguments about: "${ctx.problem}". ` +
-            `For EACH voter listed, decide IN CHARACTER which of the posts they would endorse (up) or reject (down) — up to 2 votes each, never on their own post. ` +
+            `Voting is OPT-IN: most voters abstain on most posts — a voter votes ONLY where they would genuinely take a public position. ` +
+            `Budget per voter for the WHOLE round: at most 2 endorsements (up) and at most 1 rejection (down); never on their own post. ` +
+            `An empty votes array is a normal, common answer. ` +
             `Reply ONLY a JSON array: [{"voter": "...", "votes": [{"seq": <post number>, "vote": "up|down"}]}]`,
           messages: [{
             role: "user",
@@ -675,15 +710,22 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
         const rows = (parseLooseArray(text) ?? []) as { voter?: string; votes?: { seq?: number; vote?: string }[] }[];
         const valid = new Map(targets.map((p) => [p.seq, p.agentKey]));
+        const budgets = voteBudget.get(round) ?? new Map<string, { up: number; down: number }>();
+        voteBudget.set(round, budgets);
         for (const r of rows) {
           const voter = batch.find((v) => v.spec.name === r.voter);
           if (!voter) continue;
-          for (const v of (r.votes ?? []).slice(0, 2)) {
+          const b = budgets.get(voter.key) ?? { up: 0, down: 0 };
+          budgets.set(voter.key, b);
+          for (const v of r.votes ?? []) {
             const s = Number(v.seq);
+            const down = v.vote === "down";
             if (!valid.has(s) || valid.get(s) === voter.key) continue;   // never on their own post
-            if (pairs.has(`${s}:${voter.key}`)) continue;                // each voter votes a post once
+            if (pairs.has(`${s}:${voter.key}`)) continue;                // each voter votes a post once per round
+            if (down ? b.down >= 1 : b.up >= 2) continue;                // 3e: hard budget — enforced, not just prompted
+            if (down) b.down += 1; else b.up += 1;
             pairs.add(`${s}:${voter.key}`);
-            all.push({ seq: s, voter_key: voter.key, voter_name: voter.spec.name, voter_role: voter.spec.seat?.role ?? voter.spec.role, vote: v.vote === "down" ? -1 : 1 });
+            all.push({ seq: s, voter_key: voter.key, voter_name: voter.spec.name, voter_role: voter.spec.seat?.role ?? voter.spec.role, vote: down ? -1 : 1 });
           }
         }
       } catch (e) {
@@ -707,7 +749,12 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
   };
   const voteRound = async (round: number) => {
     if (ctx.votedRounds.has(round)) return;
-    const targets = substantive(round);
+    // 3e retro slice: earlier-round posts that drew NEW replies this round
+    // re-enter the ballot — votedPairs are per-round, so a voter can flip an
+    // old vote (post_votes is (post, voter) latest-wins in the DB)
+    const revivedSeqs = new Set(posts.filter((p) => p.round === round && p.replyTo != null).map((p) => p.replyTo!));
+    const revived = posts.filter((p) => p.round < round && revivedSeqs.has(p.seq) && p.tag !== "TALLY" && p.tag !== "INTERJECTION");
+    const targets = [...substantive(round), ...revived];
     const voters = [...ctx.leads, ...ctx.crowd.slice(0, 12)].slice(0, 32);
     const n = await votePass(round, targets, voters, false);
     // the round is marked once the closing sweep actually shipped votes (or
@@ -749,7 +796,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         if (!budget()) break;
         if (did(speaker.spec.name, "CROSSFIRE", round)) continue;
         if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
-        const target = pickReplyTarget(posts, round, posts.length, speaker.key);
+        const target = pickReplyTarget(posts, round, posts.length, speaker.key, ctx.cfg.density);
         if (!target) break;
         await turn(speaker, {
           round, thread: "ROUNDTABLE", tag: "CROSSFIRE", reply_to: target.seq,
@@ -878,17 +925,37 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     // (arithmetic lives in the exported jury* helpers so tests pin it)
     const scoresAt = (round: number) => juryScoresAt(posts, round);
     for (let round = startRound; round <= ctx.cfg.rounds && budget(); round++) {
-      for (const lead of ctx.leads) {
-        if (!budget()) break;
-        if (did(lead.spec.name, "VERDICT", round)) continue;
-        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
-        await turn(lead, {
-          round, thread: "JURY", tag: "VERDICT",
-          transcript: round === 1 ? "" : windowOf(posts, ctx.leads.length + 3),
-          instruction: round === 1
-            ? `Independent verdict — you have NOT seen the others. Score the proposition 0–10 and defend it in 3–4 sentences. Start EXACTLY with "SCORE: <n>/10 — ". ${q}`
-            : `Deliberation round ${round} of ${ctx.cfg.rounds}. The tally and your peers' verdicts are above. Re-score: HOLD or MOVE — if you move, name exactly which argument moved you; if you hold against the majority, defend why they're wrong. Start EXACTLY with "SCORE: <n>/10 — ".`,
-        });
+      if (round === 1) {
+        // 3e: round 1 is BLIND — verdicts are independent by definition, so
+        // they generate fully in PARALLEL (seqs pre-assigned in juror order;
+        // posts emitted in that order once all land). Later rounds stay
+        // serial: jurors react to the tally and each other.
+        const pending = ctx.leads.filter((lead) => !did(lead.spec.name, "VERDICT", 1));
+        if (pending.length > 0 && budget()) {
+          if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+          const slots = pending.slice(0, Math.max(ctx.cfg.max_posts - posts.length, 1)).map((lead) => { seq += 1; return { lead, mySeq: seq }; });
+          const results = await Promise.all(slots.map((s) => speak(ctx, s.lead, {
+            seq: s.mySeq, round: 1, thread: "JURY", tag: "VERDICT", transcript: "",
+            instruction: `Independent verdict — you have NOT seen the others. Score the proposition 0–10 and defend it in 3–4 sentences. Start EXACTLY with "SCORE: <n>/10 — ". ${q}`,
+            deferEmit: true,
+          })));
+          for (let s = 0; s < slots.length; s++) {
+            currentRound = 1;
+            await ctx.emit(results[s].post!);
+            posts.push({ name: slots[s].lead.spec.name, role: slots[s].lead.spec.seat?.role ?? slots[s].lead.spec.role, content: results[s].text, tag: "VERDICT", seq: slots[s].mySeq, agentKey: slots[s].lead.key, round: 1 });
+          }
+        }
+      } else {
+        for (const lead of ctx.leads) {
+          if (!budget()) break;
+          if (did(lead.spec.name, "VERDICT", round)) continue;
+          if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+          await turn(lead, {
+            round, thread: "JURY", tag: "VERDICT",
+            transcript: windowOf(posts, ctx.leads.length + 3),
+            instruction: `Deliberation round ${round} of ${ctx.cfg.rounds}. The tally and your peers' verdicts are above. Re-score: HOLD or MOVE — if you move, name exactly which argument moved you; if you hold against the majority, defend why they're wrong. Start EXACTLY with "SCORE: <n>/10 — ".`,
+          });
+        }
       }
       // the tally is pure arithmetic over the round's scores — no model call
       const cur = scoresAt(round);
@@ -1002,28 +1069,69 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       const repliesPerRound = agoraReplies(ctx.leads.length, ctx.cfg.density);
       const spokenThisRound = (key: string) =>
         posts.filter((p) => p.round === round && p.agentKey === key && (p.tag.startsWith("POST") || p.tag === "REPLY")).length;
-      for (let i = Math.max(inRound - 1, 0); i < repliesPerRound && budget(); i++) {
+      // 3e parallel reply waves: replies land in batches that share one
+      // transcript snapshot — voices genuinely overlap instead of a strict
+      // relay. focused stays serial (wave of 1 — the pinned v1 rhythm);
+      // lively runs 2-wide, bustling 3-wide. Budgets, seq order, dedupe, and
+      // termination are untouched: seqs are pre-assigned in slot order and
+      // the wave's posts are emitted in that order once all have generated.
+      const waveWidth = ctx.cfg.density === "bustling" ? 3 : ctx.cfg.density === "lively" ? 2 : 1;
+      let i = Math.max(inRound - 1, 0);
+      while (i < repliesPerRound && budget()) {
         if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
-        const target = pickReplyTarget(posts, round, posts.length) ?? posts[posts.length - 1];
-        const lastAuthor = posts[posts.length - 1]?.agentKey;
-        let { lead } = await router(target as PostRec);
-        // speaker guardrails (the "Benjamin K. twice in a row" fix):
-        // 1. never the same voice back-to-back, never replying to yourself;
-        // 2. relevance yields to COVERAGE — a hot hand with 2+ posts this
-        //    round gives the mic to a lead who has not spoken yet.
-        const quiet = ctx.leads.filter((l) => spokenThisRound(l.key) === 0 && l.key !== target.agentKey && l.key !== lastAuthor);
-        if (lead.key === lastAuthor || lead.key === target.agentKey) {
-          lead = quiet[posts.length % Math.max(quiet.length, 1)]
-            ?? ctx.leads.filter((l) => l.key !== lastAuthor && l.key !== target.agentKey)[posts.length % Math.max(ctx.leads.length - 1, 1)]
-            ?? lead;
-        } else if (quiet.length > 0 && spokenThisRound(lead.key) >= 2) {
-          lead = quiet[posts.length % quiet.length];
+        const size = Math.min(waveWidth, repliesPerRound - i, Math.max(ctx.cfg.max_posts - posts.length, 1));
+        const snapshot = [...posts];
+        const snapWindow = windowOf(snapshot, Math.max(16, repliesPerRound + 6));
+        const lastAuthor = snapshot[snapshot.length - 1]?.agentKey;
+        const wave: { lead: EngineLead; target: PostRec; mySeq: number }[] = [];
+        // virtual view: pending wave assignments count as replies so the necro
+        // gate and the contested weighting see them before they've landed
+        const virtual = () => [
+          ...snapshot,
+          ...wave.map((a) => ({ name: a.lead.spec.name, role: "", content: "", tag: "REPLY", seq: a.mySeq, agentKey: a.lead.key, round, replyTo: a.target.seq })),
+        ];
+        for (let w = 0; w < size; w++) {
+          const target = pickReplyTarget(virtual(), round, snapshot.length + w, undefined, ctx.cfg.density) ?? snapshot[snapshot.length - 1];
+          let { lead } = await router(target as PostRec);
+          const taken = new Set(wave.map((a) => a.lead.key));
+          // speaker guardrails (the "Benjamin K. twice in a row" fix), wave-aware:
+          // never the same voice back-to-back, never replying to yourself, never
+          // twice in one wave; a hot hand yields the mic to a quiet lead.
+          const quiet = ctx.leads.filter((l) => spokenThisRound(l.key) === 0 && l.key !== target.agentKey && l.key !== lastAuthor && !taken.has(l.key));
+          if (lead.key === lastAuthor || lead.key === target.agentKey || taken.has(lead.key)) {
+            // index modulo the FILTERED pool — modulo the panel size could run
+            // off the end and hand the mic straight back to the excluded voice
+            const pool = ctx.leads.filter((l) => l.key !== lastAuthor && l.key !== target.agentKey && !taken.has(l.key));
+            lead = quiet[(snapshot.length + w) % Math.max(quiet.length, 1)]
+              ?? pool[(snapshot.length + w) % Math.max(pool.length, 1)]
+              ?? lead;
+          } else if (quiet.length > 0 && spokenThisRound(lead.key) >= 2) {
+            lead = quiet[(snapshot.length + w) % quiet.length];
+          }
+          seq += 1;
+          wave.push({ lead, target: target as PostRec, mySeq: seq });
         }
-        await turn(lead, {
-          round, thread: lead.spec.seat?.discipline || "AGORA", tag: "REPLY", reply_to: target.seq,
-          transcript: windowOf(posts, Math.max(16, repliesPerRound + 6)),
-          instruction: `${anchor(target as PostRec)} Reply to it directly — agree with evidence, refute with specifics, or redirect to what actually matters. If you're changing your position, open with "Changing my position:".`,
-        });
+        const results = await Promise.all(wave.map((a) => speak(ctx, a.lead, {
+          seq: a.mySeq, round, thread: a.lead.spec.seat?.discipline || "AGORA", tag: "REPLY", reply_to: a.target.seq,
+          transcript: snapWindow,
+          dedupeAgainst: snapshot.filter((p) => p.agentKey === a.lead.key && p.round === round).map((p) => p.content),
+          instruction:
+            `${anchor(a.target)} Reply to it directly — agree with evidence, refute with specifics, or redirect to what actually matters. If you're changing your position, open with "Changing my position:".` +
+            (a.target.round < round
+              ? ` NOTE: that post is from ROUND ${a.target.round} — UPDATE the thread with where the debate has moved since; add what's new, never reopen settled points.`
+              : ""),
+          deferEmit: true,
+        })));
+        for (let w = 0; w < wave.length; w++) {
+          currentRound = round;
+          await ctx.emit(results[w].post!);
+          posts.push({
+            name: wave[w].lead.spec.name, role: wave[w].lead.spec.seat?.role ?? wave[w].lead.spec.role,
+            content: results[w].text, tag: "REPLY", seq: wave[w].mySeq, agentKey: wave[w].lead.key, round, replyTo: wave[w].target.seq,
+          });
+          await microVotes(round);
+        }
+        i += wave.length;
       }
       // suspend at the round boundary rather than start a poll the slice can't finish
       if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
