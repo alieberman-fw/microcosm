@@ -335,12 +335,31 @@ constraints, document citations, tools, and outcome calibration.
 
 ### 5a · ACS PUMS demographic seeding — census-grounded crowds (CLAUDE.md §3.2B)
 
-**The substrate (offline, once per vintage):** bulk-load PUMS person + household CSVs
-into Postgres — `pums_households` / `pums_persons` with PUMS weights (WGTP/PWGTP) and
-PUMA — via an idempotent `scripts/load-pums.mjs` (census FTP / AWS Open Data mirror),
-plus a `geo_crosswalk` table (ZIP↔PUMA↔county, geocorr). **Arizona first** (matches the
-demo), **California second** (Beverly Hills-class questions). Annual vintage refresh is a
-re-run. Weighted sampling is a millisecond SQL query — no LLM in the sampling path.
+**The substrate (offline, once per vintage) — NATIONAL from day one (Adam, 2026-08-04:
+the entire US, not AZ→CA, and latency-optimized):** bulk-load the **ACS 5-year PUMS**
+(the deepest sample at PUMA level — 1-year files are too thin for small PUMAs) for all
+50 states + DC + PR into Postgres — `pums_households` / `pums_persons` with PUMS weights
+(WGTP/PWGTP) and (ST, PUMA) — via an idempotent, per-state-resumable
+`scripts/load-pums.mjs` (census FTP / AWS Open Data mirror; a re-run picks up where it
+stopped, annual vintage refresh is the same command). **Slim columns only** (~20 of the
+500+ PUMS variables: age, sex, household type/size, tenure, household income, occupation
+SOCP, employment, commute JWMNP, education, gross rent, property value, weights) — the
+national tables land in the low tens of millions of rows / a few GB, not hundreds.
+Latency architecture, in order of the levers that matter:
+- **Sampling is millisecond SQL, never an LLM.** Composite index on (st, puma); a PUMA
+  subset is 5–50K rows, so a weighted sample over the index is single-digit ms.
+- **`pums_strata` rollup** (PUMA × age band × income band × tenure × household type,
+  weights pre-summed) is precomputed at load time — the population stage's honesty
+  panel and the geography preview read the rollup INSTANTLY, never scanning rows.
+- **`geo_crosswalk`** (ZIP↔PUMA↔county↔place, geocorr — the vintage's 2020-PUMA
+  boundaries, one consistent crosswalk) is loaded alongside, so brief geography →
+  PUMAs is a lookup, not a computation.
+- **The wall clock is the narrative pass, not the data.** Turning sampled records into
+  personas stays the existing crowd path (Haiku, 3-concurrent batches) — PUMS adds ~ms
+  of SQL in front of it. Records stream into the narrative batches as they sample; no
+  barrier between sampling and generation.
+- Fallback if Supabase row-count/egress economics ever bite: same loader targets
+  Parquet + DuckDB (the CLAUDE.md §3.2B alternative) behind the same sampler interface.
 
 **When it runs (per simulation, not per library):** the brief pass extracts the
 geography (ZIPs / city / county / metro) from the brief + corpus. When a
