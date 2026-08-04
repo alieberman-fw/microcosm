@@ -42,6 +42,11 @@ interface Answer {
   groundedIn: number;
 }
 
+/** how a picked file lands in the question: @name reads like a mention and
+ *  stays as typed (the QA prompt understands it); names with spaces keep the
+ *  quoted form so the reference survives tokenization */
+const fileToken = (name: string) => (name.includes(" ") ? `"${name}" ` : `@${name} `);
+
 const fmtBytes = (n: number | null) => {
   if (!n) return "";
   if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
@@ -523,7 +528,7 @@ export default function SimWorkspace({
               const menu = frag ? parsedDocs.filter((d) => d.name.toLowerCase().includes(frag[1].toLowerCase())).slice(0, 6) : [];
               if (e.key === "Escape" && frag) { setQuestion((q) => q.replace(/@[^@\s"]*$/, "")); return; }
               if (e.key === "Enter") {
-                if (menu.length) { e.preventDefault(); setQuestion((q) => q.replace(/@[^@\s"]*$/, `"${menu[0].name}" `)); return; }
+                if (menu.length) { e.preventDefault(); setQuestion((q) => q.replace(/@[^@\s"]*$/, fileToken(menu[0].name))); return; }
                 void ask();
               }
             }}
@@ -546,7 +551,7 @@ export default function SimWorkspace({
                 {menu.map((d) => (
                   <button
                     key={d.id}
-                    onClick={() => setQuestion((q) => q.replace(/@[^@\s"]*$/, `"${d.name}" `))}
+                    onClick={() => setQuestion((q) => q.replace(/@[^@\s"]*$/, fileToken(d.name)))}
                     style={{ display: "flex", width: "100%", alignItems: "center", gap: 9, textAlign: "left", cursor: "pointer", borderRadius: 8, padding: "7px 10px", background: "transparent", border: "none" }}
                   >
                     {thumbs[d.id] ? (
