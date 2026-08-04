@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { CORPUS_QA_MODEL, CORPUS_QA_MODEL_LARGE, CorpusDocInput, DIRECT_CONTEXT_BUDGET, buildCorpusBlocks } from "@/lib/corpus";
+import { CORPUS_QA_MODEL, CORPUS_QA_MODEL_LARGE, CorpusDocInput, DIRECT_CONTEXT_BUDGET, buildCorpusBlocks, corpusQaSystem } from "@/lib/corpus";
 
 export const maxDuration = 60;
 
@@ -85,10 +85,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       model,
       max_tokens: 4000, // thinking bills against the ceiling on Sonnet-class models — prose-sized caps clip answers
       betas: [FILES_BETA],
-      system:
-        `You are the corpus analyst for a Microcosm real-estate simulation. The user's research problem: "${(brief.problem ?? "").slice(0, 500)}".\n` +
-        `Answer strictly from the attached diligence documents. Cite the documents for every factual claim. ` +
-        `If the corpus does not contain the answer, say exactly what is missing — never guess. Be concise and decision-oriented.`,
+      system: corpusQaSystem(brief.problem ?? ""),
       messages: [{ role: "user", content: [...corpusBlocks, { type: "text", text: question }] }],
     });
 

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildCorpusBlocks } from "@/lib/corpus";
+import { buildCorpusBlocks, corpusQaSystem } from "@/lib/corpus";
 
 describe("buildCorpusBlocks", () => {
   it("labels every image with its filename and ordinal (the 4.jpg fix)", () => {
@@ -37,5 +37,31 @@ describe("buildCorpusBlocks", () => {
   it("an image without a file id is dropped, never emitted blank", () => {
     const blocks = buildCorpusBlocks([{ name: "broken.png", mime: "image/png" }]);
     expect(blocks).toHaveLength(0);
+  });
+});
+
+describe("corpusQaSystem (the images-only refusal fix)", () => {
+  const sys = corpusQaSystem("Which of these three listing photos should lead the listing?");
+
+  it("treats every upload as evidence — images included, refusal forbidden", () => {
+    expect(sys).toContain("ALL of it is first-class evidence");
+    expect(sys).toContain("Never refuse because the corpus lacks text documents");
+  });
+
+  it("images cite by filename, not by document citation", () => {
+    expect(sys).toContain("the filename reference IS the citation");
+  });
+
+  it("understands @filename, quoted, and bare file references", () => {
+    expect(sys).toContain(`"@filename", a quoted filename, or a bare filename`);
+  });
+
+  it("answers the question asked — the brief is background, not the question", () => {
+    expect(sys).toContain("BACKGROUND context only");
+    expect(sys).toContain("Do not substitute the research problem for the question");
+  });
+
+  it("clamps a runaway problem statement", () => {
+    expect(corpusQaSystem("x".repeat(2000)).length).toBeLessThan(2200);
   });
 });
