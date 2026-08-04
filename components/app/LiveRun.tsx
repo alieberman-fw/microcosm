@@ -312,6 +312,38 @@ export default function LiveRun({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // PR D: reports you can walk away from — if a synthesis is already running
+  // for this sim (fresh report_state heartbeat), RE-ATTACH on mount: the strip
+  // shows the live ticker again and READ THE REPORT lights up when it lands.
+  useEffect(() => {
+    if (initialStatus !== "complete") return;
+    let stop = false;
+    type RState = { stage: string; note?: string; heartbeat_at?: string; report_id?: string };
+    const readState = async (): Promise<RState | null> => {
+      const supa = createClient();
+      if (!supa) return null;
+      const { data } = await supa.from("simulations").select("config").eq("id", simId).maybeSingle();
+      return ((data?.config as { report_state?: RState } | null)?.report_state ?? null);
+    };
+    const fresh = (st: RState | null) =>
+      !!st && st.stage !== "done" && st.stage !== "error" && Date.now() - new Date(st.heartbeat_at ?? 0).getTime() < 90_000;
+    void (async () => {
+      const st = await readState();
+      if (!fresh(st) || stop) return;
+      setSynthesizing(st!.note ?? "SYNTHESIZING…");
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2500));
+        if (stop) return;
+        const cur = await readState();
+        if (cur?.stage === "done") { setReportReady(true); setSynthesizing(null); router.refresh(); return; }
+        if (!fresh(cur)) { setSynthesizing(null); return; } // error or heartbeat lost — the button offers a retry
+        setSynthesizing(cur!.note ?? "SYNTHESIZING…");
+      }
+    })();
+    return () => { stop = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const synthesize = async () => {
     if (synthesizing) return;
     setSynthesizing("SYNTHESIZING…");

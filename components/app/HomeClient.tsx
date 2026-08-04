@@ -37,6 +37,8 @@ export interface HomeSim {
   mode: string | null;
   posts: number;
   created_at: string;
+  /** PR D: a report is being synthesized for this sim right now */
+  synthesizing?: boolean;
 }
 
 export interface HomeReport {
@@ -190,7 +192,7 @@ export default function HomeClient({
   const doneCount = Object.values(checklist).filter(Boolean).length;
   const hasActivity = checklist.conversation || checklist.persona || checklist.simulate;
   const firstName = email.split("@")[0].split(/[._-]/)[0];
-  const inProgress = sims.filter((s) => s.status === "running");
+  const inProgress = sims.filter((s) => s.status === "running" || s.synthesizing);
   const maxVal = Math.max(1, ...activity.map((d) => d[metric]));
 
   const clearChecklist = async () => {
@@ -242,7 +244,7 @@ export default function HomeClient({
                 {s.problem}
               </span>
               <span style={{ ...mono, flex: "none", fontSize: 9, letterSpacing: ".06em", color: "var(--acc)" }}>
-                RUNNING{s.mode ? ` · ${s.mode.toUpperCase()}` : ""} — OPEN THE RUN →
+                {s.status === "running" ? `RUNNING${s.mode ? ` · ${s.mode.toUpperCase()}` : ""} — OPEN THE RUN →` : "SYNTHESIZING THE REPORT — WATCH IT →"}
               </span>
             </Link>
           ))}
