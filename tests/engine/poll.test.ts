@@ -71,6 +71,22 @@ describe("poll prompt", () => {
       expect((s as { question?: string }).question).toBe("Should the builder spend the leftover budget on the pool?");
     }
   });
+
+  it("C2: every individual answer survives as a ballot — count matches polled, names echo the crowd", async () => {
+    const h = makeHarness({ mode: "Agora", leads: makeLeads(3), crowd: makeCrowd(8), cfg: { rounds: 1, convergence: "fixed" } });
+    await runMode(h.ctx);
+    const s = h.events.find((e): e is Extract<typeof e, { type: "sentiment" }> => e.type === "sentiment")!;
+    expect(s.ballots).toHaveLength(s.polled);
+    const crowdNames = new Set(h.ctx.crowd.map((m) => m.spec.name));
+    for (const b of s.ballots!) {
+      expect(crowdNames.has(b.name)).toBe(true);
+      expect(["support", "conditional", "oppose", "disengaged"]).toContain(b.stance);
+    }
+    // the tally IS the ballots, aggregated — they can never disagree
+    for (const k of Object.keys(s.dist)) {
+      expect(s.ballots!.filter((b) => b.stance === k).length).toBe(s.dist[k]);
+    }
+  });
 });
 
 describe("derivePollInstrument", () => {

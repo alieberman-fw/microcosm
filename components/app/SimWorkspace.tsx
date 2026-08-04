@@ -119,6 +119,10 @@ export default function SimWorkspace({
   };
 
   const parsedDocs = docs.filter((d) => d.parse_status === "parsed");
+  // C6: "IMAGE n" = position among parsed images in corpus order (created_at
+  // asc — the docs array's order) — EXACTLY the label agents see in context
+  const imageOrdinals = new Map<string, number>();
+  parsedDocs.filter((d) => (d.mime ?? "").startsWith("image/")).forEach((d, i) => imageOrdinals.set(d.id, i + 1));
   const totalTokens = parsedDocs.reduce((s, d) => s + (d.token_estimate ?? 0), 0);
   // a stage is DONE when its artifact exists: parsed docs, a cast panel,
   // persisted run posts, a synthesized report — never mere saved config
@@ -354,6 +358,14 @@ export default function SimWorkspace({
               >
                 {d.name}
               </button>
+              {imageOrdinals.has(d.id) && (
+                <span
+                  title="How the panel refers to this image — the same ordinal agents see in their context"
+                  style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--acc)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "2px 8px", flex: "none" }}
+                >
+                  IMAGE {imageOrdinals.get(d.id)}
+                </span>
+              )}
               <span style={{ ...mono, fontSize: 10, color: "var(--t7)", flex: "none" }}>{fmtBytes(d.size_bytes)}</span>
               <span style={{ flex: 1 }} />
               {(d.page_count || d.token_estimate) && (

@@ -17,6 +17,8 @@ import { CSSProperties, useState } from "react";
 import Link from "next/link";
 import { LEAD_KIND_LABEL, ReportLead, ReportPlain, ReportSpec, VERDICT_STYLE, fmtMoney } from "@/lib/report";
 import { LivePost } from "@/components/app/LiveRun";
+import Markdown from "@/components/app/Markdown";
+import { distShares } from "@/lib/dist";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 const label: CSSProperties = { ...mono, fontSize: 10, letterSpacing: ".12em", color: "var(--t6)" };
@@ -46,16 +48,21 @@ function instrumentOf(spec: Pick<ReportSpec, "poll_options" | "sentiment">): Sta
   return rows;
 }
 
-const totalOf = (d: Record<string, number>) => Math.max(Object.values(d).reduce((a, b) => a + b, 0), 1);
-const pctOf = (d: Record<string, number>, k: string) => Math.round(((d[k] ?? 0) / totalOf(d)) * 100);
 
 /** one slider, one set of bars: scrub through the rounds and watch the crowd
  *  move — with an expandable table of the percentages over time */
 function SentimentSlider({ sentiment, question, stances = STANCES }: { sentiment: NonNullable<ReportSpec["sentiment"]>; question?: string; stances?: Stance[] }) {
   const [idx, setIdx] = useState(sentiment.length - 1); // land on the final round
   const [tableOpen, setTableOpen] = useState(false);
+  const [votesOpen, setVotesOpen] = useState(false);
   const s = sentiment[idx];
   const prev = idx > 0 ? sentiment[idx - 1] : null;
+  // largest-remainder shares (C1): the displayed percentages sum to exactly 100
+  const keys = stances.map((x) => x.key);
+  const shareOf = (row: { dist: Record<string, number> }) =>
+    Object.fromEntries(distShares(row.dist, keys).map((x) => [x.key, x]));
+  const cur = shareOf(s);
+  const before = prev ? shareOf(prev) : null;
   return (
     <div className="card" style={{ marginTop: 14, padding: "20px 24px", maxWidth: 760 }}>
       {question && (
@@ -66,14 +73,14 @@ function SentimentSlider({ sentiment, question, stances = STANCES }: { sentiment
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {stances.map(({ key, label: sl, color }) => {
-          const p = pctOf(s.dist, key);
-          const delta = prev ? p - pctOf(prev.dist, key) : 0;
+          const p = cur[key]?.pct ?? 0;
+          const delta = before ? p - (before[key]?.pct ?? 0) : 0;
           return (
             <div key={key}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>{sl}</span>
                 <span style={{ ...mono, fontSize: 11, color: "var(--t2)" }}>
-                  {p}%
+                  {p}% <span style={{ fontSize: 8.5, color: "var(--t7)" }}>({cur[key]?.count ?? 0})</span>
                   {prev && delta !== 0 && (
                     <span style={{ fontSize: 8.5, marginLeft: 6, color: delta > 0 ? (key === "oppose" ? "var(--warn)" : "var(--acc)") : "var(--t6)" }}>
                       {delta > 0 ? "▲" : "▼"} {Math.abs(delta)} PTS
@@ -103,12 +110,36 @@ function SentimentSlider({ sentiment, question, stances = STANCES }: { sentiment
         />
         <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)", flex: "none" }}>{s.polled} POLLED · {sentiment.length} ROUNDS</span>
       </div>
-      <button
-        onClick={() => setTableOpen((v) => !v)}
-        style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", marginTop: 14, background: "none", border: "none", padding: 0, color: "var(--t6)", cursor: "pointer" }}
-      >
-        PERCENTAGES BY ROUND {tableOpen ? "▴" : "▾"}
-      </button>
+      <div style={{ display: "flex", gap: 18, marginTop: 14 }}>
+        <button
+          onClick={() => setTableOpen((v) => !v)}
+          style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", background: "none", border: "none", padding: 0, color: "var(--t6)", cursor: "pointer" }}
+        >
+          PERCENTAGES BY ROUND {tableOpen ? "▴" : "▾"}
+        </button>
+        {(s.ballots?.length ?? 0) > 0 && (
+          <button
+            onClick={() => setVotesOpen((v) => !v)}
+            style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", background: "none", border: "none", padding: 0, color: "var(--t6)", cursor: "pointer" }}
+          >
+            EVERY VOTE · ROUND {s.round} ({s.ballots!.length}) {votesOpen ? "▴" : "▾"}
+          </button>
+        )}
+      </div>
+      {votesOpen && (s.ballots?.length ?? 0) > 0 && (
+        <div style={{ marginTop: 10, maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 9, paddingRight: 6, animation: "fadeUp .2s ease both" }}>
+          {stances.filter((st) => s.ballots!.some((b) => b.stance === st.key)).map((st) => (
+            <div key={st.key}>
+              <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t5)", marginBottom: 3 }}>
+                {st.label} · {s.ballots!.filter((b) => b.stance === st.key).length}
+              </div>
+              <div style={{ fontSize: 11, lineHeight: 1.6, color: "var(--t5)" }}>
+                {s.ballots!.filter((b) => b.stance === st.key).map((b) => b.name).join(" · ")}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {tableOpen && (
         <div style={{ overflowX: "auto", marginTop: 10, animation: "fadeUp .2s ease both" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -124,9 +155,9 @@ function SentimentSlider({ sentiment, question, stances = STANCES }: { sentiment
                 <tr key={row.round} style={ri === idx ? { background: "var(--acc-dim)" } : undefined}
                   onClick={() => setIdx(ri)} className="rowGo">
                   <td style={{ ...mono, fontSize: 10, padding: "7px 10px", borderBottom: "1px solid var(--ln1)", color: "var(--t2)", cursor: "pointer" }}>R{row.round}</td>
-                  {stances.map(({ key }) => (
-                    <td key={key} style={{ ...mono, fontSize: 10, padding: "7px 10px", borderBottom: "1px solid var(--ln1)", color: "var(--t4)", cursor: "pointer" }}>{pctOf(row.dist, key)}%</td>
-                  ))}
+                  {(() => { const rs = shareOf(row); return stances.map(({ key }) => (
+                    <td key={key} style={{ ...mono, fontSize: 10, padding: "7px 10px", borderBottom: "1px solid var(--ln1)", color: "var(--t4)", cursor: "pointer" }}>{rs[key]?.pct ?? 0}%</td>
+                  )); })()}
                   <td style={{ ...mono, fontSize: 10, padding: "7px 10px", borderBottom: "1px solid var(--ln1)", color: "var(--t6)" }}>{row.polled}</td>
                 </tr>
               ))}
@@ -231,28 +262,36 @@ function OddsMeter({ lead }: { lead: ReportLead }) {
 
 /** PR-A — the uploaded files the decision turned on: images render inline
  *  (the winning listing photo IS the finding), documents open signed */
+/** C7 (field-report 2): a uniform grid — equal columns, fixed image height,
+ *  captions clamped to two lines (click a card's caption to expand) — so a
+ *  mixed set of portrait/landscape uploads still reads as one composed row. */
 function KeyMaterials({ media, urls }: { media: NonNullable<ReportSpec["media"]>; urls: Record<string, string> }) {
+  const [openCaption, setOpenCaption] = useState<number | null>(null);
   return (
     <div style={{ marginTop: 34 }}>
       <div style={label}>KEY MATERIALS · WHAT THE DECISION TURNED ON</div>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: 14, marginTop: 14, maxWidth: 1080 }}>
         {media.map((m, i) => {
           const url = urls[m.path];
           if (m.kind === "image" && url) {
+            const clamped = openCaption !== i;
             return (
-              <figure key={i} style={{ margin: 0, maxWidth: 420, border: "1px solid var(--ln3)", borderRadius: 14, overflow: "hidden", background: "var(--sf)" }}>
+              <figure key={i} style={{ margin: 0, border: "1px solid var(--ln3)", borderRadius: 14, overflow: "hidden", background: "var(--sf)", display: "flex", flexDirection: "column" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL */}
-                <img src={url} alt={m.name} style={{ display: "block", width: "100%", maxHeight: 340, objectFit: "cover" }} />
-                <figcaption style={{ padding: "12px 16px" }}>
+                <img src={url} alt={m.name} style={{ display: "block", width: "100%", height: 180, objectFit: "cover", flex: "none" }} />
+                <figcaption style={{ padding: "12px 16px", cursor: "pointer" }} onClick={() => setOpenCaption(clamped ? i : null)} title={clamped ? m.caption : undefined}>
                   <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", color: "var(--acc)" }}>{m.name.toUpperCase()}</div>
-                  <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--t4)", marginTop: 4 }}>{m.caption}</div>
+                  <div style={{
+                    fontSize: 12.5, lineHeight: 1.55, color: "var(--t4)", marginTop: 4,
+                    ...(clamped ? { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" } : {}),
+                  }}>{m.caption}</div>
                 </figcaption>
               </figure>
             );
           }
           return (
             <a key={i} href={url ?? "#"} target="_blank" rel="noopener noreferrer"
-              style={{ display: "block", minWidth: 240, maxWidth: 420, border: "1px solid var(--ln3)", borderRadius: 14, padding: "16px 18px", background: "var(--sf)", textDecoration: "none" }}>
+              style={{ display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 120, border: "1px solid var(--ln3)", borderRadius: 14, padding: "16px 18px", background: "var(--sf)", textDecoration: "none" }}>
               <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", color: "var(--acc)" }}>↗ {m.name.toUpperCase()}</div>
               <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--t4)", marginTop: 5 }}>{m.caption}</div>
             </a>
@@ -366,8 +405,8 @@ function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
               </p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {instrumentOf(spec).map(({ key, plain: pl, color }) => {
-                const p = pctOf(finalPoll.dist, key);
+              {(() => { const inst = instrumentOf(spec); const fs = Object.fromEntries(distShares(finalPoll.dist, inst.map((x) => x.key)).map((x) => [x.key, x.pct])); return inst.map(({ key, plain: pl, color }) => {
+                const p = fs[key] ?? 0;
                 return (
                   <div key={key}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -379,7 +418,7 @@ function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
                     </div>
                   </div>
                 );
-              })}
+              }); })()}
             </div>
             {(spec.sentiment?.length ?? 0) > 1 && (
               <p style={{ margin: "14px 0 0", fontSize: 11.5, color: "var(--t6)" }}>
@@ -471,8 +510,66 @@ function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
   );
 }
 
+/** C6 (field-report 2): every upload in canonical corpus order, carrying the
+ *  SAME "IMAGE n" ordinal agents see — user language ("image 2"), filenames
+ *  ("3.webp"), and the panel's perception finally point at one thing.
+ *  Collapsible floating rail; click an image for the lightbox. */
+export interface ReportFile { name: string; kind: "image" | "document"; ordinal: number | null; url?: string }
+function FileRail({ files }: { files: ReportFile[] }) {
+  const [open, setOpen] = useState(false);
+  const [lightbox, setLightbox] = useState<ReportFile | null>(null);
+  if (!files.length) return null;
+  return (
+    <>
+      <div style={{ position: "fixed", right: 18, top: 96, zIndex: 44, display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          style={{ ...mono, fontSize: 9, letterSpacing: ".08em", padding: "6px 14px", borderRadius: 100, border: `1px solid ${open ? "var(--acc)" : "var(--ln5)"}`, background: open ? "var(--acc-dim)" : "var(--sf)", color: open ? "var(--acc)" : "var(--t5)", cursor: "pointer" }}
+        >
+          FILES ({files.length}) {open ? "▴" : "▾"}
+        </button>
+        {open && (
+          <div style={{ marginTop: 8, width: 240, maxHeight: "min(60vh, 520px)", overflowY: "auto", border: "1px solid var(--ln4)", borderRadius: 14, background: "var(--sf)", padding: 10, boxShadow: "0 18px 44px rgba(0,0,0,.35)", animation: "fadeUp .15s ease both" }}>
+            <div style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t6)", padding: "2px 6px 8px" }}>WHAT THE PANEL SAW · CORPUS ORDER</div>
+            {files.map((f, i) => (
+              <button
+                key={i}
+                onClick={() => { if (f.kind === "image" && f.url) setLightbox(f); else if (f.url) window.open(f.url, "_blank", "noopener"); }}
+                style={{ display: "flex", width: "100%", alignItems: "center", gap: 9, textAlign: "left", cursor: f.url ? "pointer" : "default", borderRadius: 9, padding: "6px 6px", background: "transparent", border: "none" }}
+              >
+                {f.kind === "image" && f.url ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL
+                  <img src={f.url} alt="" style={{ width: 44, height: 32, objectFit: "cover", borderRadius: 6, border: "1px solid var(--ln4)", flex: "none" }} />
+                ) : (
+                  <span style={{ width: 44, height: 32, borderRadius: 6, border: "1px solid var(--ln3)", background: "var(--sf2)", display: "inline-flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: 9, color: "var(--t6)", flex: "none" }}>DOC</span>
+                )}
+                <span style={{ minWidth: 0 }}>
+                  {f.ordinal !== null && (
+                    <span style={{ display: "block", ...mono, fontSize: 7.5, letterSpacing: ".09em", color: "var(--acc)" }}>IMAGE {f.ordinal}</span>
+                  )}
+                  <span style={{ display: "block", ...mono, fontSize: 10, color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {lightbox && (
+        <div onClick={() => setLightbox(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 96, background: "rgba(0,0,0,.78)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, cursor: "zoom-out" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL */}
+          <img src={lightbox.url} alt={lightbox.name} style={{ maxWidth: "86vw", maxHeight: "80vh", borderRadius: 12, border: "1px solid var(--ln6)" }} />
+          <div style={{ ...mono, fontSize: 10, letterSpacing: ".07em", color: "#eaeaea" }}>
+            {lightbox.ordinal !== null ? `IMAGE ${lightbox.ordinal} · ` : ""}{lightbox.name.toUpperCase()} — CLICK ANYWHERE TO CLOSE
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function ReportView({
-  simId, problem, spec, posts, version, versions = [], reportId, mediaUrls = {},
+  simId, problem, spec, posts, version, versions = [], reportId, mediaUrls = {}, files = [],
 }: {
   simId: string;
   problem: string;
@@ -483,6 +580,8 @@ export default function ReportView({
   reportId?: string;
   /** PR-A — signed URLs for spec.media, keyed by storage path */
   mediaUrls?: Record<string, string>;
+  /** C6 — every upload, corpus order, IMAGE-n ordinals + signed URLs */
+  files?: ReportFile[];
 }) {
   const [flash, setFlash] = useState<number | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
@@ -554,10 +653,12 @@ export default function ReportView({
               ...mono, fontSize: 9, letterSpacing: ".07em", padding: "5px 14px", borderRadius: 100,
               border: `1px solid ${view === "plain" ? "var(--acc)" : "var(--ln5)"}`,
               background: view === "plain" ? "var(--acc-dim)" : "transparent",
-              color: view === "plain" ? "var(--acc)" : "var(--t5)", cursor: plainBusy ? "wait" : "pointer",
+              color: view === "plain" ? "var(--acc)" : "var(--t5)", cursor: plainBusy ? "progress" : "pointer",
+              display: "inline-flex", alignItems: "center", gap: 7,
             }}
           >
-            {plainBusy ? "SIMPLIFYING…" : view === "plain" ? "SIMPLIFIED ✓ · BACK TO EXPERT" : "SIMPLIFY"}
+            {plainBusy && <span style={{ width: 6, height: 6, borderRadius: 100, background: "var(--acc)", animation: "pulseDot 1s ease infinite", flex: "none" }} />}
+            {plainBusy ? "SIMPLIFYING" : view === "plain" ? "SIMPLIFIED ✓ · BACK TO EXPERT" : "SIMPLIFY"}
           </button>
         )}
         <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -579,7 +680,32 @@ export default function ReportView({
 
       {plainErr && <div style={{ ...mono, fontSize: 10, color: "var(--warn)", marginTop: 10 }}>{plainErr}</div>}
 
-      {showPlain ? (
+      <FileRail files={files} />
+
+      {/* C4: while the translation pass runs, the page becomes a shimmer
+          skeleton of the simplified layout — never the OS busy cursor alone */}
+      {plainBusy && (() => {
+        const shim: CSSProperties = {
+          background: "linear-gradient(90deg, var(--sf2) 25%, var(--ln2) 50%, var(--sf2) 75%)",
+          backgroundSize: "400px 100%", animation: "shim 1.2s linear infinite",
+        };
+        return (
+          <div style={{ marginTop: 26, display: "flex", flexDirection: "column", gap: 14, animation: "fadeUp .2s ease both" }}>
+            <div style={{ ...mono, fontSize: 9, letterSpacing: ".1em", color: "var(--t6)", display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 6, height: 6, borderRadius: 100, background: "var(--acc)", animation: "pulseDot 1s ease infinite" }} />
+              TRANSLATING FOR A NON-TECHNICAL READER — SAME ANSWERS, SAME NUMBERS…
+            </div>
+            <div style={{ ...shim, height: 34, width: "58%", borderRadius: 10 }} />
+            <div style={{ ...shim, height: 90, maxWidth: 860, borderRadius: 14 }} />
+            <div style={{ display: "flex", gap: 12, maxWidth: 860 }}>
+              {[0, 1, 2].map((i) => <div key={i} style={{ ...shim, height: 120, flex: 1, borderRadius: 14 }} />)}
+            </div>
+            <div style={{ ...shim, height: 70, maxWidth: 860, borderRadius: 14 }} />
+          </div>
+        );
+      })()}
+
+      {plainBusy ? null : showPlain ? (
         <PlainBody spec={spec} plain={plain!} problem={problem} onExpert={() => setView("expert")} mediaUrls={mediaUrls} />
       ) : (
         <>
@@ -909,7 +1035,9 @@ export default function ReportView({
                               <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginTop: 2 }}>{p.role.toUpperCase()}</div>
                             </div>
                           </div>
-                          <p style={{ margin: "7px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "var(--t3)" }}>{p.content}</p>
+                          <div style={{ margin: "7px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 6 }}>
+                            <Markdown text={p.content} />
+                          </div>
                         </div>
                       </div>
                     );

@@ -13,6 +13,8 @@ import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MiniSwarm } from "@/components/app/CastingTheater";
+import Markdown from "@/components/app/Markdown";
+import { distShares } from "@/lib/dist";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import { createClient } from "@/lib/supabase/client";
 import type { PersonaSpec } from "@/lib/personas";
@@ -59,6 +61,7 @@ export interface LiveSentiment {
   quotes: { name: string; stance: string; quote: string }[];
   question?: string; // what the crowd was asked (engine-derived from the brief; older runs pre-date it)
   options?: string[]; // choice instrument (PR-B): the alternatives on offer; absent = classic stance poll
+  ballots?: { name: string; stance: string }[]; // C2: every individual answer (older runs pre-date it)
 }
 
 /** poll bar colors: classic keeps its stance semantics (support=accent,
@@ -331,6 +334,7 @@ export default function LiveRun({
     }
   };
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [ballotsOpen, setBallotsOpen] = useState<Set<number>>(new Set()); // SEE EVERY VOTE, per poll card
   const feedEl = useRef<HTMLDivElement>(null);
   const canvasEl = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<Record<string, Node>>({});
@@ -1089,8 +1093,11 @@ export default function LiveRun({
                 );
               }
               if (it.kind === "sentiment") {
-                const total = Math.max(it.s.polled, 1);
+                const keys = pollKeys(it.s);
+                const shares = distShares(it.s.dist, keys.map((k) => k.key)); // sums to exactly 100
+                const colorOf = Object.fromEntries(keys.map((k) => [k.key, k.color]));
                 const open = expanded.has(idx);
+                const votesOpen = ballotsOpen.has(idx);
                 return (
                   <div key={`s${idx}`} style={{ margin: "16px 0", border: "1px solid var(--ln3)", borderRadius: 12, background: "var(--sf2)", padding: "12px 16px", cursor: "pointer" }}
                     onClick={() => setExpanded((prev) => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n; })}>
@@ -1104,12 +1111,20 @@ export default function LiveRun({
                       </div>
                     )}
                     <div style={{ display: "flex", gap: 4, height: 8, borderRadius: 100, overflow: "hidden", marginTop: 8 }}>
-                      {pollKeys(it.s).map(({ key: k, color }) => (
-                        <span key={k} title={`${k} ${it.s.dist[k] ?? 0}`} style={{ width: `${((it.s.dist[k] ?? 0) / total) * 100}%`, background: color }} />
+                      {shares.map((s2) => (
+                        <span key={s2.key} title={`${s2.key} — ${s2.count} of ${it.s.polled}`} style={{ width: `${s2.pct}%`, background: colorOf[s2.key] }} />
                       ))}
                     </div>
-                    <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginTop: 6 }}>
-                      {pollKeys(it.s).map(({ key: k }) => `${Math.round(((it.s.dist[k] ?? 0) / total) * 100)}% ${k.toUpperCase()}`).join(" · ")}
+                    {/* legend rows: swatch · label · % · raw count — replaces the cramped one-liner */}
+                    <div style={{ display: "flex", flexWrap: "wrap", columnGap: 16, rowGap: 5, marginTop: 8 }}>
+                      {shares.map((s2) => (
+                        <span key={s2.key} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: 3, background: colorOf[s2.key], flex: "none" }} />
+                          <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".04em", color: "var(--t4)" }}>{s2.key.toUpperCase()}</span>
+                          <span style={{ ...mono, fontSize: 10.5, color: "var(--t1)", fontWeight: 500 }}>{s2.pct}%</span>
+                          <span style={{ ...mono, fontSize: 8.5, color: "var(--t7)" }}>({s2.count})</span>
+                        </span>
+                      ))}
                     </div>
                     {open && (
                       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1119,6 +1134,31 @@ export default function LiveRun({
                             “{qt.quote}” <span style={{ color: "var(--t6)" }}>— {qt.name}</span>
                           </div>
                         ))}
+                        {(it.s.ballots?.length ?? 0) > 0 && (
+                          <div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setBallotsOpen((prev) => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n; }); }}
+                              style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", background: "none", border: "none", padding: 0, color: "var(--t6)", cursor: "pointer" }}
+                            >
+                              SEE EVERY VOTE ({it.s.ballots!.length}) {votesOpen ? "▴" : "▾"}
+                            </button>
+                            {votesOpen && (
+                              <div style={{ marginTop: 8, maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, paddingRight: 6 }}
+                                onClick={(e) => e.stopPropagation()}>
+                                {shares.filter((s2) => s2.count > 0).map((s2) => (
+                                  <div key={s2.key}>
+                                    <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: colorOf[s2.key] === "var(--ln5)" ? "var(--t6)" : colorOf[s2.key], marginBottom: 3 }}>
+                                      {s2.key.toUpperCase()} · {s2.count}
+                                    </div>
+                                    <div style={{ fontSize: 11, lineHeight: 1.6, color: "var(--t5)" }}>
+                                      {it.s.ballots!.filter((b) => b.stance === s2.key).map((b) => b.name).join(" · ")}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1172,7 +1212,9 @@ export default function LiveRun({
                         {!isFloor && <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", marginTop: 2 }}>{p.role.toUpperCase()}</div>}
                       </div>
                     </div>
-                    <p style={{ margin: "8px 0 0", fontSize: isInterjection ? 11.5 : 12.5, lineHeight: 1.6, color: isInterjection ? "var(--t5)" : "var(--t3)" }}>{p.content}</p>
+                    <div style={{ margin: "8px 0 0", fontSize: isInterjection ? 11.5 : 12.5, lineHeight: 1.6, color: isInterjection ? "var(--t5)" : "var(--t3)", display: "flex", flexDirection: "column", gap: 6 }}>
+                      <Markdown text={p.content} />
+                    </div>
                     {p.cites.length > 0 && (
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7 }}>
                         {p.cites.map((c, ci) => (
