@@ -226,6 +226,55 @@ stances stay the default — plus the synthesis ticker: "✓ SUMMARY · WRITING 
 every upload is evidence, filename reference IS an image's citation; @file tokens hold
 their typed form). Items 5 + 6 (parallel posting, selective voting) were absorbed into 3e.
 
+### Field-report batch 2 (reported 2026-08-04) — PR C polish + PR D detached reports
+
+Adam's second testing pass (poll card, feed rendering, report UX). Two PRs:
+
+**PR C — poll truth & report reading experience** (UI + one small event change):
+- **C1 · Percentages that sum to 100.** 40/30/29/2 = 101 today because each option is
+  rounded independently — switch to largest-remainder rounding everywhere a dist renders
+  (LiveRun card, ReportView slider/table, PlainBody). Readout redesigned: legend rows
+  (color swatch · option label · % · raw count) replacing the cramped 8.5px one-liner;
+  the stacked bar stays.
+- **C2 · Every vote, visible.** Today every crowd member IS polled every polled round
+  (batched 20 at a time; a deadline-cut poll ships its partial tally honestly) — but
+  individual answers are tallied then discarded except 6 quotes. Persist the full
+  per-member response on the sentiment event (compact `votes: [{name, choice}]` — ~300
+  rows ≈ 15KB, fine for events + realtime) and give the poll card a **SEE EVERY VOTE ▾**
+  expander: scrollable roster grouped by option, filter chips, quotes inline where they
+  exist. Report gains the same expander under the percentages table.
+- **C3 · Markdown in the forum feed.** Posts render `**bold**` literally — route post
+  bodies (and report transcript quotes) through `components/app/Markdown.tsx` (already
+  dependency-free + mention-aware from Conversations).
+- **C4 · SIMPLIFY gets a real loading state.** The "weird blue spinner" is `cursor:
+  wait` — the OS busy cursor. Replace with an in-button pulsing dot + a §10 shimmer
+  skeleton over the body while the translation pass runs.
+- **C5 · Plain mode names files.** The plain-translation prompt gains a rule: refer to
+  uploaded files by their exact filename ("1.jpg"), never a paraphrase ("the finished
+  house"). (The linked report's missing photos were age, not a bug — its spec predates
+  report media; C6 makes files visible in every report regardless.)
+- **C6 · The file rail — which file is IMAGE 1.** Users say "image 2"; files are named
+  1.jpg/3.webp/2.jpg; agents see corpus-order labels. One truth: the ordinal
+  `buildCorpusBlocks` already assigns ("UPLOADED IMAGE n") surfaces everywhere — a
+  right rail on the report (**FILES · WHAT THE PANEL SAW**: every upload in corpus
+  order — clickable thumbnail → lightbox, filename, IMAGE-n chip, kind) rendered for
+  ALL reports (independent of synthesizer media picks), and the workspace doc rows get
+  the same IMAGE-n chip.
+- **C7 · Media grid that looks composed.** KEY MATERIALS becomes a uniform grid
+  (auto-fill columns, 3-up at desktop), fixed image-area height with cover-fit,
+  captions clamped to two lines (click to expand) — no more ragged card heights.
+
+**PR D — reports you can walk away from** (3c's medicine applied to synthesis):
+synthesis today runs inside the response stream — leave the page and there is no
+re-attach, no status anywhere. Move it under `waitUntil` with
+`config.report_state {stage, note, heartbeat_at, version}` as truth; the report page
+re-attaches on return (live ticker note included); Home's IN-PROGRESS strip shows
+SYNTHESIZING reports beside running sims; stale heartbeat surfaces a RETRY. Same
+worker/heartbeat pattern 3c proved.
+
+**Order:** PR C lands before/alongside 3e (pure polish + one event field); PR D right
+after 3e (half-day, reuses the 3c pattern).
+
 ### 3e · The forum acts like a real forum (living threads + parallel waves + honest votes)  ⟵ NEXT
 
 Agents can return to earlier posts — even prior rounds — to reply, extend sub-threads, or
