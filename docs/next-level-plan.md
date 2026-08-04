@@ -215,7 +215,18 @@ today's rates); every tool call is visible, logged, and citable.
   invariants), smoke proof of default-OFF (zero tool events) + a tools-on run with
   ≥1 search reaching feed + report, browser screenshots both themes, docs/README/§7.
 
-### 3e · The forum acts like a real forum (living threads)  ⟵ NEXT
+### Field-report batch  ✅ SHIPPED (PRs #59–#61, 2026-08-03/04)
+
+Adam's six-item field report after 3d, fixed before 3e: **#59 Files you can point at**
+(anonymous-image-block root cause → labeled corpus blocks; report KEY MATERIALS media;
+workspace thumbnails + lightbox + @file typeahead) · **#60 Polls that fit the question**
+(choice instruments — choose-between briefs poll the brief's ACTUAL alternatives; classic
+stances stay the default — plus the synthesis ticker: "✓ SUMMARY · WRITING FINDINGS 3/6")
+· **#61 Corpus Q&A answers any upload** (images-only refusal killed — `corpusQaSystem`:
+every upload is evidence, filename reference IS an image's citation; @file tokens hold
+their typed form). Items 5 + 6 (parallel posting, selective voting) were absorbed into 3e.
+
+### 3e · The forum acts like a real forum (living threads + parallel waves + honest votes)  ⟵ NEXT
 
 Agents can return to earlier posts — even prior rounds — to reply, extend sub-threads, or
 vote late (including flipping an earlier vote). Fresh discussion still dominates. UI: the
@@ -228,6 +239,15 @@ bustling ~35%, recomputed from persisted posts on resume); cross-round replies g
 "update, don't reopen" instruction; votes go per-run `(post, voter)` latest-wins (DB
 already agrees); round-close vote sweep gains a retro slice for older posts that drew new
 replies; full offline pinning before ship.
+
+**Absorbed from the field report (approved 2026-08-03):**
+- **Parallel reply waves** (item 5 — realism + speed): replies land in batches of 2–3
+  that share a transcript snapshot, so voices genuinely overlap instead of a strict
+  relay; Jury round 1 goes fully parallel (blind scores are independent by definition).
+  Budgets, dedupe, and ordering guarantees unchanged — the wave is a scheduling detail.
+- **Selective voting** (item 6 — votes on almost every post reads fake): abstain by
+  default with per-voter budgets (endorse ≤2, reject ≤1 per round) so a vote means
+  something; vote totals stay citable report signals.
 
 ### 3f · Big panels — 100+ experts (design exploration + engineering)
 
@@ -252,6 +272,114 @@ Plus richer animated explainers and "what am I looking at" affordances on the ru
 
 ---
 
+## Phase 5 — Grounded crowds & the data layer (approved 2026-08-04)
+
+**Why this phase:** the architecture audit against the three canonical question styles
+(research: "rates rise → Beverly Hills?" · preference: "which photo gets the click?" ·
+decision: "$32M land — fair range?") found the chain from question → casting →
+instrument → report SOUND, and the gaps all data-grounding: crowds should look like the
+actual market, agents should pull the actual series, and "what if" should be a button.
+This is also the competitive answer to Simile-class "anchored in real people" pitches —
+ours is **synthetic-but-representative** (census-grounded, no real individual ever
+simulated — the CLAUDE.md privacy line) plus vertical depth they can't match: checkable
+constraints, document citations, tools, and outcome calibration.
+
+### 5a · ACS PUMS demographic seeding — census-grounded crowds (CLAUDE.md §3.2B)
+
+**The substrate (offline, once per vintage):** bulk-load PUMS person + household CSVs
+into Postgres — `pums_households` / `pums_persons` with PUMS weights (WGTP/PWGTP) and
+PUMA — via an idempotent `scripts/load-pums.mjs` (census FTP / AWS Open Data mirror),
+plus a `geo_crosswalk` table (ZIP↔PUMA↔county, geocorr). **Arizona first** (matches the
+demo), **California second** (Beverly Hills-class questions). Annual vintage refresh is a
+re-run. Weighted sampling is a millisecond SQL query — no LLM in the sampling path.
+
+**When it runs (per simulation, not per library):** the brief pass extracts the
+geography (ZIPs / city / county / metro) from the brief + corpus. When a
+consumer/resident cohort has a real geography, **crowd materialization switches from
+narrative invention to weighted sampling**: geography → PUMAs → sample N household
+records honoring weights → a compact Haiku pass turns each record into a persona that
+**preserves the record's attributes verbatim** (age, household, income band, tenure,
+occupation, commute) — narrative is invented, demographics are not. Rows land in
+`sim_agents` with `demographics.source: "acs_pums"` + the record's weight. Consumer/
+resident LEAD seats use the same sampler (one record + a richer narrative). No
+geography in the brief → today's narrative path, unchanged.
+
+**Relationship to the ~1,900-persona library: augmentation, not replacement.** The
+global library stays the reusable, org-agnostic layer — experts, stakeholders, and the
+§28–30 generic demand cohorts (which become the explicit no-geography fallback). PUMS
+personas are per-simulation materializations of a place + vintage: generated fresh and
+cheap each run, and NOT written back to the global library (place-specific rows would
+pollute it). Orgs can still save any sampled persona they like to their custom library.
+
+**Surfaces:** population stage shows the grounding line for real ("ACS PUMS 2023 ·
+ZIPS 85212 + 85142 · 400 households"), an editable geography picker, and an honesty
+panel — sampled-crowd distributions vs the census marginals (income / tenure / age
+bars), so the user can SEE the crowd looks like the place. Report methodology names
+vintage, PUMAs, and weights. v1 polls tally unweighted with weights recorded
+(weighted display is a fast follow).
+
+**Bar:** loader idempotent + resumable; sampler unit-tested (weights honored,
+attribute preservation pinned, crosswalk edge cases); E2E: a Phoenix brief materializes
+a crowd whose attributes match its sampled records; docs + README + §3.2B status.
+
+### 5b · Describe-to-create personas — PUMS-backed autofill
+
+Everywhere a persona is created or edited (library custom create, Conversations picker,
+remix editor): alongside the manual form (which stays), a **DESCRIBE THEM** box — one or
+two sentences ("a 34-year-old nurse in Mesa, renting, two kids, first-time buyer") →
+the full §3.1 persona JSON drafted: identity, tagline, backstory, stances, traits,
+demographics — every field editable before save. **The PUMS twist:** the description is
+parsed into demographic constraints; a matching real record is constrained-sampled; the
+UNSTATED fields inherit from the record — so the invented person is census-consistent,
+not vibes. No matching record → nearest match with a visible "closest census match"
+note. Provenance `manual` + `demographics.source: "acs_pums"`. The same sampler later
+upgrades the Casting Director's gap-generation path.
+
+### 5c · Data tools phase 2 — the rack's coming-soon cards go live (§7)
+
+The 3d rack was built for exactly this: a new tool = a new descriptor + a runner, never
+re-architecture. Light up, in order of value-per-effort: **FRED** (rates/series — the
+research-question workhorse) · **Census ACS** (demographics on demand) · **HUD** (FMR /
+income limits) · **FEMA NFHL** (flood zone by location) · **parcel/Regrid** (parcel +
+zoning attributes; paid key — env-gated, card lights up when a key is present). These
+are function tools (the engine executes the runner, unlike server-side web search):
+per-sim cached into the shared factbase, logged to `tool_runs` + `tool` events, citable
+("source: tool"), already flowing to the report's TOOL FINDINGS + appendix.
+
+**Agent skills (the AI-tool side):** first entry is a **finance-calc tool** —
+deterministic underwriting arithmetic (cap rate, DSCR, residual land value, absorption
+math) the model calls instead of doing mental math; results cite as "source: calc" and
+kill arithmetic hallucination in valuations. Chart generation lands in Conversations
+per the v2 roadmap. Per-seat tool assignment (persona `knowledge.tools`) remains the
+future hook.
+
+### 5d · Scenario forks + report diffs (promoted from backlog — the rehearsal loop)
+
+Fork any completed simulation: change a parameter, a document, an assumption, or a
+persona → re-run → **diff view** between parent and fork (verdict change, dimension-
+score deltas, which agents flipped, findings appeared/disappeared, cost per run).
+`simulations.parent_id` lineage per §2 Stage 5. This turns research conditionals
+("if rates rise…") into buttons, and is the mechanism the parked stress-grid
+(world-state timelines) will drive later.
+
+### 5e · Calibration v0 — the outcomes flywheel starts (§1 principle 5)
+
+The `outcomes` table has existed since migration one; nothing writes to it. Add a
+**RECORD WHAT HAPPENED** affordance on every report (the parcel traded at $X · the
+hearing passed · lease-up took N months) → an `outcomes` row typed to the report's lead
+kind; Reports/Home show predicted-vs-actual chips where an outcome exists. Cheap now,
+priceless later — the backtest report (Phase 4 of CLAUDE.md §11) needs years of these.
+
+### 5f · Valuation scaffold — triangulation made structural
+
+For price-range briefs: the Casting Director pins one owning seat per appraisal
+approach (sales comparison · residual land value · income capitalization), and the
+report's PRICE RANGE lead must cite the three triangulated numbers it reconciled
+(completeness-gate enforced). Small change; makes the flagship §2 valuation case read
+like an appraisal instead of a vibe.
+
+---
+
 ## Parked — deliberately (needs its own planning session; do not rush)
 
 **Scenario / stress-test simulations**: world-state timelines ("rates +1.5% by month 6,
@@ -263,15 +391,24 @@ diffs** (backlog) — the stress-grid mechanism (+1%/+2%/+3% forks, diff the ver
 
 ## Backlog
 
-What-if forks + side-by-side report diffs · DOCX/XLSX uploads + per-doc viewer with
-citation deep-links · census-grounded crowds (ACS PUMS, Arizona first) · saved panels &
-per-seat swap · more agent tools (parcel/lot data, historical web, FRED/Census series —
-new cards in the 3d rack) · teams/sharing/billing → marketplace → calibration.
+DOCX/XLSX uploads + per-doc viewer with citation deep-links · saved panels & per-seat
+swap · weighted poll tallies (PUMS weights in the dist) · a "choice" report lead kind
+(winner + share split for preference briefs) · historical-web tool · per-seat tool
+assignment (`knowledge.tools`) · teams/sharing/billing → marketplace → backtest report.
+(Promoted to Phase 5: census-grounded crowds → 5a · what-if forks + diffs → 5d · data
+tools → 5c · calibration start → 5e.)
 
-## Sequencing
+## Sequencing (updated 2026-08-04)
 
-**3a → 3b → 3c → 3d → 3e → 3f**, reports first (every demo ends on the report; it's what
-a non-technical reader judges), then trust, then tools+threads, scale last. Each item =
-its own PR off `origin/main`; README checklist + /docs updated per PR; CLAUDE.md updated
-where the spec changes. The zero-errors bar from Phase 1 applies to every item: offline
-pinning + live smoke before merge.
+**3e → 5a → 5b → 5c → 5d (5e + 5f ride alongside as small PRs) → 3f → Phase 4 docs.**
+
+Rationale: 3e closes the approved field-report batch (one day). Then grounding beats
+polish — 5a upgrades every demand/preference/consent question at once and 5b depends on
+its sampler; 5c makes research questions pull real series (each tool compounds across
+all personas); 5d turns "what would change the answer" into a button and pairs with the
+parked scenario-timeline session when Adam is ready. 5e and 5f are deliberately thin —
+each is a day-scale PR that can interleave. Big panels (3f) and the teaching docs
+(Phase 4) follow once crowds and tools are grounded — both showcase better with real
+grounding underneath. Each item = its own PR off `origin/main`; README checklist +
+/docs updated per PR; CLAUDE.md updated where the spec changes. The zero-errors bar
+from Phase 1 applies to every item: offline pinning + live smoke before merge.
