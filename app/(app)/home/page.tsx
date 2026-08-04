@@ -72,7 +72,11 @@ export default async function HomePage() {
   })) as HomeConversation[];
 
   const sims: HomeSim[] = (simRows ?? []).map((s) => {
-    const cfg = (s.config ?? {}) as { casting?: { mode?: string }; run_result?: { mode?: string; posts?: number } };
+    const cfg = (s.config ?? {}) as { casting?: { mode?: string }; run_result?: { mode?: string; posts?: number }; report_state?: { stage?: string; heartbeat_at?: string } };
+    // PR D: a report being synthesized right now (fresh heartbeat, not done)
+    const rs = cfg.report_state;
+    const synthesizing = !!rs && rs.stage !== "done" && rs.stage !== "error"
+      && Date.now() - new Date(rs.heartbeat_at ?? 0).getTime() < 90_000;
     return {
       id: s.id as string,
       problem: ((s.brief as { problem?: string } | null)?.problem ?? "Untitled simulation").slice(0, 200),
@@ -80,6 +84,7 @@ export default async function HomePage() {
       mode: cfg.run_result?.mode ?? cfg.casting?.mode ?? null,
       posts: cfg.run_result?.posts ?? 0,
       created_at: s.created_at as string,
+      synthesizing,
     };
   });
 
