@@ -56,7 +56,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   // corpus prefix — same grounding path as the run itself
   const { data: docs } = await supabase.from("documents")
-    .select("id, name, mime, anthropic_file_id").eq("sim_id", id).eq("parse_status", "parsed");
+    .select("id, name, mime, anthropic_file_id").eq("sim_id", id).eq("parse_status", "parsed")
+    .order("created_at", { ascending: true }); // canonical corpus order
   // shared builder: images carry NAME LABELS so agents can resolve "4.jpg"
   const corpusBlocks = buildCorpusBlocks(
     (docs ?? []).filter((d) => d.anthropic_file_id)

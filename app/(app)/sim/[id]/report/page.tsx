@@ -54,6 +54,25 @@ export default async function ReportPage({ params, searchParams }: {
     if (data?.signedUrl) mediaUrls[m.path] = data.signedUrl;
   }
 
+  // C6 (field-report 2): the FILE RAIL — every upload in canonical corpus
+  // order, carrying the SAME "IMAGE n" ordinal agents see in their context
+  // (buildCorpusBlocks numbers images by created_at). Rendered for every
+  // report, independent of which files the synthesizer picked as media.
+  const { data: docRows } = await supabase!
+    .from("documents").select("name, mime, storage_path, parse_status").eq("sim_id", id)
+    .eq("parse_status", "parsed").order("created_at", { ascending: true });
+  let imageOrdinal = 0;
+  const files: { name: string; kind: "image" | "document"; ordinal: number | null; url?: string }[] = [];
+  for (const d of docRows ?? []) {
+    const isImage = ((d.mime as string | null) ?? "").startsWith("image/");
+    let url: string | undefined;
+    if (d.storage_path) {
+      const { data } = await supabase!.storage.from("documents").createSignedUrl(d.storage_path as string, 3600);
+      url = data?.signedUrl;
+    }
+    files.push({ name: d.name as string, kind: isImage ? "image" : "document", ordinal: isImage ? ++imageOrdinal : null, url });
+  }
+
   return (
     <ReportView
       simId={sim.id}
@@ -64,6 +83,7 @@ export default async function ReportPage({ params, searchParams }: {
       versions={versions}
       reportId={report.id as string}
       mediaUrls={mediaUrls}
+      files={files}
     />
   );
 }

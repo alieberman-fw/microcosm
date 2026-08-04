@@ -48,8 +48,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const { data: sentimentRows } = await supabase.from("events")
     .select("payload").eq("sim_id", id).eq("type", "sentiment").order("seq", { ascending: true });
   const sentiments = (sentimentRows ?? []).map((e) => {
-    const p = e.payload as { round: number; polled: number; dist: Record<string, number> };
-    return { round: p.round, polled: p.polled, dist: p.dist };
+    const p = e.payload as { round: number; polled: number; dist: Record<string, number>; ballots?: { name: string; stance: string }[] };
+    return { round: p.round, polled: p.polled, dist: p.dist, ballots: p.ballots };
   });
   // what the crowd was actually asked — from the newest poll event that carried
   // it (constant per sim; older runs pre-date the field and show no question).
@@ -77,7 +77,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   })();
 
   const { data: docs } = await supabase.from("documents")
-    .select("id, name, mime, anthropic_file_id, storage_path").eq("sim_id", id).eq("parse_status", "parsed");
+    .select("id, name, mime, anthropic_file_id, storage_path").eq("sim_id", id).eq("parse_status", "parsed")
+    .order("created_at", { ascending: true }); // canonical corpus order
 
   // §2b: vote totals are a citable endorsement signal for the synthesizer
   const { data: voteRows } = await supabase.from("post_votes").select("seq, vote").eq("sim_id", id);

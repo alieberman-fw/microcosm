@@ -62,7 +62,8 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
 
     // ---- corpus prefix: same grounding path as Test-the-corpus (§2 Stage 2) ----
     const { data: docs } = await db.from("documents")
-      .select("id, name, mime, anthropic_file_id").eq("sim_id", simId).eq("parse_status", "parsed");
+      .select("id, name, mime, anthropic_file_id").eq("sim_id", simId).eq("parse_status", "parsed")
+      .order("created_at", { ascending: true }); // upload order IS the corpus order — "IMAGE n" ordinals must agree across every surface
     const docInputs: CorpusDocInput[] = [];
     for (const d of docs ?? []) {
       if (d.anthropic_file_id) docInputs.push({ name: d.name as string, mime: d.mime as string | null, file_id: d.anthropic_file_id as string });

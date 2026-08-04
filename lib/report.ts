@@ -53,7 +53,7 @@ export interface ReportSpec {
   risks: { risk: string; severity: "high" | "medium" | "low"; mitigation: string; watch_signal: string }[];
   dissents: { name: string; role: string; position: string; quote: string; seq: number }[];
   tripwires: string[];
-  sentiment?: { round: number; polled: number; dist: Record<string, number> }[];
+  sentiment?: { round: number; polled: number; dist: Record<string, number>; ballots?: { name: string; stance: string }[] }[];
   poll_question?: string; // the one proposition every crowd poll asked (engine-derived from the brief)
   poll_options?: string[]; // choice instrument (PR-B): the alternatives the crowd chose among; absent = classic stance poll
   /** 3d — tool usage frozen with the report: how many calls, and the deduped
@@ -351,6 +351,7 @@ export function reportPlainSystem(): string {
     `- No jargon, no acronyms. Where a technical term is unavoidable, use it once and add it to the glossary with a one-line everyday meaning.\n` +
     `- Risks become "what could go wrong / what we'd do about it / what to watch for" in everyday words.\n` +
     `- Tripwires become "if you see this happen, revisit the decision" sentences.\n` +
+    `- Uploaded files keep their EXACT filenames ("1.jpg", "survey.pdf") — never a paraphrase like "the finished house"; the reader must be able to find the file.\n` +
     `- Sentences under 20 words. Active voice. A busy executive should understand every line on first read.`
   );
 }

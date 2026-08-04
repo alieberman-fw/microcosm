@@ -36,7 +36,7 @@ export type EngineEvent =
   | { type: "tool"; agent_key: string; name: string; tool: string; query: string; results: { title: string; url: string }[]; round: number }
   | { type: "presence"; agent_key: string; name: string; state: "thinking" | "speaking" | "idle" }
   | { type: "polling"; round: number; count: number }
-  | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[]; question?: string; options?: string[] }
+  | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[]; question?: string; options?: string[]; ballots?: { name: string; stance: string }[] }
   | { type: "votes"; round: number; votes: { seq: number; voter_key: string; voter_name: string; voter_role: string; vote: 1 | -1 }[] }
   | { type: "convergence"; aligned: number; total: number; dissents: number };
 
@@ -374,6 +374,9 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
     ? Object.fromEntries(ctx.pollOptions.map((o) => [o, 0])) // insertion order = display order
     : { support: 0, conditional: 0, oppose: 0, disengaged: 0 };
   const quotes: { name: string; stance: string; quote: string }[] = [];
+  // C2 (field-report 2): every individual answer is kept, not just the tally —
+  // "SEE EVERY VOTE" reads these off the persisted event (~40B/member)
+  const ballots: { name: string; stance: string }[] = [];
   const batches: EngineCrowdMember[][] = [];
   for (let i = 0; i < ctx.crowd.length; i += BATCH) batches.push(ctx.crowd.slice(i, i + BATCH));
   let next = 0;
@@ -425,6 +428,7 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
             if (!norm) coerced += 1;
           }
           dist[stance] += 1;
+          ballots.push({ name: String(r.name ?? "Crowd member").slice(0, 60), stance });
           if (r.quote && quotes.length < 6) quotes.push({ name: String(r.name ?? "Crowd member"), stance, quote: String(r.quote).slice(0, 160) });
         }
         if (coerced > 0) await ctx.logCall("engine.poll", model, null, t0, undefined, { note: "unrecognized stances coerced", coerced, round });
@@ -439,7 +443,7 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
   // aborted poll gets re-run in full on the next slice
   if (polled > 0) {
     ctx.polledRounds.add(round);
-    await ctx.emit({ type: "sentiment", round, polled, dist, quotes, question: ctx.pollQuestion, ...(choice ? { options: ctx.pollOptions } : {}) });
+    await ctx.emit({ type: "sentiment", round, polled, dist, quotes, question: ctx.pollQuestion, ballots, ...(choice ? { options: ctx.pollOptions } : {}) });
   }
 }
 
