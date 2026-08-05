@@ -13,7 +13,7 @@
 
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BriefQuestion } from "@/lib/corpus";
+import { BriefQuestion, MAX_DOC_BYTES } from "@/lib/corpus";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -50,6 +50,27 @@ export default function BriefComposer({
   const [error, setError] = useState<string | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
   const problemRef = useRef<HTMLTextAreaElement>(null);
+  // 6-PR1 — files upload WITH the brief (one gesture, same corpus pipeline);
+  // held client-side until create, then pushed through /api/documents
+  const [files, setFiles] = useState<File[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploadNote, setUploadNote] = useState<string | null>(null);
+  const pickRef = useRef<HTMLInputElement>(null);
+  const createdId = useRef<string | null>(null); // upload retries never re-create the sim
+
+  const addFiles = (list: FileList | File[]) => {
+    const incoming = Array.from(list);
+    const oversize = incoming.filter((f) => f.size > MAX_DOC_BYTES);
+    setFiles((prev) => {
+      const merged = [...prev];
+      for (const f of incoming) {
+        if (f.size > MAX_DOC_BYTES) continue;
+        if (!merged.some((x) => x.name === f.name && x.size === f.size)) merged.push(f);
+      }
+      return merged.slice(0, 12);
+    });
+    if (oversize.length) setError(`Over the 50MB limit: ${oversize.map((f) => f.name).join(", ")}`);
+  };
 
   // leaving /sim/new mid-setup must never lose work: the create-mode composer
   // keeps a localStorage draft, restored on return, cleared on create
@@ -190,15 +211,61 @@ export default function BriefComposer({
     const brief: Brief = { problem: p, questions, template: shape, success: criteria };
     try {
       if (mode === "create") {
-        const res = await fetch("/api/simulations", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(brief),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Could not create simulation");
+        // create exactly once — a retry after a failed upload PATCHes the
+        // brief instead of minting a second simulation
+        if (!createdId.current) {
+          const res = await fetch("/api/simulations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(brief),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error ?? "Could not create simulation");
+          createdId.current = data.id as string;
+        } else {
+          await fetch(`/api/simulations/${createdId.current}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(brief),
+          });
+        }
+
+        // push the attached files through the same corpus pipeline, 3 at a
+        // time; failures stay in the tray so nothing silently disappears
+        if (files.length) {
+          const failed: File[] = [];
+          let done = 0;
+          setUploadNote(`UPLOADING FILES · 0/${files.length}`);
+          let next = 0;
+          const queue = [...files];
+          const worker = async () => {
+            while (next < queue.length) {
+              const f = queue[next++];
+              const form = new FormData();
+              form.set("simId", createdId.current!);
+              form.set("file", f);
+              try {
+                const res = await fetch("/api/documents", { method: "POST", body: form });
+                if (!res.ok) throw new Error();
+                done++;
+              } catch {
+                failed.push(f);
+              }
+              setUploadNote(`UPLOADING FILES · ${done}/${files.length}`);
+            }
+          };
+          await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
+          setUploadNote(null);
+          if (failed.length) {
+            setFiles(failed);
+            setError(`${failed.length} file${failed.length > 1 ? "s" : ""} failed to upload — try again, or remove ${failed.length > 1 ? "them" : "it"} to continue (you can re-attach in the workspace)`);
+            setSaving(false);
+            return;
+          }
+        }
+
         localStorage.removeItem(DRAFT_KEY);
-        router.push(`/sim/${data.id}`);
+        router.push(`/sim/${createdId.current}`);
       } else {
         const res = await fetch(`/api/simulations/${simId}`, {
           method: "PATCH",
@@ -244,9 +311,11 @@ export default function BriefComposer({
         ref={problemRef}
         value={problem}
         onChange={(e) => setProblem(e.target.value)}
-        placeholder="Is ±212 acres at Signal Butte & Pecos suitable for a 300MW data center campus?"
+        placeholder={mode === "create"
+          ? "Write everything you want the simulation to cover, answer, or research — multi-part and messy welcome. e.g. Is ±212 acres at Signal Butte & Pecos suitable for a 300MW data center campus?"
+          : "Is ±212 acres at Signal Butte & Pecos suitable for a 300MW data center campus?"}
         rows={2}
-        maxLength={2000}
+        maxLength={6000}
         style={{
           width: "100%", boxSizing: "border-box", marginTop: mode === "create" ? 18 : 0,
           background: "transparent", border: "none", outline: "none", resize: "none",
@@ -255,6 +324,55 @@ export default function BriefComposer({
           color: "var(--t0)", caretColor: "var(--acc)", overflow: "hidden",
         }}
       />
+
+      {/* 6-PR1 — files travel WITH the prompt: one gesture, same corpus pipeline */}
+      {mode === "create" && (
+        <div
+          onClick={() => pickRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}
+          style={{
+            marginTop: 14, border: `1px dashed ${dragOver ? "var(--acc)" : "var(--ln4)"}`,
+            background: dragOver ? "var(--acc-dim)" : "transparent",
+            borderRadius: 10, padding: files.length ? "12px 14px" : "14px 16px", cursor: "pointer", transition: "all .15s",
+          }}
+        >
+          {files.length === 0 ? (
+            <div style={{ ...mono, fontSize: 10, letterSpacing: ".07em", color: dragOver ? "var(--acc)" : "var(--t6)", textAlign: "center" }}>
+              + DROP YOUR DILIGENCE FILES WITH THE PROMPT — PDF · TXT/MD · CSV · HTML · GEOJSON · IMAGES (OPTIONAL)
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+              {files.map((f) => (
+                <span
+                  key={`${f.name}-${f.size}`}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ ...mono, display: "inline-flex", alignItems: "center", gap: 7, fontSize: 9.5, letterSpacing: ".04em", padding: "5px 11px", borderRadius: 100, border: "1px solid var(--ln5)", color: "var(--t3)", cursor: "default" }}
+                >
+                  📄 {f.name.length > 34 ? `${f.name.slice(0, 32)}…` : f.name}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setFiles((prev) => prev.filter((x) => !(x.name === f.name && x.size === f.size))); }}
+                    aria-label={`Remove ${f.name}`}
+                    style={{ background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0, fontSize: 12, lineHeight: 1 }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".05em", color: "var(--t6)" }}>+ ADD MORE</span>
+            </div>
+          )}
+          <input
+            ref={pickRef}
+            type="file"
+            multiple
+            accept=".pdf,.txt,.md,.csv,.html,.json,.geojson,image/*,application/pdf,text/plain,text/markdown,text/csv,text/html"
+            onChange={(e) => { if (e.target.files?.length) addFiles(e.target.files); e.target.value = ""; }}
+            style={{ display: "none" }}
+          />
+        </div>
+      )}
 
       <div className="card" style={{ padding: "24px 28px", marginTop: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
@@ -391,8 +509,11 @@ export default function BriefComposer({
             fontFamily: "var(--font-sans), sans-serif",
           }}
         >
-          {saving ? "Saving…" : mode === "create" ? "Create & attach documents →" : "Save brief"}
+          {saving ? (uploadNote ? "Uploading…" : "Saving…") : mode === "create" ? (files.length ? `Create with ${files.length} file${files.length > 1 ? "s" : ""} →` : "Create simulation →") : "Save brief"}
         </button>
+        {uploadNote && (
+          <span style={{ ...mono, fontSize: 10, letterSpacing: ".06em", color: "var(--acc)", animation: "shim 1.2s ease infinite" }}>{uploadNote}</span>
+        )}
         {mode === "edit" && (
           <button
             onClick={onCancel}
@@ -401,9 +522,9 @@ export default function BriefComposer({
             CANCEL
           </button>
         )}
-        {mode === "create" && (
+        {mode === "create" && !uploadNote && (
           <span style={{ ...mono, fontSize: 11, color: "var(--t6)" }}>
-            NEXT · UPLOAD DILIGENCE MATERIALS
+            NEXT · THE SYSTEM READS YOUR BRIEF{files.length > 0 ? " + FILES" : ""} AND SHOWS WHAT IT UNDERSTOOD
           </span>
         )}
       </div>

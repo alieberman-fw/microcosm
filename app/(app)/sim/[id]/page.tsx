@@ -5,6 +5,7 @@ import { CastingInfo, WorkspaceSeat } from "@/components/app/PopulationStage";
 import { Brief } from "@/components/app/BriefComposer";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { FrozenSpec } from "@/lib/casting";
+import { BriefContract } from "@/lib/understand";
 
 export const metadata = { title: "Simulation — Microcosm" };
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
       .eq("sim_id", id),
   ]);
 
-  const stored = (sim.brief ?? {}) as Partial<Brief> & { questions?: unknown };
+  const stored = (sim.brief ?? {}) as Partial<Brief> & { questions?: unknown; contract?: BriefContract };
   const brief: Brief = {
     problem: stored.problem ?? "",
     questions: normalizeQuestions(stored.questions),
@@ -68,6 +69,7 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
       initialSeats={seats}
       initialCrowd={crowd}
       initialCasting={casting}
+      initialContract={stored.contract ?? null}
       initialAnswers={qa}
       initialRun={run}
       initialTools={savedTools}

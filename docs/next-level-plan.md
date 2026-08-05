@@ -523,6 +523,11 @@ brief.contract = {
       spec: { items_from: "entities", criteria: [...] } }
   ],
   entities: ["the nouns the brief is ABOUT — asset categories, options, places"],
+  population_hints: {   // "homebuyers aged 35-45 in Beverly Hills" IN the prompt → casting input
+    described: true,    // false = user left it out; the director decides everything
+    cohorts: [{ desc: "homebuyers aged 35-45", geography: "Beverly Hills, CA" }],
+    composition: "residents"  // inferred lean, still overridable
+  },
   constraints: ["follow the evaluation framework in query.md", ...],
   success_criteria: [...]
 }
@@ -623,8 +628,14 @@ concrete moves plus one new alternate view:
 2. **QUICK RUN — the one-box alternate view (from Flow Lab's Flow A/D).** A small view
    toggle on /sim/new switches to the one-box composer. Behavior: the empty state is
    just the box + file drop; once the user starts typing, the config surfaces
-   progressively BELOW the box — the animated mode cards first, then the compact config
-   params for the selected mode. In this view there is NO population stage: hitting RUN
+   progressively BELOW the box — the animated mode cards first (the interactive
+   ModeDiagram icons); CLICKING a mode reveals that mode's config params directly
+   beneath it as selection pills — one progressive reveal, not a settings page. The
+   prompt itself may DESCRIBE the population ("simulate how homebuyers aged 35-45 would
+   react to a 2% increase in interest rates in the Beverly Hills area") — the
+   Understanding pass extracts it into `population_hints` and casting honors it;
+   omitted, the director decides everything, as today. In this view there is NO
+   population stage: hitting RUN
    derives the contract, casts leads + generates the crowd behind the casting-theater
    animation as the loading state, and drops straight into the live run screen. The
    cost estimate still shows on the RUN button before commit (no-surprise-bills rule),

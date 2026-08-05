@@ -20,8 +20,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
   const problem = (body.problem ?? "").trim();
-  if (!problem || problem.length > 2000) {
-    return NextResponse.json({ error: "Problem statement must be 1–2000 characters" }, { status: 400 });
+  if (!problem || problem.length > 6000) {
+    return NextResponse.json({ error: "Problem statement must be 1–6000 characters" }, { status: 400 });
   }
   const questions = normalizeQuestions(body.questions);
   const template = (body.template ?? "Custom").slice(0, 60);
