@@ -197,10 +197,10 @@ describe("clipText — word-boundary truncation", () => {
 
 describe("synthBudgetFor", () => {
   it("starting ceilings leave thinking headroom and scale with depth", () => {
-    expect(synthBudgetFor("brief")).toBe(8000);
-    expect(synthBudgetFor("standard")).toBe(16_000);
-    // dense starts high: a 22K-token field draft truncated at 24K and cost a
-    // full second synthesis pass — ceilings are free, truncation is not
+    // ceilings sized so pass 1 normally lands — truncation costs a full
+    // retry pass (field: dense 22K vs 24K cap; standard 16,431 vs 16K cap)
+    expect(synthBudgetFor("brief")).toBe(10_000);
+    expect(synthBudgetFor("standard")).toBe(24_000);
     expect(synthBudgetFor("dense")).toBe(32_000);
   });
 });

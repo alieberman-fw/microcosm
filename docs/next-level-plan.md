@@ -766,6 +766,11 @@ just decides which voice leads. Forum language is untouched.
   from the Aaru palette — ride with 6-PR4's blocks so instrument and artifact land
   together)
 - **6-PR4** — report blocks + semantic completeness judge + audience register
+  ✅ SHIPPED (2026-08-05: ReportBlock flat schema + three renderings, blocksSpecFor
+  prompt contract, report.judge → targeted report.judge_patch with in-place merge,
+  judge receipt in methodology, executive register via eager synthesizePlain;
+  parallel Desk-section synthesis + ranking/matrix/free-probe crowd instruments
+  split to 6-PR4b so the synthesis restructure lands isolated)
 
 **RE-ORDERED (Adam's field report, 2026-08-05, edge-industrial run 0a367882):** the
 report ranked 6 of the brief's 11 enumerated categories (the rest narrated in prose) and

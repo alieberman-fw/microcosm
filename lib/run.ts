@@ -88,12 +88,14 @@ const RATES: Record<string, { in: number; out: number }> = {
 };
 
 /** §6.4 tier map: which model speaks for each population role */
-export const TIER_MODELS: Record<RunConfig["tier"], { leads: string; crowd: string; verifier: string; synth: string; plain: string }> = {
+export const TIER_MODELS: Record<RunConfig["tier"], { leads: string; crowd: string; verifier: string; synth: string; plain: string; judge: string }> = {
   // `plain` = the Plain-English report translation — a faithful rewrite, not
-  // analysis, so the balanced tier serves every run tier consistently
-  economy: { leads: "claude-haiku-4-5", crowd: "claude-haiku-4-5", verifier: "claude-haiku-4-5", synth: "claude-sonnet-5", plain: "claude-sonnet-5" },
-  standard: { leads: "claude-sonnet-5", crowd: "claude-haiku-4-5", verifier: "claude-sonnet-5", synth: "claude-opus-4-8", plain: "claude-sonnet-5" },
-  frontier: { leads: "claude-opus-4-8", crowd: "claude-sonnet-5", verifier: "claude-opus-4-8", synth: "claude-opus-4-8", plain: "claude-sonnet-5" },
+  // analysis, so the balanced tier serves every run tier consistently.
+  // `judge` = the answer-completeness judge (6-PR4): reads the CONTRACT and
+  // the draft's answers — never below Sonnet, a Haiku judge waves gaps through
+  economy: { leads: "claude-haiku-4-5", crowd: "claude-haiku-4-5", verifier: "claude-haiku-4-5", synth: "claude-sonnet-5", plain: "claude-sonnet-5", judge: "claude-sonnet-5" },
+  standard: { leads: "claude-sonnet-5", crowd: "claude-haiku-4-5", verifier: "claude-sonnet-5", synth: "claude-opus-4-8", plain: "claude-sonnet-5", judge: "claude-sonnet-5" },
+  frontier: { leads: "claude-opus-4-8", crowd: "claude-sonnet-5", verifier: "claude-opus-4-8", synth: "claude-opus-4-8", plain: "claude-sonnet-5", judge: "claude-opus-4-8" },
 };
 
 /** rough per-call token shapes; prompt caching makes input ~0.15× effective */
