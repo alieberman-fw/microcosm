@@ -113,6 +113,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         temperature: 0.7,
         deadline: Date.now() + 240_000,
         polledRounds: new Set(), votedRounds: new Set(),
+        subAsks: [], pollPlan: null, coverage: [], trackedRounds: new Set(), // floor replies never poll or track
         emit,
         logCall: async (surface, model, usage, t0, error, detail) => {
           await supabase.from("agent_interactions").insert({

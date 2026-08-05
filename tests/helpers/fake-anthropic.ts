@@ -28,7 +28,7 @@ export class FakeClock {
 
 /* ---------------------------- call classification ------------------------ */
 
-export type CallKind = "turn" | "poll" | "pollx" | "pollq" | "router" | "judge" | "burst" | "votes" | "unknown";
+export type CallKind = "turn" | "poll" | "pollx" | "pollq" | "router" | "judge" | "burst" | "votes" | "tracker" | "unknown";
 
 export function classify(system: string): CallKind {
   if (system.includes("Forum rules")) return "turn";
@@ -39,6 +39,7 @@ export function classify(system: string): CallKind {
   if (system.includes("casting votes")) return "votes";
   if (system.includes("full name of the panelist")) return "router";
   if (system.includes('"stable" or "moving"')) return "judge";
+  if (system.includes("audit a deliberation transcript")) return "tracker";
   return "unknown";
 }
 
@@ -62,6 +63,9 @@ export interface FakeOptions {
   failure?: (kind: CallKind, n: number) => "empty" | "throw" | "garbage" | undefined;
   /** 3d — fabricate a server-side web search on this turn call (default: never) */
   searchOnTurn?: (call: FakeCall, n: number) => boolean;
+  /** 6-PR3 — the resolution tracker's reply; default scores every listed
+   *  sub-ask (id, round-scaled) so coverage events flow in integration tests */
+  trackerText?: (call: FakeCall, n: number) => string | undefined;
 }
 
 /* ------------------------------ the fake --------------------------------- */
@@ -119,6 +123,15 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
       })));
     } else if (kind === "pollq") {
       text = `{"question": "Should the town let the project go ahead?", "options": []}`;
+    } else if (kind === "tracker") {
+      // score every listed sub-ask; overridable per test
+      const scripted = opts.trackerText?.(call, n);
+      if (scripted !== undefined) {
+        text = scripted;
+      } else {
+        const ids = [...system.matchAll(/^- id ([^:]+):/gm)].map((m) => m[1]);
+        text = JSON.stringify(ids.map((id, i) => ({ id, score: 40 + i * 10, missing: i === 0 ? "needs numbers" : "" })));
+      }
     } else if (kind === "router") {
       // pick the second panelist listed (never the last author by construction)
       const m = system.match(/Panel: ([^;]+); ([^ ]+ [^ ]+?) \(/);
@@ -251,6 +264,12 @@ export function makeHarness(args: {
   tools?: string[];
   /** PR-B — choice instrument options (empty = classic stance poll) */
   pollOptions?: string[];
+  /** 6-PR3 — contract sub-asks (agendas + tracker); default none */
+  subAsks?: EngineContext["subAsks"];
+  /** 6-PR3 — poll plan (null = legacy; [] = polls off) */
+  pollPlan?: EngineContext["pollPlan"];
+  coverage?: EngineContext["coverage"];
+  trackedRounds?: Set<number>;
 }): Harness {
   const clock = args.clock ?? new FakeClock();
   const { client, calls } = makeFakeAnthropic(clock, args.fake ?? {});
@@ -274,6 +293,10 @@ export function makeHarness(args: {
     deadline: clock.now + (args.deadlineInMs ?? 10 ** 12),
     polledRounds: args.polledRounds ?? new Set<number>(),
     votedRounds: args.votedRounds ?? new Set<number>(),
+    subAsks: args.subAsks ?? [],
+    pollPlan: args.pollPlan ?? null,
+    coverage: args.coverage ?? [],
+    trackedRounds: args.trackedRounds ?? new Set<number>(),
     emit: async (e) => { events.push(e); },
     logCall: async () => {},
     isCancelled: () => false,

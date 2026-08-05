@@ -257,6 +257,27 @@ export default function UnderstandingCard({
         </div>
       )}
 
+      {/* the poll plan (§6d) — angles per run phase, or NO POLL stated plainly */}
+      {c.poll_plan !== undefined && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          <span style={label}>POLL PLAN</span>
+          {c.poll_plan.length === 0 ? (
+            <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)" }}>
+              NO CROWD POLL — THIS BRIEF HAS NO SENTIMENT SURFACE (A DECISION, NOT AN OMISSION)
+            </span>
+          ) : (
+            <>
+              {c.poll_plan.map((p) => (
+                <span key={p.angle} title={`${p.question}${p.options?.length ? ` — options: ${p.options.join(" · ")}` : ""}`} style={{ ...chip("var(--ln5)", "var(--t4)"), cursor: "help" }}>
+                  {p.phase.toUpperCase()} · {p.angle.toUpperCase()} · {p.instrument === "choice" ? "PICK ONE" : "SUPPORT/OPPOSE"}
+                </span>
+              ))}
+              <span style={drives}>→ THE CROWD'S QUESTION CHANGES WITH THE RUN'S ARC</span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* files with roles — mis-roled docs are the silent failure mode */}
       {c.doc_roles.length > 0 && (
         <div style={{ marginTop: 14 }}>

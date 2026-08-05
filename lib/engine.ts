@@ -14,6 +14,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { CoverageScore, PollAngle, SubAskLite, agendaForRound, coverageSystem, parseCoverage, pollAngleForRound } from "@/lib/agenda";
 import { FrozenSpec } from "@/lib/casting";
 import { RunConfig, TIER_MODELS, agoraReplies, burstSize, counterSlots, crossfireSlots, waveWidth as waveWidthOf } from "@/lib/run";
 import { parseLooseArray } from "@/lib/llm-json";
@@ -36,9 +37,13 @@ export type EngineEvent =
   | { type: "tool"; agent_key: string; name: string; tool: string; query: string; results: { title: string; url: string }[]; round: number }
   | { type: "presence"; agent_key: string; name: string; state: "thinking" | "speaking" | "idle" }
   | { type: "polling"; round: number; count: number }
-  | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[]; question?: string; options?: string[]; ballots?: { name: string; stance: string }[] }
+  | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[]; question?: string; options?: string[]; ballots?: { name: string; stance: string }[]; angle?: string }
   | { type: "votes"; round: number; votes: { seq: number; voter_key: string; voter_name: string; voter_role: string; vote: 1 | -1 }[] }
-  | { type: "convergence"; aligned: number; total: number; dissents: number };
+  | { type: "convergence"; aligned: number; total: number; dissents: number }
+  // 6-PR3 — rounds that walk the brief (§6c): the round's agenda label and
+  // the resolution tracker's per-sub-ask scores (the COVERAGE strip)
+  | { type: "agenda"; round: number; label: string; detail: string }
+  | { type: "coverage"; round: number; scores: CoverageScore[] };
 
 export interface EngineContext {
   anthropic: Anthropic;
@@ -64,6 +69,16 @@ export interface EngineContext {
   deadline: number;                                     // ms epoch — suspend at the next safe boundary after this
   polledRounds: Set<number>;                            // sentiment polls already run (resume safety)
   votedRounds: Set<number>;                             // vote passes already run (resume safety)
+  /** 6-PR3 (§6c/§6d) — the contract's sub-asks drive round agendas + the
+   *  resolution tracker; empty = no contract → no agendas, no coverage. */
+  subAsks: SubAskLite[];
+  /** the contract's poll plan: null = legacy single instrument; [] = this
+   *  brief polls NOT AT ALL; entries = per-round angle scheduling. */
+  pollPlan: PollAngle[] | null;
+  /** latest tracker scores (merged per sub-ask; seeded from persisted
+   *  coverage events on resume) */
+  coverage: CoverageScore[];
+  trackedRounds: Set<number>;                           // tracker passes already run (resume safety)
   emit: (e: EngineEvent) => Promise<void>;              // persists + streams
   logCall: (surface: string, model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string, detail?: Record<string, unknown>) => Promise<void>;
   isCancelled: () => boolean;
@@ -372,12 +387,21 @@ export async function derivePollInstrument(
 async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Promise<void> {
   if (ctx.crowd.length === 0) return;
   if (ctx.polledRounds.has(round)) return; // already polled before a suspension
+  // 6-PR3 adaptive polling (§6d): the contract's poll PLAN supersedes the
+  // single launch-derived instrument — each round asks the angle matched to
+  // its place in the run's arc. An EMPTY plan is a decision: this brief has
+  // no sentiment surface, so no poll card exists at all (interjections and
+  // votes still run). pollPlan null = legacy contract-less path, unchanged.
+  const angle = ctx.pollPlan === null ? null : pollAngleForRound(ctx.pollPlan, round, ctx.cfg.rounds);
+  if (ctx.pollPlan !== null && !angle) return;
+  const pollQ = angle?.question ?? ctx.pollQuestion;
+  const pollOpts = angle ? (angle.options ?? []) : ctx.pollOptions;
   await ctx.emit({ type: "polling", round, count: ctx.crowd.length }); // canvas animates WHILE the poll runs
   const model = TIER_MODELS[ctx.cfg.tier].crowd;
   const BATCH = 20;
-  const choice = ctx.pollOptions.length >= 2; // the brief named alternatives — poll the actual choices
+  const choice = pollOpts.length >= 2; // the brief named alternatives — poll the actual choices
   const dist: Record<string, number> = choice
-    ? Object.fromEntries(ctx.pollOptions.map((o) => [o, 0])) // insertion order = display order
+    ? Object.fromEntries(pollOpts.map((o) => [o, 0])) // insertion order = display order
     : { support: 0, conditional: 0, oppose: 0, disengaged: 0 };
   const quotes: { name: string; stance: string; quote: string }[] = [];
   // C2 (field-report 2): every individual answer is kept, not just the tally —
@@ -398,12 +422,12 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
           // model is Sonnet 5, whose adaptive thinking bills against this cap
           max_tokens: 200 * batch.length + 800,
           system: choice
-            ? `You simulate a preference poll. THE POLL QUESTION: "${ctx.pollQuestion}". For EACH member listed, answer AS THEM${digest ? ", reacting to the question AND to what the panel just argued" : ""}. ` +
+            ? `You simulate a preference poll. THE POLL QUESTION: "${pollQ}". For EACH member listed, answer AS THEM${digest ? ", reacting to the question AND to what the panel just argued" : ""}. ` +
               `THE CHOICES — pick EXACTLY ONE per member, verbatim:\n` +
-              ctx.pollOptions.map((o) => `- "${o}"`).join("\n") + "\n" +
+              pollOpts.map((o) => `- "${o}"`).join("\n") + "\n" +
               `A member who genuinely cannot pick may answer "undecided" — use it sparingly; most people lean somewhere.\n` +
               `Reply ONLY a JSON array in the same order: [{"name": "...", "choice": "one of the choices verbatim", "quote": "one short in-character sentence on why"}]`
-            : `You simulate a sentiment poll. THE POLL QUESTION: "${ctx.pollQuestion}". For EACH member listed, answer AS THEM${digest ? ", reacting to the question AND to what the panel just argued" : ""}. ` +
+            : `You simulate a sentiment poll. THE POLL QUESTION: "${pollQ}". For EACH member listed, answer AS THEM${digest ? ", reacting to the question AND to what the panel just argued" : ""}. ` +
               `Stances — exactly one per member:\n` +
               `- "support": they would say yes to the question.\n` +
               `- "conditional": yes, but only if a specific concern is handled — name it in the quote.\n` +
@@ -424,7 +448,7 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
         for (const r of rows) {
           let stance: string;
           if (choice) {
-            const norm = normalizeChoice(r.choice ?? r.stance, ctx.pollOptions);
+            const norm = normalizeChoice(r.choice ?? r.stance, pollOpts);
             stance = norm ?? "undecided"; // unrecognized answers are counted honestly, never assigned a choice
             if (!norm) coerced += 1;
             if (!(stance in dist)) dist[stance] = 0;
@@ -449,7 +473,7 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
   // aborted poll gets re-run in full on the next slice
   if (polled > 0) {
     ctx.polledRounds.add(round);
-    await ctx.emit({ type: "sentiment", round, polled, dist, quotes, question: ctx.pollQuestion, ballots, ...(choice ? { options: ctx.pollOptions } : {}) });
+    await ctx.emit({ type: "sentiment", round, polled, dist, quotes, question: pollQ, ballots, ...(choice ? { options: pollOpts } : {}), ...(angle ? { angle: angle.angle } : {}) });
   }
 }
 
@@ -826,14 +850,55 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     substantive(round).slice(-8)
       .map((p) => `${p.name} (${p.role}): ${p.content.slice(0, 200)}`)
       .join("\n").slice(0, 1800);
+  /** 6-PR3 resolution tracker (§6c): one Haiku pass per round scores every
+   *  sub-ask 0–100 — the COVERAGE strip and the next round's agenda read it.
+   *  Soft by design: a failed pass keeps the previous coverage and moves on. */
+  const trackCoverage = async (round: number) => {
+    if (!ctx.subAsks.length || ctx.trackedRounds.has(round)) return;
+    if (Date.now() > ctx.deadline) return; // never start a tracker the slice can't finish
+    const model = TIER_MODELS[ctx.cfg.tier].crowd;
+    const t0 = Date.now();
+    try {
+      const res = await ctx.anthropic.messages.create({
+        model, max_tokens: 120 * ctx.subAsks.length + 600,
+        system: coverageSystem(ctx.subAsks),
+        messages: [{ role: "user", content: `TRANSCRIPT SO FAR (latest posts):\n${windowOf(posts, 26)}` }],
+      });
+      await ctx.logCall("engine.tracker", model, res.usage, t0, undefined, { mode: ctx.mode, round, sub_asks: ctx.subAsks.length });
+      const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+      const scores = parseCoverage(parseLooseArray(text) ?? [], ctx.subAsks);
+      if (!scores) return;
+      // merge latest-wins per sub-ask, keeping sub-ask order
+      const byId = new Map(ctx.coverage.map((c) => [c.id, c]));
+      for (const s of scores) byId.set(s.id, s);
+      ctx.coverage = ctx.subAsks.map((s) => byId.get(s.id)).filter((x): x is CoverageScore => Boolean(x));
+      ctx.trackedRounds.add(round);
+      await ctx.emit({ type: "coverage", round, scores: ctx.coverage });
+    } catch (e) {
+      await ctx.logCall("engine.tracker", model, null, t0, e instanceof Error ? e.message : "tracker failed");
+    }
+  };
   const roundClose = async (round: number) => {
     await pollCrowd(ctx, round, roundDigest(round));
     await burst(round);
     await voteRound(round);
+    await trackCoverage(round);
   };
+  /** the round's agenda (§6c) — rides in opener instructions; emitted once
+   *  per round so the feed and header can label the round. null without a
+   *  contract, so contract-less runs read exactly as before. */
+  const agendaOf = (round: number) =>
+    agendaForRound(ctx.subAsks, ctx.coverage.length ? ctx.coverage : null, round, ctx.cfg.rounds);
 
   if (ctx.mode === "Roundtable") {
     for (let round = startRound; round <= ctx.cfg.rounds && budget(); round++) {
+      // §6c: the agenda rides in the round instruction (every voice in the
+      // circuit walks it); emitted once when the round actually opens fresh
+      const agenda = agendaOf(round);
+      if (agenda && !did(ctx.leads[0].spec.name, `ROUND ${round}`, round)) {
+        await ctx.emit({ type: "agenda", round, label: agenda.label, detail: agenda.instruction });
+      }
+      const agendaLine = agenda ? ` THIS ROUND'S AGENDA: ${agenda.instruction}` : "";
       for (const lead of ctx.leads) {
         if (!budget()) break;
         if (did(lead.spec.name, `ROUND ${round}`, round)) continue; // resumed mid-round
@@ -841,8 +906,8 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         await turn(lead, {
           round, thread: "ROUNDTABLE", tag: `ROUND ${round}`,
           instruction: round === 1
-            ? `Round 1 of ${ctx.cfg.rounds}. Give your opening read on the problem. ${q}`
-            : `Round ${round} of ${ctx.cfg.rounds}. React to the round so far — agree, refine, or push back. If your position changed, say so plainly.`,
+            ? `Round 1 of ${ctx.cfg.rounds}. Give your opening read on the problem. ${q}${agendaLine}`
+            : `Round ${round} of ${ctx.cfg.rounds}. React to the round so far — agree, refine, or push back. If your position changed, say so plainly.${agendaLine}`,
         });
       }
       // §2a crossfire: after the circuit, a density-scaled half-round of direct
@@ -1137,11 +1202,17 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       const opener = ctx.leads[(round - 1) % ctx.leads.length];
       const postNo = posts.filter((p) => p.tag.startsWith("POST")).length + 1;
       if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+      // §6c: the agenda rides in the OPENER instruction — round 1 opens the
+      // full brief, middle rounds chase the least-resolved sub-asks by name,
+      // the final round forces synthesis. Choreography untouched.
+      const agenda = inRound === 0 ? agendaOf(round) : null;
+      if (agenda) await ctx.emit({ type: "agenda", round, label: agenda.label, detail: agenda.instruction });
+      const agendaLine = agenda ? ` THIS ROUND'S AGENDA: ${agenda.instruction}` : "";
       if (inRound === 0) await turn(opener, {
         round, thread: opener.spec.seat?.discipline || "AGORA", tag: `POST ${postNo}`,
         instruction: round === 1
-          ? `Open the deliberation with your read and ONE pointed question for a specific colleague. ${q}`
-          : `Open round ${round}: advance the argument — new evidence, a challenge, or a position change (say "changing my position" if so).`,
+          ? `Open the deliberation with your read and ONE pointed question for a specific colleague. ${q}${agendaLine}`
+          : `Open round ${round}: advance the argument — new evidence, a challenge, or a position change (say "changing my position" if so).${agendaLine}`,
       });
       // §2a density: replies scale with the panel (~1.5–2× leads on lively/
       // bustling), and each reply targets ANY post from the round — weighted

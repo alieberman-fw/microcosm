@@ -76,7 +76,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // brief without options collapses to "score the proposition" and every
   // juror anchors the first uploaded file
   const castMode = String((config.casting as { mode?: string } | undefined)?.mode ?? "Agora");
-  if (!config.poll_question && (crowdCount > 0 || castMode === "Jury")) {
+  // 6-PR3 (§6d): a contract poll PLAN supersedes the single derived
+  // instrument for crowd polls — skip derivation unless Jury needs its
+  // verdict instrument (jurors score/pick regardless of crowd polling)
+  const briefContract = (sim.brief as { contract?: { poll_plan?: unknown } } | null)?.contract;
+  const hasPollPlan = Array.isArray(briefContract?.poll_plan);
+  if (!config.poll_question && (castMode === "Jury" || (crowdCount > 0 && !hasPollPlan))) {
     const instrument = await derivePollInstrument(
       new Anthropic(), TIER_MODELS[cfg.tier].crowd, brief.problem!,
       async (surface, model, usage, t0, error) => {

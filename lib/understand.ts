@@ -13,6 +13,7 @@
  * as one-tap clarifiers.
  */
 
+import { PollAngle } from "@/lib/agenda";
 import { parseLooseObject } from "@/lib/llm-json";
 
 /** matches the casting plan budget discipline — mirror + ~8 sub-asks fits */
@@ -71,6 +72,10 @@ export interface BriefContract {
   population_hints: PopulationHints;
   doc_roles: DocRole[];
   flags: ClarifierFlag[];                       // 0-2, only genuine ambiguities
+  /** 6-PR3 adaptive polling (§6d): ≤3 poll angles matched to the run's arc.
+   *  [] = the brief has no sentiment surface — the crowd polls NOT AT ALL.
+   *  undefined = pre-poll-plan contract → the legacy single instrument. */
+  poll_plan?: PollAngle[];
   derived_at: string;
   /** brief edited after derivation — card offers RE-DERIVE */
   stale?: boolean;
@@ -95,13 +100,15 @@ export function understandSystem(docNames: string[]): string {
     `"success_criteria": ["what a decision-grade answer must deliver, from the user's own words"], ` +
     `"population_hints": {"described": true|false, "cohorts": [{"desc": "homebuyers aged 35-45", "geography": "Beverly Hills, CA"}], "composition": "experts|consumers|mixed"|null}, ` +
     `"doc_roles": [{"name": "<exact filename>", "role": "evidence|framework|question-source|reference", "note": "one short clause"}], ` +
-    `"flags": [{"question": "...", "options": ["...", "..."], "default": "..."}]}\n` +
+    `"flags": [{"question": "...", "options": ["...", "..."], "default": "..."}], ` +
+    `"poll_plan": [{"angle": "2-4 word display name", "question": "the exact plain-language question the crowd is asked", "instrument": "proposition|choice", "options": ["only for choice — the named alternatives, verbatim from the brief"], "phase": "early|middle|late"}]}\n` +
     `Rules:\n` +
     `- sub_asks: 1-8, each ONE answerable question. A multi-part brief decomposes fully — every distinct ask gets its own line. Never merge two asks.\n` +
     `- output_contracts: what SHAPE the answer takes. "which of these deserves pursuit" → ranked_list; "for each X tell me Y and Z" → matrix; a go/no-go → verdict; "what is it worth" → range. 1-3 entries, lead artifact first.\n` +
     `- population_hints: described=true ONLY when the prompt names who to simulate (a cohort, demographic, or place-bound group). Extract each cohort verbatim-faithful with its geography. described=false → cohorts [] and composition null (the Casting Director decides).\n` +
     docRule +
     `- flags: 0-2, ONLY genuine ambiguities where the wrong guess would change the answer. Each has 2-3 tap-able options and a sensible default. No flags for things you can infer.\n` +
+    `- poll_plan: 0-3 angles of this brief with a GENUINE preference/sentiment surface, ordered by phase: early = the broad gut-read (proposition), middle = the per-entity choice ("which category most deserves pursuit?" with the entities as options), late = the decision-shaped closer (proposition on the recommendation). An expert research brief with no sentiment surface gets [] — polling "support/oppose" on a research task is noise, and an empty plan is a DECISION, not an omission.\n` +
     `- audience: "executive" unless the brief reads like it was written BY a technical specialist FOR technical specialists.\n` +
     `- mirror: user-facing prose. Everything else: tight, concrete, no filler. No prose outside the JSON.`
   );
@@ -188,6 +195,26 @@ export function normalizeContract(raw: Record<string, unknown> | null, docNames:
     if (flags.length >= 2) break;
   }
 
+  // poll_plan: [] is a real decision (no sentiment surface — poll nothing);
+  // an ABSENT field stays undefined so pre-plan contracts keep legacy polls
+  let poll_plan: PollAngle[] | undefined;
+  if (Array.isArray(raw.poll_plan)) {
+    poll_plan = [];
+    for (const p of raw.poll_plan) {
+      if (!p || typeof p !== "object") continue;
+      const o = p as Record<string, unknown>;
+      const angle = str(o.angle, 40);
+      const question = str(o.question, 240);
+      const instrument = o.instrument === "choice" ? "choice" as const : o.instrument === "proposition" ? "proposition" as const : null;
+      const phase = (["early", "middle", "late"] as const).find((x) => x === o.phase) ?? "early";
+      if (!angle || !question || !instrument || poll_plan.some((x) => x.angle === angle)) continue;
+      const options = strList(o.options, 12, 80);
+      if (instrument === "choice" && options.length < 2) continue; // a choice needs real alternatives
+      poll_plan.push({ angle, question, instrument, phase, ...(instrument === "choice" ? { options } : {}) });
+      if (poll_plan.length >= 3) break;
+    }
+  }
+
   const title = str(raw.title, 60);
   return {
     version: 1,
@@ -203,6 +230,7 @@ export function normalizeContract(raw: Record<string, unknown> | null, docNames:
     population_hints,
     doc_roles,
     flags,
+    ...(poll_plan !== undefined ? { poll_plan } : {}),
     derived_at: now(),
   };
 }

@@ -758,7 +758,13 @@ just decides which voice leads. Forum language is untouched.
   ✅ SHIPPED (PR #75; PR #76 folded the understanding-first workspace choreography)
 - **6-PR2** — prompt-first hero composer (entry UX; smallest risk, big feel)
 - **6-PR3** — round agendas + resolution tracker + COVERAGE strip + adaptive poll plan
-  (engine work; full offline matrix additions before ship)
+  (engine work; full offline matrix additions before ship) ✅ SHIPPED (2026-08-05:
+  agendas in opener instructions for Agora/Roundtable, tracker as engine.tracker
+  Haiku pass per round close, coverage/agenda §6.2 events, COVERAGE strip + divider
+  labels, poll_plan on the contract with pollAngleForRound scheduling, per-angle
+  report sliders; instruments beyond proposition/choice — ranking/matrix/free-probe
+  from the Aaru palette — ride with 6-PR4's blocks so instrument and artifact land
+  together)
 - **6-PR4** — report blocks + semantic completeness judge + audience register
 
 **RE-ORDERED (Adam's field report, 2026-08-05, edge-industrial run 0a367882):** the
