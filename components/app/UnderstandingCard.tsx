@@ -182,7 +182,12 @@ export default function UnderstandingCard({
   }
 
   const c = contract;
+  // the reading is stale only when TODAY'S state differs from what the pass
+  // saw — docs ADDED since, docs it used that were REMOVED, or a brief edit.
+  // Add-then-remove returns to the original state and the warning clears.
   const newDocs = parsedDocNames.filter((n) => !c.doc_roles.some((d) => d.name === n));
+  const removedDocs = c.doc_roles.filter((d) => !parsedDocNames.includes(d.name)).map((d) => d.name);
+  const docsDrifted = newDocs.length > 0 || removedDocs.length > 0;
   const ph = c.population_hints;
 
   const chip = (border: string, color: string, bg = "transparent"): CSSProperties => ({
@@ -203,15 +208,19 @@ export default function UnderstandingCard({
           onClick={() => void derive()}
           disabled={deriving}
           title="Re-run the Understanding pass over the current brief + documents"
-          style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, background: "transparent", border: `1px solid ${c.stale || newDocs.length ? "var(--warn)" : "var(--ln6)"}`, color: c.stale || newDocs.length ? "var(--warn)" : "var(--t5)", cursor: deriving ? "default" : "pointer" }}
+          style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, background: "transparent", border: `1px solid ${c.stale || docsDrifted ? "var(--warn)" : "var(--ln6)"}`, color: c.stale || docsDrifted ? "var(--warn)" : "var(--t5)", cursor: deriving ? "default" : "pointer" }}
         >
           {deriving ? "RE-DERIVING…" : "↻ RE-DERIVE"}
         </button>
       </div>
 
-      {(c.stale || newDocs.length > 0) && (
+      {(c.stale || docsDrifted) && (
         <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--warn)", marginTop: 12 }}>
-          {c.stale ? "THE BRIEF CHANGED SINCE THIS READING" : `${newDocs.length} NEW DOC${newDocs.length > 1 ? "S" : ""} SINCE THIS READING`} — RE-DERIVE TO REFRESH
+          {[
+            c.stale ? "THE BRIEF CHANGED SINCE THIS READING" : null,
+            newDocs.length ? `${newDocs.length} DOC${newDocs.length > 1 ? "S" : ""} ADDED SINCE THIS READING` : null,
+            removedDocs.length ? `${removedDocs.length} DOC${removedDocs.length > 1 ? "S" : ""} THIS READING USED ${removedDocs.length > 1 ? "WERE" : "WAS"} REMOVED` : null,
+          ].filter(Boolean).join(" · ")} — RE-DERIVE TO REFRESH
         </div>
       )}
 
