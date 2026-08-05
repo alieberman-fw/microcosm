@@ -122,3 +122,25 @@ describe("merge patches", () => {
     expect(merged[1].kind).toBe("matrix");
   });
 });
+
+describe("6-PR4b — parallel section synthesis (pure seams)", () => {
+  it("the director schema is DERIVED: full schema minus sections, nothing else drifts", async () => {
+    const { REPORT_DIRECTOR_SCHEMA, REPORT_JSON_SCHEMA: FULL } = await import("@/lib/report");
+    const d = REPORT_DIRECTOR_SCHEMA as { required: string[]; properties: Record<string, unknown> };
+    const f = FULL as { required: string[]; properties: Record<string, unknown> };
+    expect(d.required).not.toContain("sections");
+    expect(d.properties.sections).toBeUndefined();
+    expect(d.required).toEqual(f.required.filter((k) => k !== "sections"));
+    expect(Object.keys(d.properties).sort()).toEqual(Object.keys(f.properties).filter((k) => k !== "sections").sort());
+  });
+
+  it("the director prompt provides sections as input; the full prompt still writes them", async () => {
+    const { reportSynthSystem: synth, sectionWorkerSystem: worker } = await import("@/lib/report");
+    expect(synth("standard", { director: true })).toContain("Do NOT emit a \"sections\" field");
+    expect(synth("standard", { director: true })).not.toContain("\"sections\": [{");
+    expect(synth("standard")).toContain("\"sections\": [{");
+    expect(worker("standard")).toContain("ONE ASSIGNED QUESTION");
+    expect(worker("standard")).toContain("RANKING RULE");
+    expect(worker("dense")).toContain("DEPTH: DENSE");
+  });
+});
