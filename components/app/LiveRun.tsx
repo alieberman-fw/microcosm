@@ -275,6 +275,31 @@ export default function LiveRun({
     for (const it of items) if (it.kind === "post") depthOf(it.post.seq);
     return { depthBySeq: depth, childrenBySeq: children };
   }, [items]);
+  // field report: a search belongs to the POST it informed — attach each tool
+  // event to the SAME AGENT's next post (the engine emits searches before the
+  // post of the turn that ran them); unattached ones fall back to a card
+  const { toolsBySeq, attachedTools } = useMemo(() => {
+    const pending = new Map<string, { idx: number; t: LiveTool }[]>();
+    const bySeq = new Map<number, LiveTool[]>();
+    const attached = new Set<number>();
+    items.forEach((it, idx) => {
+      if (it.kind === "tool") {
+        const list = pending.get(it.t.agent_key) ?? [];
+        list.push({ idx, t: it.t });
+        pending.set(it.t.agent_key, list);
+      } else if (it.kind === "post" && it.post.author !== "user") {
+        const list = pending.get(it.post.agent_key);
+        if (list?.length) {
+          bySeq.set(it.post.seq, list.map((x) => x.t));
+          list.forEach((x) => attached.add(x.idx));
+          pending.delete(it.post.agent_key);
+        }
+      }
+    });
+    return { toolsBySeq: bySeq, attachedTools: attached };
+  }, [items]);
+  const [searchOpen, setSearchOpen] = useState<Set<string>>(new Set());
+
   // 3e breadcrumbs: a reply that revives an EARLIER round gets a chip that
   // names the parent and jumps to it
   const postMetaBySeq = useMemo(() => {
@@ -1121,8 +1146,10 @@ export default function LiveRun({
             )}
             {items.map((it, idx) => {
               if (it.kind === "tool") {
-                // 3d — the search card: "searched, then argued", with the
-                // sources one click away
+                // searches ride INSIDE their author's post as dropdowns (field
+                // report) — a standalone card renders only when no post by
+                // that agent ever followed (a failed turn)
+                if (attachedTools.has(idx)) return null;
                 const t = it.t;
                 return (
                   <div key={`t${idx}`} style={{ margin: "12px 0 12px 0", border: "1px solid var(--ln3)", borderRadius: 12, background: "var(--sf)", padding: "11px 15px" }}>
@@ -1282,6 +1309,37 @@ export default function LiveRun({
                     <div style={{ margin: "8px 0 0", fontSize: isInterjection ? 11.5 : 12.5, lineHeight: 1.6, color: isInterjection ? "var(--t5)" : "var(--t3)", display: "flex", flexDirection: "column", gap: 6 }}>
                       <Markdown text={p.content} />
                     </div>
+                    {/* the searches THIS post ran — collapsible, inside the post */}
+                    {(toolsBySeq.get(p.seq) ?? []).map((t, ti) => {
+                      const k = `${p.seq}:${ti}`;
+                      const open = searchOpen.has(k);
+                      return (
+                        <div key={k} style={{ marginTop: 7, border: "1px solid var(--ln2)", borderRadius: 10, background: "var(--sf2)", padding: "7px 12px" }}>
+                          <button
+                            onClick={() => setSearchOpen((prev) => { const n2 = new Set(prev); if (n2.has(k)) n2.delete(k); else n2.add(k); return n2; })}
+                            style={{ display: "flex", width: "100%", alignItems: "baseline", gap: 8, background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", minWidth: 0 }}
+                          >
+                            <span style={{ ...mono, fontSize: 8, letterSpacing: ".07em", color: "var(--acc)", flex: "none" }}>🔎 SEARCHED</span>
+                            <span style={{ ...mono, fontSize: 9.5, color: "var(--t5)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>“{t.query}”</span>
+                            <span style={{ ...mono, fontSize: 8, color: "var(--t6)", flex: "none" }}>{t.results.length} SOURCE{t.results.length === 1 ? "" : "S"} {open ? "▴" : "▾"}</span>
+                          </button>
+                          {open && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 7 }}>
+                              {t.results.map((r, ri) => (
+                                <a key={ri} href={r.url} target="_blank" rel="noopener noreferrer"
+                                  style={{ display: "flex", gap: 8, alignItems: "baseline", textDecoration: "none", minWidth: 0 }}>
+                                  <span style={{ ...mono, fontSize: 8, color: "var(--t7)", flex: "none" }}>↗</span>
+                                  <span style={{ fontSize: 11.5, color: "var(--t4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.title}</span>
+                                  <span style={{ ...mono, fontSize: 8, letterSpacing: ".03em", color: "var(--t7)", flex: "none" }}>
+                                    {(() => { try { return new URL(r.url).hostname.replace(/^www\./, "").toUpperCase(); } catch { return ""; } })()}
+                                  </span>
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                     {p.cites.length > 0 && (
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7 }}>
                         {p.cites.map((c, ci) => (
