@@ -7,7 +7,7 @@
 
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { runMode, pickReplyTarget } from "@/lib/engine";
-import { agoraReplies, crossfireSlots, counterSlots, burstSize } from "@/lib/run";
+import { agoraReplies, crossfireSlots, counterSlots, burstSize, waveWidth } from "@/lib/run";
 import { makeHarness, makeLeads, makeCrowd } from "../helpers/fake-anthropic";
 
 afterEach(() => vi.restoreAllMocks());
@@ -29,6 +29,18 @@ const depthOf = (recs: { seq: number; replyTo?: number | null }[], seq: number):
   while (cur?.replyTo != null && d < 20) { d += 1; cur = bySeq.get(cur.replyTo); }
   return d;
 };
+
+describe("waveWidth — reply-generation concurrency (field tune, 2026-08-05)", () => {
+  it("lively 3 / bustling 4; economy buys +1; focused stays the serial v1 rhythm outside economy", () => {
+    expect(waveWidth("focused", "standard")).toBe(1);
+    expect(waveWidth("lively", "standard")).toBe(3);
+    expect(waveWidth("bustling", "standard")).toBe(4);
+    expect(waveWidth("focused", "economy")).toBe(2);
+    expect(waveWidth("lively", "economy")).toBe(4);
+    expect(waveWidth("bustling", "economy")).toBe(5);
+    expect(waveWidth("bustling", "frontier")).toBe(4);
+  });
+});
 
 describe("density math (single source of truth)", () => {
   it("pins the §4.2 table", () => {

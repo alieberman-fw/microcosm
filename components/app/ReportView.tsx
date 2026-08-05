@@ -761,9 +761,11 @@ export default function ReportView({
                 {kind === "key_finding" && (lead!.magnitude?.length ?? 0) > 0 && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
                     {lead!.magnitude!.map((n, ni) => (
-                      <span key={ni} style={{ border: "1px solid var(--ln3)", borderRadius: 10, padding: "6px 12px", background: "var(--sf2)" }}>
+                      // maxWidth + wrapping: ranking entries ("#1 item — reason")
+                      // ride here too — text must never clip mid-word
+                      <span key={ni} style={{ border: "1px solid var(--ln3)", borderRadius: 10, padding: "6px 12px", background: "var(--sf2)", maxWidth: 420 }}>
                         <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--t6)", display: "block" }}>{n.label.toUpperCase()}</span>
-                        <span style={{ ...mono, fontSize: 13, color: "var(--t1)" }}>{n.value}</span>
+                        <span style={{ ...mono, fontSize: n.value.length > 44 ? 11 : 13, lineHeight: 1.5, color: "var(--t1)", overflowWrap: "anywhere" }}>{n.value}</span>
                       </span>
                     ))}
                   </div>
@@ -845,16 +847,37 @@ export default function ReportView({
                   {sct.answer && (
                     <p style={{ margin: "10px 0 0", fontSize: 14.5, lineHeight: 1.65, fontWeight: 600, color: "var(--t1)" }}>{sct.answer}</p>
                   )}
-                  {(sct.numbers?.length ?? 0) > 0 && (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                      {sct.numbers!.map((n, ni) => (
-                        <span key={ni} style={{ border: "1px solid var(--ln3)", borderRadius: 10, padding: "6px 12px", background: "var(--sf2)" }}>
-                          <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--t6)", display: "block" }}>{n.label.toUpperCase()}</span>
-                          <span style={{ ...mono, fontSize: 13, color: "var(--t1)" }}>{n.value}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {(sct.numbers?.length ?? 0) > 0 && (() => {
+                    // field fix: stat chips clipped an 11-item ranking mid-word —
+                    // short figures stay chips; list entries (rankings, ordered
+                    // items) render as full-width rows that WRAP
+                    const stats = sct.numbers!.filter((n) => n.value.length <= 44);
+                    const rows = sct.numbers!.filter((n) => n.value.length > 44);
+                    return (
+                      <>
+                        {stats.length > 0 && (
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                            {stats.map((n, ni) => (
+                              <span key={ni} style={{ border: "1px solid var(--ln3)", borderRadius: 10, padding: "6px 12px", background: "var(--sf2)" }}>
+                                <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--t6)", display: "block" }}>{n.label.toUpperCase()}</span>
+                                <span style={{ ...mono, fontSize: 13, color: "var(--t1)" }}>{n.value}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {rows.length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+                            {rows.map((n, ni) => (
+                              <div key={ni} style={{ display: "flex", alignItems: "baseline", gap: 12, border: "1px solid var(--ln3)", borderRadius: 10, padding: "9px 14px", background: "var(--sf2)" }}>
+                                <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--acc)", flex: "none" }}>{n.label.toUpperCase()}</span>
+                                <span style={{ fontSize: 13, lineHeight: 1.55, color: "var(--t2)", minWidth: 0 }}>{n.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   <p style={{ margin: "10px 0 0", fontSize: 13, lineHeight: 1.7, color: sct.answer ? "var(--t4)" : "var(--t3)" }}>{sct.finding}</p>
                 </div>
               ))}

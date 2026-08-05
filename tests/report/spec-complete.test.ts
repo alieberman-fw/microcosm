@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { fmtMoney, plainSpecIncomplete, reportSpecIncomplete, resolveReportMedia, synthBudgetFor } from "@/lib/report";
+import { clipText, fmtMoney, plainSpecIncomplete, reportSpecIncomplete, resolveReportMedia, synthBudgetFor } from "@/lib/report";
 
 const complete = (): Record<string, unknown> => ({
   verdict: { label: "GO — WAIVER REQUIRED", tone: "conditional", headline: "Proceed at $34M with three conditions." },
@@ -183,10 +183,24 @@ describe("fmtMoney (lead visuals)", () => {
   });
 });
 
+describe("clipText — word-boundary truncation", () => {
+  it("short text passes through; long text cuts at a word with an ellipsis, never mid-word", () => {
+    expect(clipText("short and sweet", 220)).toBe("short and sweet");
+    const long = "thermal and interconnection risk beyond batch workloads remains the binding constraint for every operator underwriting this category today";
+    const cut = clipText(long, 60);
+    expect(cut.endsWith("…")).toBe(true);
+    expect(cut.length).toBeLessThanOrEqual(61);
+    const lastWord = cut.slice(0, -1).split(" ").pop()!;
+    expect(long).toContain(` ${lastWord} `); // the cut ends on a REAL word
+  });
+});
+
 describe("synthBudgetFor", () => {
   it("starting ceilings leave thinking headroom and scale with depth", () => {
     expect(synthBudgetFor("brief")).toBe(8000);
     expect(synthBudgetFor("standard")).toBe(16_000);
-    expect(synthBudgetFor("dense")).toBe(24_000);
+    // dense starts high: a 22K-token field draft truncated at 24K and cost a
+    // full second synthesis pass — ceilings are free, truncation is not
+    expect(synthBudgetFor("dense")).toBe(32_000);
   });
 });

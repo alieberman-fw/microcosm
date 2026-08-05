@@ -755,10 +755,24 @@ just decides which voice leads. Forum language is untouched.
 
 - **6-PR1** — contract + Understanding pass + WHAT I UNDERSTOOD card (the spine + its
   review UI; downstream consumers read contract when present, else today's path)
+  ✅ SHIPPED (PR #75; PR #76 folded the understanding-first workspace choreography)
 - **6-PR2** — prompt-first hero composer (entry UX; smallest risk, big feel)
 - **6-PR3** — round agendas + resolution tracker + COVERAGE strip + adaptive poll plan
   (engine work; full offline matrix additions before ship)
 - **6-PR4** — report blocks + semantic completeness judge + audience register
+
+**RE-ORDERED (Adam's field report, 2026-08-05, edge-industrial run 0a367882):** the
+report ranked 6 of the brief's 11 enumerated categories (the rest narrated in prose) and
+the ranking rode in a section's `numbers` chips — clipped mid-word by assembly caps.
+Hotfixed same day (caps widened 6×60→16×160, ranking rule in the synth prompt, row
+rendering for list entries, dense budget 24K→32K so truncation stops doubling synthesis
+time) — but the STRUCTURAL guarantee Adam is asking for ("the simulation must address
+the questions properly; convo aligned to brief and questions, as is polling") IS
+6-PR3 + 6-PR4. New order: **6-PR3 → 6-PR4 → 6-PR2** — report/deliberation correctness
+before the Quick Run view. 6-PR4 also carries the §8 Desk-parallel section synthesis
+(outline → parallel section workers → director merge) as the structural answer to
+4-minute single-call syntheses: one 22K-token call has a ~250s floor at Sonnet speeds;
+parallel sections cut wall-clock to the slowest section + merge.
 - Cost: +1 frontier call per brief (understand), +1 Haiku per round (tracker), +1–2
   judge calls per synthesis — noise against run cost; estimator lines updated anyway.
 - Bar per PR: offline pins (contract parse salvage, agenda selection math, poll-plan
