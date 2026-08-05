@@ -21,6 +21,28 @@ export interface RunState {
  *  If the child never arrives, the heartbeat goes stale and RESUME reopens. */
 export const CHAIN_PENDING = "chain-pending";
 
+/** engine slice budget inside the 800s serverless window. The headroom must
+ *  cover the LONGEST single operation the engine can be inside when the
+ *  deadline passes — a Sonnet turn with two web searches has been observed at
+ *  137s in the field, and 770s left only 30s: the function was hard-killed
+ *  mid-call, no suspend fired, and the run zombied at a frozen heartbeat.
+ *  650s leaves 150s of kill headroom. Env-overridable for dev tests. */
+export const SLICE_BUDGET_MS = 650_000;
+
+/** what the reaper (cron sweep) should do with a running sim — pure so the
+ *  offline matrix pins it. A fresh heartbeat is a live worker: never touch.
+ *  A stale one is a zombie: honor a pending stop by finalizing (no worker
+ *  exists to run a farewell slice), otherwise re-fire the chain. */
+export function reaperAction(
+  status: string,
+  runState: RunState | null | undefined,
+  nowMs: number,
+): "skip" | "finalize-stopped" | "continue" {
+  if (status !== "running") return "skip";
+  if (heartbeatFresh(runState, nowMs)) return "skip";
+  return runState?.stop_requested ? "finalize-stopped" : "continue";
+}
+
 /** auth for the internal continue route — derived from the service key, so
  *  no new secret to provision; only the server can mint it */
 export function chainSecret(serviceKey: string, simId: string): string {

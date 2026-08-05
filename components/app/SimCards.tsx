@@ -18,6 +18,10 @@ export interface SimCardRow {
   status: string;
   created_at: string;
   problem: string;
+  /** display name: the user's rename, else the understanding pass's title */
+  name?: string | null;
+  /** the contract's mirror prose — the card's summary line */
+  summary?: string | null;
   questionCount: number;
   docCount: number;
   seatCount: number;
@@ -37,7 +41,21 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [confirmFor, setConfirmFor] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set()); // FULL BRIEF open per card
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const saveName = async (id: string) => {
+    const name = nameDraft.trim().slice(0, 80);
+    setRenaming(null);
+    setSims((prev) => prev.map((s) => (s.id === id ? { ...s, name: name || null } : s)));
+    await fetch(`/api/simulations/${id}/config`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+  };
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -63,7 +81,7 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
   };
 
   const visible = sims.filter((s) => {
-    if (q.trim() && !s.problem.toLowerCase().includes(q.trim().toLowerCase())) return false;
+    if (q.trim() && !`${s.name ?? ""} ${s.problem}`.toLowerCase().includes(q.trim().toLowerCase())) return false;
     if (filter === "ran") return !!s.runPosts;
     if (filter === "draft") return !s.runPosts;
     if (filter === "reported") return (s.reportCount ?? 0) > 0;
@@ -100,16 +118,78 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
           s.seatCount ? `${s.seatCount} LEADS` : null,
         ].filter(Boolean).join(" · ") || "BRIEF ONLY";
         const menuOpen = menuFor === s.id;
+        const isOpen = expanded.has(s.id);
+        const title = s.name ?? null;
+        // no name and a long free-form brief → clamp the problem; a name (or
+        // a short problem) reads as the headline and the full ask collapses
+        const clamp = (n: number): CSSProperties => ({ display: "-webkit-box", WebkitLineClamp: n, WebkitBoxOrient: "vertical", overflow: "hidden" });
+        const collapsible = Boolean(title) || s.problem.length > 220;
         return (
           <div key={s.id} className="card simCard" style={{ position: "relative", opacity: deleting === s.id ? 0.4 : 1, transition: "opacity .2s" }}>
             <Link href={`/sim/${s.id}`} style={{ display: "block", padding: "26px 28px" }}>
-              <div style={{ ...mono, display: "flex", justifyContent: "space-between", fontSize: 10, letterSpacing: ".07em", color: "var(--t6)", paddingRight: 22 }}>
+              <div style={{ ...mono, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10, letterSpacing: ".07em", color: "var(--t6)", paddingRight: 22 }}>
                 <span>{new Date(s.created_at).toLocaleDateString()}</span>
-                <span style={{ color: s.status === "done" ? "var(--acc)" : "var(--t5)" }}>{s.status.toUpperCase()}</span>
+                {s.status === "running" ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 7, color: "var(--acc)" }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite" }} />
+                    LIVE
+                  </span>
+                ) : (
+                  <span style={{ color: s.status === "complete" ? "var(--acc)" : "var(--t5)" }}>{s.status.toUpperCase()}</span>
+                )}
               </div>
-              <h3 style={{ margin: "14px 0 0", fontSize: 16.5, fontWeight: 600, lineHeight: 1.35, color: "var(--t1)" }}>
-                {s.problem}
-              </h3>
+              {renaming === s.id ? (
+                <input
+                  autoFocus
+                  value={nameDraft}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); void saveName(s.id); }
+                    if (e.key === "Escape") setRenaming(null);
+                  }}
+                  onBlur={() => void saveName(s.id)}
+                  maxLength={80}
+                  placeholder="Name this simulation"
+                  style={{
+                    width: "100%", boxSizing: "border-box", margin: "14px 0 0", padding: "4px 0",
+                    background: "transparent", border: "none", borderBottom: "1px solid var(--acc)",
+                    outline: "none", fontFamily: "var(--font-sans), sans-serif",
+                    fontSize: 16.5, fontWeight: 600, color: "var(--t0)", caretColor: "var(--acc)",
+                  }}
+                />
+              ) : (
+                <h3 style={{ margin: "14px 0 0", fontSize: 16.5, fontWeight: 600, lineHeight: 1.35, color: "var(--t1)", ...(title ? {} : clamp(4)) }}>
+                  {title ?? s.problem}
+                </h3>
+              )}
+              {title && (
+                <p style={{ margin: "9px 0 0", fontSize: 12.5, lineHeight: 1.55, color: "var(--t5)", ...clamp(3) }}>
+                  {s.summary ?? s.problem}
+                </p>
+              )}
+              {collapsible && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault(); e.stopPropagation();
+                      setExpanded((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(s.id)) next.delete(s.id); else next.add(s.id);
+                        return next;
+                      });
+                    }}
+                    style={{ ...mono, display: "block", marginTop: 10, fontSize: 8.5, letterSpacing: ".1em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0 }}
+                  >
+                    {isOpen ? "▴ HIDE FULL BRIEF" : "▾ FULL BRIEF"}
+                  </button>
+                  {isOpen && (
+                    <p style={{ margin: "8px 0 0", fontSize: 11.5, lineHeight: 1.6, color: "var(--t5)", maxHeight: 220, overflowY: "auto", whiteSpace: "pre-wrap", animation: "fadeUp .2s ease both" }}>
+                      {s.problem}
+                    </p>
+                  )}
+                </>
+              )}
               <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)", marginTop: 14 }}>{meta}</div>
               {(s.runPosts || (s.reportCount ?? 0) > 0) && (
                 <div style={{ ...mono, fontSize: 9, letterSpacing: ".06em", marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -151,6 +231,12 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
                   boxShadow: "0 10px 28px rgba(0,0,0,.35)", animation: "fadeUp .15s ease both",
                 }}
               >
+                <button
+                  onClick={() => { setRenaming(s.id); setNameDraft(s.name ?? ""); setMenuFor(null); }}
+                  style={{ width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12.5, background: "none", border: "none", borderRadius: 8, cursor: "pointer", color: "var(--t2)", fontFamily: "var(--font-sans), sans-serif" }}
+                >
+                  Rename
+                </button>
                 <Link
                   href={`/sim/${s.id}`}
                   style={{ display: "block", padding: "9px 12px", fontSize: 12.5, color: "var(--t2)", borderRadius: 8 }}

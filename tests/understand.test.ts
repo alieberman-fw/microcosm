@@ -7,6 +7,7 @@ const NOW = () => "2026-08-05T00:00:00.000Z";
 const DOCS = ["query.md", "market-brief.pdf"];
 
 const full = () => ({
+  title: "Edge-industrial category ranking",
   intent: "Evaluate asset categories",
   audience: "technical",
   mirror: "You're deciding which categories deserve pursuit.",
@@ -42,6 +43,8 @@ describe("normalizeContract", () => {
   it("normalizes a full object — ids assigned, roles kept, flags kept", () => {
     const c = normalizeContract(full(), DOCS, NOW)!;
     expect(c.version).toBe(1);
+    expect(c.title).toBe("Edge-industrial category ranking"); // cards lead with this
+    expect(normalizeContract({ ...full(), title: undefined }, DOCS, NOW)!.title).toBeUndefined(); // pre-title contracts stay valid
     expect(c.sub_asks.map((s) => s.id)).toEqual(["a1", "a2"]);
     expect(c.audience).toBe("technical");
     expect(c.output_contracts).toEqual([{ type: "ranked_list" }, { type: "matrix", spec: { items_from: "entities" } }]);

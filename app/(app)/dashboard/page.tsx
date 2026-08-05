@@ -18,8 +18,8 @@ export default async function Dashboard() {
 
   const sims: SimCardRow[] = ((data ?? []) as {
     id: string; status: string; created_at: string;
-    brief: { problem?: string; question?: string; questions?: unknown[] } | null;
-    config: { casting?: { mode?: string }; run_result?: { posts?: number; converged?: boolean; at?: string } } | null;
+    brief: { problem?: string; question?: string; questions?: unknown[]; contract?: { title?: string; mirror?: string } } | null;
+    config: { name?: string; casting?: { mode?: string }; run_result?: { posts?: number; converged?: boolean; at?: string } } | null;
     documents: { count: number }[];
     sim_agents: { count: number }[];
     reports: { count: number }[];
@@ -28,6 +28,10 @@ export default async function Dashboard() {
     status: s.status,
     created_at: s.created_at,
     problem: s.brief?.problem ?? s.brief?.question ?? "Untitled simulation",
+    // cards lead with a NAME: the user's rename first, then the understanding
+    // pass's derived title; long free-form briefs collapse behind FULL BRIEF
+    name: s.config?.name ?? s.brief?.contract?.title ?? null,
+    summary: s.brief?.contract?.mirror ?? null,
     questionCount: s.brief?.questions?.length ?? 0,
     docCount: s.documents?.[0]?.count ?? 0,
     seatCount: s.sim_agents?.[0]?.count ?? 0,

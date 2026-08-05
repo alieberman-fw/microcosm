@@ -1,3 +1,6 @@
 {
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "crons": [
+    { "path": "/api/engine/reaper", "schedule": "* * * * *" }
+  ]
 }

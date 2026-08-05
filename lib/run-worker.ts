@@ -20,7 +20,7 @@ import { FrozenSpec } from "@/lib/casting";
 import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
 import { CorpusDocInput, buildCorpusBlocks, normalizeQuestions } from "@/lib/corpus";
 import { EngineContext, EngineEvent, EngineLead, PostRec, RunResume, runMode } from "@/lib/engine";
-import { CHAIN_PENDING, RunState, chainSecret } from "@/lib/walkaway";
+import { CHAIN_PENDING, RunState, SLICE_BUDGET_MS, chainSecret } from "@/lib/walkaway";
 import { normalizeEnabledTools } from "@/lib/tools";
 
 /** best-effort window into the run — a dropped client NEVER touches the engine */
@@ -163,7 +163,10 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
       tools: normalizeEnabledTools(config.tools),
       pulledFacts,
       temperature: 0.7,
-      deadline: Date.now() + (Number(process.env.ENGINE_CHUNK_MS) || 770_000), // ~13-min slices on Pro; env override for dev tests
+      // SLICE_BUDGET_MS leaves 150s of kill headroom inside the 800s window —
+      // a deadline check happens BEFORE each model call, so the headroom must
+      // outlast the longest single call (field-observed: 137s web-search turn)
+      deadline: Date.now() + (Number(process.env.ENGINE_CHUNK_MS) || SLICE_BUDGET_MS),
       polledRounds, votedRounds,
       emit, logCall,
       isCancelled: () => false, // client disconnects NEVER cancel a run (3c); stop is graceful, below

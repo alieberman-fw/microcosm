@@ -1,16 +1,15 @@
 "use client";
 
 /**
- * The simulation workspace (/sim/[id]) — stages 1–2 live (brief + corpus),
- * stages 3–5 marked SOON. Corpus rows mirror the demo's "ATTACHING DILIGENCE
- * MATERIALS" grammar; "Test the corpus" proves the grounding path: whole
- * documents in context via Files API ids, native citations, cached prefix.
+ * The simulation workspace (/sim/[id]). Files ride WITH the brief as a
+ * compact circle cluster (details expand on demand); the Understanding pass
+ * reads the brief + docs first — population and run config reveal only
+ * after WHAT I UNDERSTOOD lands, so the loading state tells one story.
  */
 
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BriefComposer, { Brief } from "@/components/app/BriefComposer";
-import Markdown from "@/components/app/Markdown";
 import PopulationStage, { CastingInfo, WorkspaceSeat } from "@/components/app/PopulationStage";
 import RunConfigStage from "@/components/app/RunConfigStage";
 import UnderstandingCard from "@/components/app/UnderstandingCard";
@@ -34,21 +33,6 @@ export interface DocRow {
 
 interface PendingUpload { key: string; name: string; size: number; error?: string }
 
-interface Cite { title: string; pageStart?: number; pageEnd?: number; quote: string }
-interface Answer {
-  id?: string;
-  question: string;
-  segments: { text: string; cites: Cite[] }[];
-  model: string;
-  usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
-  groundedIn: number;
-}
-
-/** how a picked file lands in the question: @name reads like a mention and
- *  stays as typed (the QA prompt understands it); names with spaces keep the
- *  quoted form so the reference survives tokenization */
-const fileToken = (name: string) => (name.includes(" ") ? `"${name}" ` : `@${name} `);
-
 const fmtBytes = (n: number | null) => {
   if (!n) return "";
   if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
@@ -68,7 +52,6 @@ export default function SimWorkspace({
   initialCrowd = [],
   initialCasting,
   initialContract = null,
-  initialAnswers = [],
   initialRun = null,
   initialTools = [],
   hasRun = false,
@@ -81,7 +64,6 @@ export default function SimWorkspace({
   initialCasting: CastingInfo | null;
   /** 6-PR1 — the Brief Contract (brief.contract) for the understanding card */
   initialContract?: BriefContract | null;
-  initialAnswers?: Answer[];
   initialRun?: Partial<RunConfig> | null;
   /** 3d — saved agent-tools allowlist (config.tools) */
   initialTools?: string[];
@@ -97,11 +79,11 @@ export default function SimWorkspace({
   const [modeSel, setModeSel] = useState<string | null>(initialCasting?.mode ?? null);
   const [docs, setDocs] = useState<DocRow[]>(initialDocs);
   const [pending, setPending] = useState<PendingUpload[]>([]);
+  const [filesOpen, setFilesOpen] = useState(false);   // the cluster's expanded panel
   const [dragOver, setDragOver] = useState(false);
-  const [question, setQuestion] = useState("");
-  const [asking, setAsking] = useState(false);
-  const [answers, setAnswers] = useState<Answer[]>(initialAnswers);
-  const [askError, setAskError] = useState<string | null>(null);
+  // understanding-first choreography: population + run config stay hidden
+  // while the pass reads a fresh brief, so the loading state is ONE story
+  const [understanding, setUnderstanding] = useState<"idle" | "deriving" | "ready" | "error">("idle");
   const [notesOpen, setNotesOpen] = useState(false);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteText, setNoteText] = useState("");
@@ -202,28 +184,6 @@ export default function SimWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docs]);
 
-  const ask = async () => {
-    const q = question.trim();
-    if (!q || asking || parsedDocs.length === 0) return;
-    setAsking(true);
-    setAskError(null);
-    try {
-      const res = await fetch(`/api/simulations/${sim.id}/ask`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Ask failed");
-      setAnswers((prev) => [{ question: q, ...data } as Answer, ...prev]);
-      setQuestion("");
-    } catch (e) {
-      setAskError(e instanceof Error ? e.message : "Ask failed");
-    } finally {
-      setAsking(false);
-    }
-  };
-
   const label: CSSProperties = { ...mono, fontSize: 11, letterSpacing: ".1em", color: "var(--t6)" };
 
   return (
@@ -292,6 +252,78 @@ export default function SimWorkspace({
           <div style={{ ...mono, fontSize: 10.5, letterSpacing: ".07em", color: "var(--t6)", marginTop: 14 }}>
             CREATED {new Date(sim.created_at).toLocaleDateString()} · {sim.status.toUpperCase()}
           </div>
+
+          {/* files ride WITH the brief — overlapping circles + "+", the big
+              corpus card is gone; details expand on demand (field fix) */}
+          <div id="stage-corpus" style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16, flexWrap: "wrap", scrollMarginTop: 20 }}>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              {docs.slice(0, 7).map((d, i) => {
+                const ext = (d.name.split(".").pop() ?? "").toUpperCase().slice(0, 4);
+                return (
+                  <button
+                    key={d.id}
+                    title={`${d.name}${d.parse_status === "parsed" ? "" : d.parse_status === "error" ? " — PARSE ERROR" : " — parsing…"}`}
+                    onClick={() => (thumbs[d.id] ? setLightbox({ url: thumbs[d.id], name: d.name }) : void openDoc(d.id))}
+                    style={{
+                      width: 32, height: 32, borderRadius: "50%", padding: 0, marginLeft: i ? -9 : 0,
+                      border: `1px solid ${d.parse_status === "error" ? "var(--warn)" : "var(--ln5)"}`,
+                      background: "var(--sf2)", cursor: "pointer", overflow: "hidden", flex: "none",
+                      display: "inline-flex", alignItems: "center", justifyContent: "center", position: "relative", zIndex: 7 - i,
+                    }}
+                  >
+                    {thumbs[d.id] ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL
+                      <img src={thumbs[d.id]} alt={d.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : d.name.startsWith("Field notes") ? (
+                      <span style={{ color: "var(--acc)", fontSize: 12, lineHeight: 1 }}>✎</span>
+                    ) : (
+                      <span style={{ ...mono, fontSize: 7, letterSpacing: ".04em", color: d.parse_status === "parsed" ? "var(--t4)" : "var(--t6)" }}>{ext || "DOC"}</span>
+                    )}
+                  </button>
+                );
+              })}
+              {docs.length > 7 && (
+                <span style={{ ...mono, width: 32, height: 32, borderRadius: "50%", marginLeft: -9, border: "1px solid var(--ln5)", background: "var(--sf2)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 8.5, color: "var(--t5)", flex: "none" }}>
+                  +{docs.length - 7}
+                </span>
+              )}
+              {pending.filter((p) => !p.error).map((p) => (
+                <span key={p.key} title={`${p.name} — uploading…`} style={{ width: 32, height: 32, borderRadius: "50%", marginLeft: docs.length ? -9 : 0, border: "1px dashed var(--ln6)", background: "var(--sf2)", animation: "shim 1.2s ease infinite", flex: "none" }} />
+              ))}
+              <button
+                onClick={() => fileRef.current?.click()}
+                title="Add files — same corpus pipeline; the panel cites them by name"
+                aria-label="Add files"
+                style={{
+                  width: 32, height: 32, borderRadius: "50%", marginLeft: docs.length || pending.length ? 8 : 0,
+                  border: "1px dashed var(--ln6)", background: "transparent", color: "var(--acc)",
+                  cursor: "pointer", fontSize: 15, lineHeight: 1, flex: "none",
+                }}
+              >
+                +
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                accept=".pdf,.txt,.md,.csv,.html,.json,.geojson,image/*,application/pdf,text/plain,text/markdown,text/csv,text/html"
+                onChange={(e) => { if (e.target.files?.length) void uploadFiles(e.target.files); e.target.value = ""; }}
+                style={{ display: "none" }}
+              />
+            </div>
+            {docs.length > 0 ? (
+              <button
+                onClick={() => setFilesOpen((v) => !v)}
+                style={{ ...mono, fontSize: 9, letterSpacing: ".08em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0 }}
+              >
+                {parsedDocs.length} DOC{parsedDocs.length === 1 ? "" : "S"} IN CONTEXT{totalTokens ? ` · ~${fmtTokens(totalTokens)} TOK` : ""} {filesOpen ? "▴" : "▾ DETAILS"}
+              </button>
+            ) : (
+              <span style={{ ...mono, fontSize: 9, letterSpacing: ".07em", color: "var(--t7)" }}>
+                ATTACH DILIGENCE FILES — AGENTS CITE THEM BY NAME · OR <button onClick={() => setNotesOpen(true)} style={{ ...mono, fontSize: 9, letterSpacing: ".07em", background: "none", border: "none", color: "var(--acc)", cursor: "pointer", padding: 0 }}>✎ WRITE WHAT YOU KNOW</button>
+              </span>
+            )}
+          </div>
           {brief.questions?.length > 0 && (
             brief.questions.some((q) => q.detail) ? (
               // any question carrying a framing renders as readable rows — a
@@ -340,10 +372,12 @@ export default function SimWorkspace({
         hasProblem={Boolean(brief.problem.trim())}
         initialContract={initialContract}
         parsedDocNames={parsedDocs.map((d) => d.name)}
+        onPhase={setUnderstanding}
       />
 
-      {/* corpus */}
-      <div id="stage-corpus" className="card" style={{ padding: "26px 30px", marginTop: 36, scrollMarginTop: 20 }}>
+      {/* file details + field notes — expands from the brief's file cluster */}
+      {(filesOpen || notesOpen) && (
+      <div className="card" style={{ padding: "26px 30px", marginTop: 20, animation: "fadeUp .25s ease both" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <div style={label}>
             DILIGENCE MATERIALS{parsedDocs.length > 0 && ` · ${parsedDocs.length} DOC${parsedDocs.length > 1 ? "S" : ""} · ~${fmtTokens(totalTokens)} TOKENS`}
@@ -541,6 +575,7 @@ export default function SimWorkspace({
           </div>
         )}
       </div>
+      )}
 
       {/* PR-A — image lightbox for uploaded photos */}
       {lightbox && (
@@ -554,136 +589,11 @@ export default function SimWorkspace({
         </div>
       )}
 
-      {/* test the corpus */}
-      <div className="card" style={{ padding: "26px 30px", marginTop: 20 }}>
-        <div style={label}>TEST THE CORPUS · ASK A QUESTION, GET A CITED ANSWER · TYPE @ TO REFERENCE A FILE</div>
-        <div style={{ display: "flex", gap: 10, marginTop: 14, position: "relative" }}>
-          <input
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={(e) => {
-              const frag = question.match(/@([^@\s"]*)$/);
-              const menu = frag ? parsedDocs.filter((d) => d.name.toLowerCase().includes(frag[1].toLowerCase())).slice(0, 6) : [];
-              if (e.key === "Escape" && frag) { setQuestion((q) => q.replace(/@[^@\s"]*$/, "")); return; }
-              if (e.key === "Enter") {
-                if (menu.length) { e.preventDefault(); setQuestion((q) => q.replace(/@[^@\s"]*$/, fileToken(menu[0].name))); return; }
-                void ask();
-              }
-            }}
-            placeholder={parsedDocs.length ? "What does the survey say about the utility easement? Type @ to name a file" : "Upload a document first"}
-            disabled={parsedDocs.length === 0}
-            style={{
-              flex: 1, padding: "12px 16px", background: "var(--sf2)", border: "1px solid var(--ln3)",
-              borderRadius: 10, fontFamily: "var(--font-sans), sans-serif", fontSize: 13.5,
-              color: "var(--t1)", outline: "none",
-            }}
-          />
-          {/* @file typeahead — Enter or click inserts the exact filename */}
-          {(() => {
-            const frag = question.match(/@([^@\s"]*)$/);
-            if (!frag) return null;
-            const menu = parsedDocs.filter((d) => d.name.toLowerCase().includes(frag[1].toLowerCase())).slice(0, 6);
-            if (!menu.length) return null;
-            return (
-              <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, zIndex: 40, minWidth: 280, background: "var(--sf)", border: "1px solid var(--ln5)", borderRadius: 12, padding: 5, boxShadow: "0 18px 44px rgba(0,0,0,.35)", animation: "fadeUp .12s ease both" }}>
-                {menu.map((d) => (
-                  <button
-                    key={d.id}
-                    onClick={() => setQuestion((q) => q.replace(/@[^@\s"]*$/, fileToken(d.name)))}
-                    style={{ display: "flex", width: "100%", alignItems: "center", gap: 9, textAlign: "left", cursor: "pointer", borderRadius: 8, padding: "7px 10px", background: "transparent", border: "none" }}
-                  >
-                    {thumbs[d.id] ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL
-                      <img src={thumbs[d.id]} alt="" style={{ width: 30, height: 22, objectFit: "cover", borderRadius: 5, border: "1px solid var(--ln4)", flex: "none" }} />
-                    ) : (
-                      <span style={{ ...mono, fontSize: 9, color: "var(--t6)", flex: "none" }}>📄</span>
-                    )}
-                    <span style={{ ...mono, fontSize: 10.5, color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
-                  </button>
-                ))}
-              </div>
-            );
-          })()}
-          <button
-            onClick={() => void ask()}
-            disabled={!question.trim() || asking || parsedDocs.length === 0}
-            style={{
-              background: question.trim() && !asking ? "var(--acc)" : "var(--sf2)",
-              color: question.trim() && !asking ? "var(--acc-c)" : "var(--t6)",
-              fontWeight: 600, fontSize: 13.5, padding: "0 22px", borderRadius: 100, border: "none",
-              cursor: question.trim() && !asking ? "pointer" : "default", fontFamily: "var(--font-sans), sans-serif",
-            }}
-          >
-            {asking ? "Reading…" : "Ask"}
-          </button>
-        </div>
-        {askError && <div style={{ ...mono, fontSize: 11, color: "var(--warn)", marginTop: 12 }}>{askError}</div>}
-        {asking && (
-          <div style={{ marginTop: 18 }}>
-            <div style={{ height: 10, borderRadius: 100, background: "var(--sf2)", width: "80%", animation: "shim 1.2s ease infinite" }} />
-            <div style={{ height: 10, borderRadius: 100, background: "var(--sf2)", width: "60%", marginTop: 8, animation: "shim 1.2s ease infinite" }} />
-          </div>
-        )}
-
-        <div style={answers.length > 1 ? { maxHeight: 480, overflowY: "auto", marginTop: 4, paddingRight: 6 } : undefined}>
-        {answers.map((a, i) => (
-          <div key={a.id ?? i} style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid var(--ln2)", animation: "fadeUp .35s ease both", position: "relative" }}>
-            <button
-              onClick={() => {
-                setAnswers((prev) => prev.filter((x) => x !== a));
-                if (a.id) void fetch(`/api/simulations/${sim.id}/config`, {
-                  method: "PATCH", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ qa_remove: a.id }),
-                });
-              }}
-              aria-label="Delete this answer"
-              style={{ position: "absolute", top: 16, right: 2, background: "none", border: "none", color: "var(--t7)", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}
-            >
-              ×
-            </button>
-            <div style={{ ...mono, fontSize: 10.5, letterSpacing: ".05em", color: "var(--t5)", paddingRight: 24 }}>Q · {a.question}</div>
-            {/* render as ONE markdown block — citations segment the text and
-                would otherwise shatter tables/lists at cited-span boundaries */}
-            <div style={{ fontSize: 13.5, lineHeight: 1.65, color: "var(--t2)", marginTop: 10 }}>
-              <Markdown text={a.segments.map((s) => s.text).join("")} />
-            </div>
-            {(() => {
-              const seen = new Set<string>();
-              const cites = a.segments.flatMap((s) => s.cites).filter((c) => {
-                const k = `${c.title}|${c.pageStart ?? ""}|${c.quote.slice(0, 40)}`;
-                if (seen.has(k)) return false;
-                seen.add(k);
-                return true;
-              });
-              return cites.length > 0 ? (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
-                  <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>CITED ·</span>
-                  {cites.map((c, k) => (
-                    <span
-                      key={k}
-                      title={c.quote}
-                      style={{
-                        ...mono, fontSize: 9, letterSpacing: ".04em", color: "var(--acc)",
-                        border: "1px solid var(--acc)", background: "var(--acc-dim)",
-                        borderRadius: 100, padding: "2px 8px", whiteSpace: "nowrap", cursor: "help",
-                      }}
-                    >
-                      {c.title.toUpperCase().slice(0, 28)}{c.pageStart ? ` · P.${c.pageStart}${c.pageEnd && c.pageEnd > c.pageStart ? `–${c.pageEnd}` : ""}` : ""}
-                    </span>
-                  ))}
-                </div>
-              ) : null;
-            })()}
-            <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)", marginTop: 12 }}>
-              GROUNDED IN {a.groundedIn} DOC{a.groundedIn > 1 ? "S" : ""} · IN {fmtTokens(a.usage.input + a.usage.cacheRead + a.usage.cacheWrite)}
-              {a.usage.cacheRead > 0 && ` (${fmtTokens(a.usage.cacheRead)} CACHED)`} · OUT {fmtTokens(a.usage.output)} · {a.model.toUpperCase()}
-            </div>
-          </div>
-        ))}
-        </div>
-      </div>
-
-      {/* the population — Casting Director */}
+      {/* the population — Casting Director. Understanding-first choreography:
+          while the pass reads a FRESH brief (nothing cast yet), the stages
+          below stay hidden — one loading story, then the reveal */}
+      {!(understanding === "deriving" && populationCount === 0) && (
+      <>
       <PopulationStage
         simId={sim.id}
         initialSeats={initialSeats}
@@ -731,6 +641,8 @@ export default function SimWorkspace({
           </div>
         );
       })()}
+      </>
+      )}
     </div>
   );
 }

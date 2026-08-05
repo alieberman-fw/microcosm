@@ -18,7 +18,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  let body: { scale?: { experts?: number; residents?: number }; mode?: string; qa_remove?: string; run?: Partial<RunConfig>; tools?: string[] };
+  let body: { scale?: { experts?: number; residents?: number }; mode?: string; qa_remove?: string; run?: Partial<RunConfig>; tools?: string[]; name?: string };
   try {
     body = await request.json();
   } catch {
@@ -78,6 +78,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   // 3d — the agent-tools allowlist (empty array = all off, the default)
   if (Array.isArray(body.tools)) {
     config.tools = normalizeEnabledTools(body.tools);
+  }
+
+  // user-set simulation name (cards & lists lead with it; empty clears back
+  // to the contract title / brief fallback)
+  if (typeof body.name === "string") {
+    const name = body.name.trim().slice(0, 80);
+    if (name) config.name = name;
+    else delete config.name;
   }
 
   // remove one persisted corpus Q&A by id
