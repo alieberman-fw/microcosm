@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { SLICE_BUDGET_MS, chainSecret, heartbeatFresh, reaperAction } from "@/lib/walkaway";
+import { ENGINE_CALL_TIMEOUT_MS, SLICE_BUDGET_MS, chainSecret, heartbeatFresh, reaperAction } from "@/lib/walkaway";
 
 describe("chainSecret", () => {
   it("is deterministic for the same key + sim", () => {
@@ -57,8 +57,9 @@ describe("heartbeatFresh", () => {
 });
 
 describe("slice budget — kill headroom inside the 800s serverless window", () => {
-  it("leaves at least 120s: the deadline gates the START of a model call, so the headroom must outlast the longest single call (field-observed 137s web-search turn)", () => {
-    expect(800_000 - SLICE_BUDGET_MS).toBeGreaterThanOrEqual(120_000);
+  it("THE INVARIANT: budget + per-call timeout + margin fit the window — the deadline gates the START of a call, the timeout fences the call itself, so no turn can ride past the kill line", () => {
+    expect(SLICE_BUDGET_MS + ENGINE_CALL_TIMEOUT_MS + 10_000).toBeLessThanOrEqual(800_000);
+    expect(ENGINE_CALL_TIMEOUT_MS).toBeGreaterThanOrEqual(150_000); // field-observed 137s web-search turn must SUCCEED
     expect(SLICE_BUDGET_MS).toBeGreaterThanOrEqual(600_000); // still real slices, not thrash
   });
 });

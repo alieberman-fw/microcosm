@@ -15,7 +15,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { FrozenSpec } from "@/lib/casting";
-import { RunConfig, TIER_MODELS, agoraReplies, burstSize, counterSlots, crossfireSlots } from "@/lib/run";
+import { RunConfig, TIER_MODELS, agoraReplies, burstSize, counterSlots, crossfireSlots, waveWidth as waveWidthOf } from "@/lib/run";
 import { parseLooseArray } from "@/lib/llm-json";
 import { toolBlocksFor, toolPromptAddendum } from "@/lib/tools";
 
@@ -1151,15 +1151,19 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         posts.filter((p) => p.round === round && p.agentKey === key && (p.tag.startsWith("POST") || p.tag === "REPLY")).length;
       // 3e parallel reply waves: replies land in batches that share one
       // transcript snapshot — voices genuinely overlap instead of a strict
-      // relay. focused stays serial (wave of 1 — the pinned v1 rhythm);
-      // lively runs 2-wide, bustling 3-wide. Budgets, seq order, dedupe, and
-      // termination are untouched: seqs are pre-assigned in slot order and
-      // the wave's posts are emitted in that order once all have generated.
-      const waveWidth = ctx.cfg.density === "bustling" ? 3 : ctx.cfg.density === "lively" ? 2 : 1;
+      // relay. Width lives in lib/run.ts (waveWidth): lively 3 / bustling 4,
+      // economy +1, focused serial outside economy. Budgets, seq order,
+      // dedupe, and termination are untouched: seqs are pre-assigned in slot
+      // order and the wave's posts are emitted in that order once generated.
+      const waveWidth = waveWidthOf(ctx.cfg.density, ctx.cfg.tier);
       let i = Math.max(inRound - 1, 0);
       while (i < repliesPerRound && budget()) {
         if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
-        const size = Math.min(waveWidth, repliesPerRound - i, Math.max(ctx.cfg.max_posts - posts.length, 1));
+        // a wave can NEVER exceed the distinct voices available (leads minus
+        // the previous speaker) — wider than that and the guardrail's
+        // fallback pool empties, handing the mic back to a taken voice inside
+        // the same snapshot where dedupe can't see the pending duplicate
+        const size = Math.min(waveWidth, Math.max(ctx.leads.length - 1, 1), repliesPerRound - i, Math.max(ctx.cfg.max_posts - posts.length, 1));
         const snapshot = [...posts];
         const snapWindow = windowOf(snapshot, Math.max(16, repliesPerRound + 6));
         const lastAuthor = snapshot[snapshot.length - 1]?.agentKey;

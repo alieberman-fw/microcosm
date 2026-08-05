@@ -5,7 +5,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
-import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, synthBudgetFor, verifierSystem } from "@/lib/report";
+import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, clipText, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, synthBudgetFor, verifierSystem } from "@/lib/report";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { normalizeEnabledTools } from "@/lib/tools";
 import { synthTicker } from "@/lib/synth-progress";
@@ -232,7 +232,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         // partial JSON and shipped a report with no findings — a spec that
         // fails the gate is retried bigger, never accepted.
         send({ type: "stage", value: "compile", note: `READING ${postRows.length} POSTS · COMPILING VERDICT, FINDINGS & DISSENTS…${effLength === "dense" ? " (DENSE REPORT — TYPICALLY 1–3 MINUTES)" : ""}` });
-        const budgets = [synthBudget, synthBudget * 2, Math.min(synthBudget * 3, 48_000)];
+        // dedupe + clamp: dense now STARTS high enough that pass 1 normally
+        // lands (a 24K ceiling truncated a 22K dense draft in the field and
+        // doubled the wall-clock with a full 250s retry)
+        const budgets = [...new Set([synthBudget, Math.min(synthBudget * 2, 48_000), 48_000])];
         let raw: Record<string, unknown> | null = null;
         let lastErr = "";
         for (let attempt = 0; attempt < budgets.length && !raw; attempt++) {
@@ -360,8 +363,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               kind,
               finding: l.finding ? String(l.finding).slice(0, 300) : undefined,
               so_what: l.so_what ? String(l.so_what).slice(0, 240) : undefined,
+              // word-boundary clip, roomy cap: with a ranking section these are
+              // "#1 item — reason" entries, and a raw 60-char slice clipped
+              // them mid-word in a live report's lead
               magnitude: kind === "key_finding" && firstNumbers.length
-                ? firstNumbers.slice(0, 3).map((m) => ({ label: String(m.label ?? "").slice(0, 40), value: String(m.value ?? "").slice(0, 60) }))
+                ? firstNumbers.slice(0, 3).map((m) => ({ label: String(m.label ?? "").slice(0, 40), value: clipText(String(m.value ?? ""), 200) }))
                 : undefined,
               currency: "$",
               low: numOr(l.low), high: numOr(l.high), point: numOr(l.point),
@@ -388,8 +394,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               question: String(x.question ?? "").slice(0, 160),
               answer: String(x.answer ?? "").slice(0, 600), // 3a: the direct answer, first
               finding: String(x.finding ?? "").slice(0, findingClamp),
-              numbers: (Array.isArray(x.numbers) ? x.numbers : []).slice(0, 6)
-                .map((n) => ({ label: String(n.label ?? "").slice(0, 40), value: String(n.value ?? "").slice(0, 60) })),
+              // field fix: a ranking section carries EVERY enumerated item as a
+              // numbers entry — the old 6×60 cap silently chopped an 11-item
+              // ranking to 6 mid-word ("…tenant demand toda"). Wide enough for
+              // full ordered lists, clipped at word boundaries; the view
+              // renders long entries as rows.
+              numbers: (Array.isArray(x.numbers) ? x.numbers : []).slice(0, 16)
+                .map((n) => ({ label: String(n.label ?? "").slice(0, 40), value: clipText(String(n.value ?? ""), 220) })),
               cites: (Array.isArray(x.cites) ? x.cites : []).map((c) => Number(c) || 0).filter(Boolean).slice(0, 8),
             })),
           criteria: (Array.isArray(rawSpec.criteria) ? rawSpec.criteria : []).slice(0, 8)

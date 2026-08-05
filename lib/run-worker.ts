@@ -20,7 +20,7 @@ import { FrozenSpec } from "@/lib/casting";
 import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
 import { CorpusDocInput, buildCorpusBlocks, normalizeQuestions } from "@/lib/corpus";
 import { EngineContext, EngineEvent, EngineLead, PostRec, RunResume, runMode } from "@/lib/engine";
-import { CHAIN_PENDING, RunState, SLICE_BUDGET_MS, chainSecret } from "@/lib/walkaway";
+import { CHAIN_PENDING, ENGINE_CALL_TIMEOUT_MS, RunState, SLICE_BUDGET_MS, chainSecret } from "@/lib/walkaway";
 import { normalizeEnabledTools } from "@/lib/tools";
 
 /** best-effort window into the run — a dropped client NEVER touches the engine */
@@ -154,7 +154,11 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
     await emit({ type: "stage", value: "running" });
 
     const ctx: EngineContext = {
-      anthropic: new Anthropic(), cfg, mode,
+      // per-call timeout + no SDK retries: the walkaway invariant is
+      // SLICE_BUDGET + CALL_TIMEOUT + margin ≤ 800s (see lib/walkaway.ts) —
+      // a runaway multi-search turn gets cut, and the engine's own ladder
+      // retries at a safe boundary where the deadline is re-checked
+      anthropic: new Anthropic({ timeout: ENGINE_CALL_TIMEOUT_MS, maxRetries: 0 }), cfg, mode,
       problem: brief.problem ?? "",
       questions: normalizeQuestions(brief.questions).map((x) => x.label),
       leads, crowd, corpusBlocks,

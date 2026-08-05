@@ -64,6 +64,17 @@ export function burstSize(density: Density, crowd: number): number {
   return Math.min(k, crowd);
 }
 
+/** 3e parallel reply waves — how many replies GENERATE concurrently (sharing
+ *  one transcript snapshot). Field feedback (2026-08-05): runs read as "only
+ *  a couple agents talking at a time" — widened lively 2→3 and bustling 3→4,
+ *  and the ECONOMY tier adds +1 everywhere (speed is what that tier buys;
+ *  focused keeps its pinned serial v1 rhythm outside economy). Concurrency
+ *  only: post counts, budgets, seq order, and dedupe are untouched. */
+export function waveWidth(density: Density, tier: RunConfig["tier"]): number {
+  const base = density === "bustling" ? 4 : density === "lively" ? 3 : 1;
+  return Math.min(base + (tier === "economy" ? 1 : 0), 5);
+}
+
 export const RUN_RANGES = {
   rounds: { min: 1, max: 100 },
   max_posts: { min: 50, max: 10_000 },

@@ -150,8 +150,19 @@ export function reportSpecIncomplete(
 
 /** synthesis output ceiling per depth — a STARTING budget; the route escalates
  *  on max_tokens because adaptive thinking bills against the same ceiling */
+/** cap text at a WORD boundary with an honest ellipsis — raw .slice() shipped
+ *  "thermal/interconnection risk beyond batch workl" to a live report */
+export function clipText(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 40)).trimEnd()}…`;
+}
+
 export function synthBudgetFor(length: ReportLength): number {
-  return length === "brief" ? 8_000 : length === "dense" ? 24_000 : 16_000;
+  // dense starts at 32K: adaptive thinking bills against the same ceiling,
+  // and a field 22K-token dense draft truncated at 24K — costing a full
+  // second synthesis pass (~250s). Ceilings are free; truncation is not.
+  return length === "brief" ? 8_000 : length === "dense" ? 32_000 : 16_000;
 }
 
 /** structured-outputs schema for the synthesis — the API constrains the reply
@@ -282,6 +293,7 @@ export function reportSynthSystem(length: ReportLength = "standard"): string {
     ` "executive_summary": "4-6 sentences a decision-maker reads first — concrete, numbers included",\n` +
     ` "dimension_scores": [{"name": "...", "score": 0-10, "note": "one line"}],   // 4-6 dimensions THIS brief actually turns on\n` +
     ` "sections": [{"question": "the user's question AS THEY ASKED IT (shorten but keep their words — never replace with an analyst label)", "answer": "1-2 sentences that DIRECTLY answer the question as asked — verdict first, then the number ('Yes — 900 units absorb, but at $1.95-2.05/SF, not the underwritten $2.05+')", "finding": "3-5 sentences of supporting argument", "numbers": [{"label": "ABSORPTION", "value": "20-24 units/mo"}], "cites": [seq, ...]}],  // one per question-to-resolve IN ORDER, THEN one per success criterion the question sections don't already fully deliver; 2-4 numbers per section ([] only if truly qualitative)\n` +
+    `RANKING RULE (non-negotiable): when the brief ENUMERATES a set of items to rank, order, or compare (categories, options, sites, plans), the section answering it must place the COMPLETE ordered list in "numbers" — one entry per enumerated item, {"label": "#1", "value": "item name — one-clause reason"}, EVERY item from the brief present with an explicit position, even the ones the panel barely discussed (say so in the reason: "never debated — ranked on thesis fit alone"). A ranking that covers a subset and narrates the rest in prose FAILS the user's ask.\n` +
     ` "criteria": [{"criterion": "the success criterion verbatim (shortened ok)", "where": "one line: which section/part of this report delivers it"}],  // one entry per success criterion — this is the delivery receipt\n` +
     ` "risks": [{"risk": "...", "severity": "high|medium|low", "mitigation": "...", "watch_signal": "the observable that says it's happening"}],\n` +
     ` "dissents": [{"name": "...", "role": "...", "position": "one line", "quote": "VERBATIM sentence from their post", "seq": N}],\n` +

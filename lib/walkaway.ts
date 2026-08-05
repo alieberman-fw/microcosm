@@ -26,8 +26,19 @@ export const CHAIN_PENDING = "chain-pending";
  *  deadline passes — a Sonnet turn with two web searches has been observed at
  *  137s in the field, and 770s left only 30s: the function was hard-killed
  *  mid-call, no suspend fired, and the run zombied at a frozen heartbeat.
- *  650s leaves 150s of kill headroom. Env-overridable for dev tests. */
-export const SLICE_BUDGET_MS = 650_000;
+ *  620s leaves 180s of kill headroom. Env-overridable for dev tests. */
+export const SLICE_BUDGET_MS = 620_000;
+
+/** hard per-request cap on every engine model call (the run-worker's client).
+ *  The deadline gates the START of a call, so the wall-clock invariant is
+ *  SLICE_BUDGET_MS + ENGINE_CALL_TIMEOUT_MS + margin ≤ 800s — no single turn,
+ *  search, or poll can ride past the serverless kill line, no matter how many
+ *  web searches it strings together. The engine client runs maxRetries 0:
+ *  SDK-level retries of a timed-out call would double the in-flight time and
+ *  bust the invariant; the ENGINE's own failure ladder retries at safe
+ *  boundaries where the deadline is re-checked. Longest field-observed call:
+ *  137s — 170s allows it with margin while still fencing runaways. */
+export const ENGINE_CALL_TIMEOUT_MS = 170_000;
 
 /** what the reaper (cron sweep) should do with a running sim — pure so the
  *  offline matrix pins it. A fresh heartbeat is a live worker: never touch.
