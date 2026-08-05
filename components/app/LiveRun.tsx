@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { MiniSwarm } from "@/components/app/CastingTheater";
 import Markdown from "@/components/app/Markdown";
 import { distShares } from "@/lib/dist";
+import { computeToolAttachment } from "@/lib/feed";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import { createClient } from "@/lib/supabase/client";
 import type { PersonaSpec } from "@/lib/personas";
@@ -290,27 +291,13 @@ export default function LiveRun({
   }, [items]);
   // field report: a search belongs to the POST it informed — attach each tool
   // event to the SAME AGENT's next post (the engine emits searches before the
-  // post of the turn that ran them); unattached ones fall back to a card
-  const { toolsBySeq, attachedTools } = useMemo(() => {
-    const pending = new Map<string, { idx: number; t: LiveTool }[]>();
-    const bySeq = new Map<number, LiveTool[]>();
-    const attached = new Set<number>();
-    items.forEach((it, idx) => {
-      if (it.kind === "tool") {
-        const list = pending.get(it.t.agent_key) ?? [];
-        list.push({ idx, t: it.t });
-        pending.set(it.t.agent_key, list);
-      } else if (it.kind === "post" && it.post.author !== "user") {
-        const list = pending.get(it.post.agent_key);
-        if (list?.length) {
-          bySeq.set(it.post.seq, list.map((x) => x.t));
-          list.forEach((x) => attached.add(x.idx));
-          pending.delete(it.post.agent_key);
-        }
-      }
-    });
-    return { toolsBySeq: bySeq, attachedTools: attached };
-  }, [items]);
+  // post of the turn that ran them). ORDER-INDEPENDENT second pass (field
+  // fix): the observer tail polls posts before events each cycle, so a live
+  // search can land AFTER the post it informed — those attach BACKWARD to
+  // the agent's latest post in the same round instead of falling out as a
+  // standalone card. The card remains only for truly orphaned searches
+  // (the turn failed after searching, so its post never landed).
+  const { toolsBySeq, attachedTools } = useMemo(() => computeToolAttachment(items), [items]);
   const [searchOpen, setSearchOpen] = useState<Set<string>>(new Set());
 
   // 3e breadcrumbs: a reply that revives an EARLIER round gets a chip that
