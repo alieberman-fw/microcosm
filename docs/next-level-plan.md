@@ -605,6 +605,39 @@ sets). Implementation note: this is choreography, not a rebuild — BriefCompose
 CastingTheater, PopulationStage, RunConfigStage all exist; 6a composes them into
 Ask → Preflight → Studio and adds the DEPTH preset mapping in lib/run.ts.
 
+
+**DECISION (Adam, 2026-08-05 — after reviewing the Flow Lab prototypes):** the current
+staged flow STAYS THE CORE. No re-choreography of the workspace. 6a narrows to two
+concrete moves plus one new alternate view:
+
+1. **The brief step captures more, better.** File/document upload moves ONTO the brief
+   composer (prompt + docs are one gesture — same corpus pipeline underneath), and the
+   prompt box grows into a true free-form ask: users write EVERYTHING they want the
+   simulation to cover/answer/research in their own words, multi-part and messy
+   welcome. Submitting runs the Understanding pass; the WHAT I UNDERSTOOD card renders
+   in the workspace exactly as designed (intent + audience up top, sub-asks as editable
+   chips, output contracts, entities, criteria — each labeled with what it drives).
+   The rest of the flow — population review, run config, launch — is untouched.
+   COMPOSE MANUALLY survives.
+
+2. **QUICK RUN — the one-box alternate view (from Flow Lab's Flow A/D).** A small view
+   toggle on /sim/new switches to the one-box composer. Behavior: the empty state is
+   just the box + file drop; once the user starts typing, the config surfaces
+   progressively BELOW the box — the animated mode cards first, then the compact config
+   params for the selected mode. In this view there is NO population stage: hitting RUN
+   derives the contract, casts leads + generates the crowd behind the casting-theater
+   animation as the loading state, and drops straight into the live run screen. The
+   cost estimate still shows on the RUN button before commit (no-surprise-bills rule),
+   and a one-line "understood" strip (intent · N sub-asks · poll plan) renders between
+   typing and run — compressed trust, no full card. View preference persists per user.
+   Quick Run trades population review for speed; the classic flow remains the default.
+
+Revised PR slicing: **6-PR1** = Understanding pass + contract + files-on-brief + the
+WHAT I UNDERSTOOD card in the current flow · **6-PR2** = Quick Run view · **6-PR3** =
+agendas + resolution tracker + COVERAGE strip + adaptive poll plan · **6-PR4** = report
+blocks + semantic judge + audience register. The three-layers material above stays as
+design rationale; the Preflight-replaces-stages idea is parked, not adopted.
+
 ### 6b · The Understanding pass (technical)
 
 One CASTING_MODEL-tier call over prompt + doc names + first-N-token excerpts → contract
