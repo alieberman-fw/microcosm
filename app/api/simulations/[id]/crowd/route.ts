@@ -197,15 +197,20 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         };
         await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker));
 
-        // top up the dedupe shortfall: concurrent batches can't see each
-        // other's names, so a few duplicates get dropped — one serial pass
-        // closes the gap so the counts land exactly where the user set them
+        // top up the dedupe shortfall UNTIL THE COUNT IS EXACT (field report:
+        // 191 of 192 survived multiple regenerations — the old single pass
+        // could itself produce a duplicate and strand the count forever).
+        // Each retry asks for a couple of SPARES so one collision can't
+        // re-strand it; persist() caps at the deficit so we never overshoot.
         for (const group of ["experts", "residents"] as const) {
           const want = group === "experts" ? expertsSample : residentsSample;
-          const short = want - generatedBy[group];
-          if (short > 0) {
-            const specs = await runBatch({ group, count: short, index: 900 + (group === "experts" ? 1 : 2) });
-            await persist(specs, group, short);
+          for (let attempt = 0; attempt < 4; attempt++) {
+            const short = want - generatedBy[group];
+            if (short <= 0) break;
+            const ask = Math.min(short + 2, CROWD_BATCH);
+            const specs = await runBatch({ group, count: ask, index: 900 + attempt * 10 + (group === "experts" ? 1 : 2) });
+            const landed = await persist(specs, group, short);
+            if (landed === 0 && specs.length === 0) break; // API dead — fail honest below, don't spin
           }
         }
 
