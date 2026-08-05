@@ -50,7 +50,7 @@ export default async function RunPage({ params, searchParams }: {
 
   const [{ data: postRows }, { data: eventRows }, { data: latestReportRows }, { data: voteRows }] = await Promise.all([
     supabase!.from("posts").select("seq, author, agent_key, thread, reply_to, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true }),
-    supabase!.from("events").select("type, payload").eq("sim_id", id).in("type", ["sentiment", "tool"]).order("seq", { ascending: true }),
+    supabase!.from("events").select("type, payload").eq("sim_id", id).in("type", ["sentiment", "tool", "coverage", "agenda"]).order("seq", { ascending: true }),
     supabase!.from("reports").select("created_at").eq("sim_id", id).order("created_at", { ascending: false }).limit(1),
     supabase!.from("post_votes").select("seq, voter_key, voter_name, voter_role, vote").eq("sim_id", id),
   ]);
@@ -66,6 +66,14 @@ export default async function RunPage({ params, searchParams }: {
   });
   const initialSentiments: LiveSentiment[] = (eventRows ?? []).filter((e) => e.type === "sentiment").map((e) => e.payload as unknown as LiveSentiment);
   const initialTools: LiveTool[] = (eventRows ?? []).filter((e) => e.type === "tool").map((e) => e.payload as unknown as LiveTool);
+  // 6-PR3 — latest tracker scores + per-round agenda labels for replay
+  const coverageRows = (eventRows ?? []).filter((e) => e.type === "coverage").map((e) => e.payload as { round?: number; scores?: { id: string; ask: string; score: number; missing: string }[] });
+  const initialCoverage = coverageRows.length ? (coverageRows[coverageRows.length - 1].scores ?? []) : [];
+  const initialAgendas: Record<number, string> = {};
+  for (const e of (eventRows ?? []).filter((x) => x.type === "agenda")) {
+    const p = e.payload as { round?: number; label?: string };
+    if (p.round && p.label) initialAgendas[p.round] = p.label;
+  }
   const initialVotes = (voteRows ?? []).map((v) => ({
     seq: v.seq as number, voter_key: v.voter_key as string, voter_name: v.voter_name as string,
     voter_role: (v.voter_role as string) ?? "", vote: (v.vote as number) === -1 ? -1 as const : 1 as const,
@@ -91,6 +99,8 @@ export default async function RunPage({ params, searchParams }: {
       initialSentiments={initialSentiments}
       initialTools={initialTools}
       initialVotes={initialVotes}
+      initialCoverage={initialCoverage}
+      initialAgendas={initialAgendas}
       initialStatus={sim.status as string}
       maxRounds={cfg.rounds}
       hasReport={(() => {

@@ -48,6 +48,27 @@ function instrumentOf(spec: Pick<ReportSpec, "poll_options" | "sentiment">): Sta
   return rows;
 }
 
+/** 6-PR3 — adaptive poll plans vary the question across the run: group the
+ *  polls by angle (falling back to the question text) so every slider's
+ *  percentages share one referent. A single-instrument run = one group. */
+function sentimentGroups(spec: Pick<ReportSpec, "poll_question" | "poll_options" | "sentiment">): { key: string; question?: string; entries: NonNullable<ReportSpec["sentiment"]>; stances: Stance[] }[] {
+  const entries = spec.sentiment ?? [];
+  const byKey = new Map<string, NonNullable<ReportSpec["sentiment"]>>();
+  for (const s of entries) {
+    const key = s.angle ?? s.question ?? "POLL";
+    byKey.set(key, [...(byKey.get(key) ?? []), s]);
+  }
+  return [...byKey.entries()].map(([key, group]) => {
+    const options = group.find((g) => g.options?.length)?.options ?? (byKey.size === 1 ? spec.poll_options ?? undefined : undefined);
+    return {
+      key,
+      question: group.find((g) => g.question)?.question ?? (byKey.size === 1 ? spec.poll_question ?? undefined : undefined),
+      entries: group,
+      stances: instrumentOf({ poll_options: options, sentiment: group }),
+    };
+  });
+}
+
 
 /** one slider, one set of bars: scrub through the rounds and watch the crowd
  *  move — with an expandable table of the percentages over time */
@@ -399,13 +420,15 @@ function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
         <div style={{ marginTop: 34 }}>
           <div style={label}>WHAT THE CROWD SAID</div>
           <div className="card" style={{ marginTop: 14, padding: "20px 24px", maxWidth: 760 }}>
-            {spec.poll_question && (
+            {(finalPoll.question ?? spec.poll_question) && (
               <p style={{ margin: "0 0 16px", fontSize: 14, lineHeight: 1.6, color: "var(--t2)" }}>
-                We asked {finalPoll.polled} simulated locals: <span style={{ fontWeight: 600, color: "var(--t1)" }}>“{spec.poll_question}”</span>
+                We asked {finalPoll.polled} simulated locals: <span style={{ fontWeight: 600, color: "var(--t1)" }}>“{finalPoll.question ?? spec.poll_question}”</span>
               </p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {(() => { const inst = instrumentOf(spec); const fs = Object.fromEntries(distShares(finalPoll.dist, inst.map((x) => x.key)).map((x) => [x.key, x.pct])); return inst.map(({ key, plain: pl, color }) => {
+              {/* 6-PR3: the final poll answers ITS OWN question — an adaptive
+                  plan's closer, not necessarily the spec-level instrument */}
+              {(() => { const inst = instrumentOf({ poll_options: finalPoll.options ?? spec.poll_options, sentiment: [finalPoll] }); const fs = Object.fromEntries(distShares(finalPoll.dist, inst.map((x) => x.key)).map((x) => [x.key, x.pct])); return inst.map(({ key, plain: pl, color }) => {
                 const p = fs[key] ?? 0;
                 return (
                   <div key={key}>
@@ -884,11 +907,22 @@ export default function ReportView({
             </div>
           </div>
 
-          {/* crowd sentiment — scrub the rounds, watch the crowd move */}
+          {/* crowd sentiment — scrub the rounds, watch the crowd move.
+              6-PR3: adaptive plans get one slider PER ANGLE, so every trend's
+              percentages share a single referent question */}
           {(spec.sentiment?.length ?? 0) >= 2 && (
             <div style={{ marginTop: 34 }}>
               <div style={label}>CROWD SENTIMENT · SCRUB THE ROUNDS</div>
-              <SentimentSlider sentiment={spec.sentiment!} question={spec.poll_question} stances={instrumentOf(spec)} />
+              {sentimentGroups(spec).map((g) => (
+                <div key={g.key} style={{ marginTop: 6 }}>
+                  {sentimentGroups(spec).length > 1 && (
+                    <div style={{ ...mono, fontSize: 9, letterSpacing: ".09em", color: "var(--acc)", marginTop: 12 }}>
+                      {g.key.toUpperCase()}{g.entries.length === 1 ? " · ONE ROUND" : ""}
+                    </div>
+                  )}
+                  <SentimentSlider sentiment={g.entries} question={g.question} stances={g.stances} />
+                </div>
+              ))}
             </div>
           )}
 

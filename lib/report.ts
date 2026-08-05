@@ -53,7 +53,10 @@ export interface ReportSpec {
   risks: { risk: string; severity: "high" | "medium" | "low"; mitigation: string; watch_signal: string }[];
   dissents: { name: string; role: string; position: string; quote: string; seq: number }[];
   tripwires: string[];
-  sentiment?: { round: number; polled: number; dist: Record<string, number>; ballots?: { name: string; stance: string }[] }[];
+  /** 6-PR3: each poll carries its own question/options/angle — adaptive
+   *  plans vary the instrument across the run, and the trend slider groups
+   *  by angle so percentages always share a referent */
+  sentiment?: { round: number; polled: number; dist: Record<string, number>; ballots?: { name: string; stance: string }[]; question?: string; options?: string[]; angle?: string }[];
   poll_question?: string; // the one proposition every crowd poll asked (engine-derived from the brief)
   poll_options?: string[]; // choice instrument (PR-B): the alternatives the crowd chose among; absent = classic stance poll
   /** 3d — tool usage frozen with the report: how many calls, and the deduped

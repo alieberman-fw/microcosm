@@ -147,7 +147,7 @@ function layoutLeads(mode: string, leads: LiveLead[], w: number, h: number): Rec
 }
 
 export default function LiveRun({
-  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialVotes = [], initialTools = [], initialStatus, maxRounds, hasReport = false, hasStaleReport = false,
+  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialVotes = [], initialTools = [], initialCoverage = [], initialAgendas = {}, initialStatus, maxRounds, hasReport = false, hasStaleReport = false,
 }: {
   simId: string;
   problem: string;
@@ -163,6 +163,9 @@ export default function LiveRun({
   initialVotes?: LiveVote[];
   /** 3d — persisted tool events (search cards) for replay */
   initialTools?: LiveTool[];
+  /** 6-PR3 — latest tracker scores (the COVERAGE strip) + agenda labels */
+  initialCoverage?: { id: string; ask: string; score: number; missing: string }[];
+  initialAgendas?: Record<number, string>;
   initialStatus: string;
   maxRounds: number;
   hasReport?: boolean;
@@ -207,6 +210,9 @@ export default function LiveRun({
   const [confirmRerun, setConfirmRerun] = useState(false);
   const [probOpen, setProbOpen] = useState(false);
   const [votes, setVotes] = useState<LiveVote[]>(initialVotes);
+  // 6-PR3 — the run walks the brief: sub-ask resolution scores + round agendas
+  const [coverage, setCoverage] = useState(initialCoverage);
+  const [agendas, setAgendas] = useState<Record<number, string>>(initialAgendas);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [rosterOpen, setRosterOpen] = useState(false);
   const [profileKey, setProfileKey] = useState<string | null>(null);
@@ -489,6 +495,13 @@ export default function LiveRun({
       for (let i = 0; i < ring.length; i += Math.max(1, Math.floor(ring.length / 14))) {
         pulses.current.push({ a: ring[i], b: { x: cx, y: cy }, t0: now + (i % 7) * 120, dur: 2200, strong: false });
       }
+    } else if (evt.type === "coverage") {
+      // latest tracker pass wins — the strip always shows current resolution
+      const scores = (evt as unknown as { scores?: { id: string; ask: string; score: number; missing: string }[] }).scores;
+      if (Array.isArray(scores) && scores.length) setCoverage(scores);
+    } else if (evt.type === "agenda") {
+      const a = evt as unknown as { round: number; label: string };
+      if (a.label) setAgendas((prev) => (prev[a.round] === a.label ? prev : { ...prev, [a.round]: a.label }));
     } else if (evt.type === "votes") {
       const vs = ((evt as unknown as { votes: LiveVote[] }).votes ?? [])
         .filter((v) => !appliedVotes.current.has(`${v.seq}:${v.voter_key}`));
@@ -668,7 +681,7 @@ export default function LiveRun({
         const [postsQ, evQ, simQ] = await Promise.all([
           supa.from("posts").select("seq, agent_key, author, thread, reply_to, tag, content, cites")
             .eq("sim_id", simId).gt("seq", maxSeq).order("seq", { ascending: true }).limit(200),
-          supa.from("events").select("type, payload").eq("sim_id", simId).in("type", ["sentiment", "votes", "tool"]),
+          supa.from("events").select("type, payload").eq("sim_id", simId).in("type", ["sentiment", "votes", "tool", "coverage", "agenda"]),
           supa.from("simulations").select("status, config").eq("id", simId).maybeSingle(),
         ]);
         const rows = (postsQ.data ?? []) as Record<string, unknown>[];
@@ -681,7 +694,7 @@ export default function LiveRun({
           handleEvt(postRowToEvt(r));
         }
         for (const e of (evQ.data ?? []) as { payload: Record<string, unknown> }[]) {
-          if (e.payload?.type === "sentiment" || e.payload?.type === "votes" || e.payload?.type === "tool") handleEvt(e.payload);
+          if (["sentiment", "votes", "tool", "coverage", "agenda"].includes(String(e.payload?.type))) handleEvt(e.payload);
         }
         const st = (simQ.data?.status as string | undefined) ?? "";
         const cfg2 = (simQ.data?.config ?? {}) as { run_state?: { heartbeat_at?: string | null }; run_result?: { stop?: string } };
@@ -983,7 +996,11 @@ export default function LiveRun({
       const prevPh = prev?.post.phase ?? prev?.post.tag;
       return ph !== prevPh ? String(ph).toUpperCase() : null;
     }
-    if (!prev || it.post.round !== prev.post.round) return `ROUND ${it.post.round}${viewMode === "Roundtable" ? " — EVERY VOICE IN ORDER" : viewMode === "Jury" ? " — SCORE, THEN DELIBERATE" : ""}`;
+    // §6c: round dividers carry the round's AGENDA when the contract set one
+    if (!prev || it.post.round !== prev.post.round) {
+      const agenda = agendas[it.post.round];
+      return `ROUND ${it.post.round}${agenda ? ` — ${agenda}` : viewMode === "Roundtable" ? " — EVERY VOICE IN ORDER" : viewMode === "Jury" ? " — SCORE, THEN DELIBERATE" : ""}`;
+    }
     return null;
   };
 
@@ -1044,6 +1061,31 @@ export default function LiveRun({
           ⚠ NO CROWD MATERIALIZED YET — LAUNCH WILL GENERATE IT AUTOMATICALLY, OR{" "}
           <Link href={`/sim/${simId}`} style={{ color: "var(--warn)", textDecoration: "underline" }}>REVIEW IT ON THE POPULATION STAGE FIRST</Link>
           {" "}(RE-CASTS CLEAR THE CROWD)
+        </div>
+      )}
+      {/* §6c COVERAGE — one chip per sub-ask filling toward resolved, so
+          convergence is visible and MEANS something. Only when the contract
+          gave the run sub-asks and the tracker has spoken. */}
+      {coverage.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          <span style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t6)" }}>COVERAGE</span>
+          {coverage.map((c) => (
+            <span
+              key={c.id}
+              title={`${c.ask}${c.missing ? ` — still missing: ${c.missing}` : c.score >= 85 ? " — settled" : ""} (${c.score}/100)`}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${c.score >= 85 ? "var(--acc)" : "var(--ln4)"}`, borderRadius: 100, padding: "3px 10px", cursor: "help" }}
+            >
+              <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: c.score >= 85 ? "var(--acc)" : "var(--t5)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {c.ask.toUpperCase()}
+              </span>
+              <span style={{ width: 34, height: 3, borderRadius: 100, background: "var(--sf2)", overflow: "hidden", flex: "none" }}>
+                <span style={{ display: "block", width: `${c.score}%`, height: "100%", borderRadius: 100, background: c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)", transition: "width .6s ease" }} />
+              </span>
+            </span>
+          ))}
+          {agendas[currentRound] && status === "running" && (
+            <span style={{ ...mono, fontSize: 8, letterSpacing: ".07em", color: "var(--acc)" }}>· AGENDA: {agendas[currentRound]}</span>
+          )}
         </div>
       )}
       <div style={{ height: 4, borderRadius: 100, background: "var(--sf2)", marginTop: 12, overflow: "hidden" }}>

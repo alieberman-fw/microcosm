@@ -16,7 +16,9 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { CoverageScore, PollAngle, SubAskLite } from "@/lib/agenda";
 import { FrozenSpec } from "@/lib/casting";
+import { BriefContract } from "@/lib/understand";
 import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
 import { CorpusDocInput, buildCorpusBlocks, normalizeQuestions } from "@/lib/corpus";
 import { EngineContext, EngineEvent, EngineLead, PostRec, RunResume, runMode } from "@/lib/engine";
@@ -46,7 +48,11 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
   try {
     const { data: sim } = await db.from("simulations").select("id, brief, config, status").eq("id", simId).maybeSingle();
     if (!sim || sim.status !== "running") { send({ type: "error", error: "Run is no longer active" }); return; }
-    const brief = (sim.brief ?? {}) as { problem?: string; questions?: unknown };
+    const brief = (sim.brief ?? {}) as { problem?: string; questions?: unknown; contract?: BriefContract };
+    // 6-PR3 (§6c/§6d): the contract drives round agendas, the resolution
+    // tracker, and the adaptive poll plan; no contract → all three off
+    const subAsks: SubAskLite[] = (brief.contract?.sub_asks ?? []).map((s) => ({ id: s.id, ask: s.ask }));
+    const pollPlan: PollAngle[] | null = Array.isArray(brief.contract?.poll_plan) ? brief.contract!.poll_plan! : null;
     const config = (sim.config as Record<string, unknown>) ?? {};
     const cfg: RunConfig = { ...RUN_DEFAULTS, ...((config.run as Partial<RunConfig>) ?? {}) };
     const mode = String((config.casting as { mode?: string } | undefined)?.mode ?? "Agora");
@@ -82,6 +88,8 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
     // is the source of truth, whichever worker ran the previous slice ----
     const polledRounds = new Set<number>();
     const votedRounds = new Set<number>();
+    const trackedRounds = new Set<number>();
+    let coverage: CoverageScore[] = [];
     // 3d — the shared factbase survives slice handoffs: rebuild it from the
     // persisted tool events so slice 2's agents see slice 1's searches
     const pulledFacts: { query: string; results: { title: string; url: string }[] }[] = [];
@@ -93,7 +101,8 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
         const meta = (r.cites as { name?: string; role?: string; round?: number } | null) ?? {};
         return { name: meta.name ?? "Agent", role: meta.role ?? "", content: r.content as string, tag: r.tag as string, seq: r.seq as number, agentKey: r.agent_key as string, round: meta.round ?? 1, replyTo: r.reply_to as number | null };
       });
-      const { data: prevEvents } = await db.from("events").select("type, payload").eq("sim_id", simId).in("type", ["sentiment", "votes", "tool"]);
+      const { data: prevEvents } = await db.from("events").select("type, payload").eq("sim_id", simId).in("type", ["sentiment", "votes", "tool", "coverage"]);
+      let latestCoverageRound = 0;
       for (const e of prevEvents ?? []) {
         if (e.type === "tool") {
           const p = e.payload as { query?: string; results?: { title: string; url: string }[] };
@@ -102,6 +111,15 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
         }
         const round = Number((e.payload as { round?: number }).round ?? 0);
         if (e.type === "sentiment") polledRounds.add(round);
+        else if (e.type === "coverage") {
+          // 6-PR3 resume: the latest persisted scores seed the next agenda
+          trackedRounds.add(round);
+          if (round >= latestCoverageRound) {
+            latestCoverageRound = round;
+            const scores = (e.payload as { scores?: CoverageScore[] }).scores;
+            if (Array.isArray(scores)) coverage = scores;
+          }
+        }
         else votedRounds.add(round);
       }
       resume = { posts: recs, seq: recs.reduce((m, r) => Math.max(m, r.seq), 0), round: runState.round ?? Math.max(1, ...recs.map((r) => r.round)) };
@@ -172,6 +190,7 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
       // outlast the longest single call (field-observed: 137s web-search turn)
       deadline: Date.now() + (Number(process.env.ENGINE_CHUNK_MS) || SLICE_BUDGET_MS),
       polledRounds, votedRounds,
+      subAsks, pollPlan, coverage, trackedRounds,
       emit, logCall,
       isCancelled: () => false, // client disconnects NEVER cancel a run (3c); stop is graceful, below
     };

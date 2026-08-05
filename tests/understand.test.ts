@@ -178,6 +178,41 @@ describe("normalizeContractEdits", () => {
   });
 });
 
+describe("poll_plan normalization (6-PR3)", () => {
+  const plan = [
+    { angle: "Gut read", question: "Credible thesis?", instrument: "proposition", phase: "early" },
+    { angle: "Pick", question: "Which one?", instrument: "choice", options: ["a", "b"], phase: "middle" },
+  ];
+
+  it("normalizes angles; choice keeps its options, proposition drops them", () => {
+    const c = normalizeContract({ ...full(), poll_plan: plan }, DOCS, NOW)!;
+    expect(c.poll_plan).toEqual([
+      { angle: "Gut read", question: "Credible thesis?", instrument: "proposition", phase: "early" },
+      { angle: "Pick", question: "Which one?", instrument: "choice", phase: "middle", options: ["a", "b"] },
+    ]);
+  });
+
+  it("[] is a DECISION (no sentiment surface) and survives; an absent field stays undefined (legacy)", () => {
+    expect(normalizeContract({ ...full(), poll_plan: [] }, DOCS, NOW)!.poll_plan).toEqual([]);
+    expect(normalizeContract(full(), DOCS, NOW)!.poll_plan).toBeUndefined();
+  });
+
+  it("drops a choice without ≥2 options, unknown instruments, dupes; caps at 3", () => {
+    const c = normalizeContract({
+      ...full(),
+      poll_plan: [
+        { angle: "Bad choice", question: "Q", instrument: "choice", options: ["only"], phase: "early" },
+        { angle: "Bad kind", question: "Q", instrument: "ranking", phase: "early" },
+        ...plan,
+        { angle: "Gut read", question: "dupe angle", instrument: "proposition", phase: "late" },
+        { angle: "Third", question: "Q3", instrument: "proposition", phase: "late" },
+        { angle: "Fourth", question: "Q4", instrument: "proposition", phase: "late" },
+      ],
+    }, DOCS, NOW)!;
+    expect(c.poll_plan!.map((p) => p.angle)).toEqual(["Gut read", "Pick", "Third"]);
+  });
+});
+
 describe("populationHintLines", () => {
   it("is empty without described cohorts", () => {
     expect(populationHintLines(null)).toBe("");
