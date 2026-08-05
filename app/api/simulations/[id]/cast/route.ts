@@ -8,6 +8,7 @@ import {
   CASTING_MODEL, CROWD_MODEL, castingAddSystem, castingGenerateSystem, castingPlanSystem, overlapScore, roleOverlap, seatKey,
 } from "@/lib/casting";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
+import { BriefContract, populationHintLines } from "@/lib/understand";
 
 export const maxDuration = 180; // plan + generation calls for a full panel
 
@@ -48,7 +49,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const { data: sim } = await supabase.from("simulations").select("id, brief, config").eq("id", id).maybeSingle();
   if (!sim) return NextResponse.json({ error: "Simulation not found" }, { status: 404 });
-  const brief = sim.brief as { problem?: string; questions?: unknown; success?: unknown; template?: string };
+  const brief = sim.brief as { problem?: string; questions?: unknown; success?: unknown; template?: string; contract?: BriefContract };
   if (!brief?.problem) return NextResponse.json({ error: "Write the brief first" }, { status: 400 });
 
   // corpus inventory + a taste of each doc so casting sees what evidence exists
@@ -79,6 +80,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     (success.length ? `SUCCESS CRITERIA:\n${success.map((s) => `- ${s}`).join("\n")}\n` : "") +
     (brief.template && brief.template !== "Custom" ? `DECISION SHAPE (internal classification): ${brief.template}\n` : "") +
     (docLines.length ? `DILIGENCE CORPUS:\n${docLines.join("\n")}\n` : "DILIGENCE CORPUS: none uploaded yet\n") +
+    // 6-PR1: when the PROMPT described who to simulate ("homebuyers aged
+    // 35-45 in Beverly Hills"), the understanding contract carries it and
+    // the director must cast around exactly those cohorts
+    populationHintLines(brief.contract) +
     prevLine +
     (guidance ? `USER GUIDANCE FOR THIS CAST (apply it): ${guidance}\n` : "");
 

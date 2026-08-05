@@ -13,6 +13,8 @@ import BriefComposer, { Brief } from "@/components/app/BriefComposer";
 import Markdown from "@/components/app/Markdown";
 import PopulationStage, { CastingInfo, WorkspaceSeat } from "@/components/app/PopulationStage";
 import RunConfigStage from "@/components/app/RunConfigStage";
+import UnderstandingCard from "@/components/app/UnderstandingCard";
+import { BriefContract } from "@/lib/understand";
 import { RunConfig } from "@/lib/run";
 import { DIRECT_CONTEXT_BUDGET, MAX_DOC_BYTES, imageOrdinalsSafe } from "@/lib/corpus";
 
@@ -65,6 +67,7 @@ export default function SimWorkspace({
   initialSeats,
   initialCrowd = [],
   initialCasting,
+  initialContract = null,
   initialAnswers = [],
   initialRun = null,
   initialTools = [],
@@ -76,6 +79,8 @@ export default function SimWorkspace({
   initialSeats: WorkspaceSeat[];
   initialCrowd?: WorkspaceSeat[];
   initialCasting: CastingInfo | null;
+  /** 6-PR1 — the Brief Contract (brief.contract) for the understanding card */
+  initialContract?: BriefContract | null;
   initialAnswers?: Answer[];
   initialRun?: Partial<RunConfig> | null;
   /** 3d — saved agent-tools allowlist (config.tools) */
@@ -266,7 +271,15 @@ export default function SimWorkspace({
       ) : (
         <div id="stage-brief" style={{ marginTop: 34, animation: "fadeUp .4s ease both", scrollMarginTop: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20 }}>
-            <h1 style={{ margin: 0, fontSize: "clamp(24px,3vw,36px)", fontWeight: 600, lineHeight: 1.22, letterSpacing: "-.03em", maxWidth: 760 }}>
+            {/* free-form asks run long — step the headline down so a
+                multi-paragraph brief reads as prose, not a wall of display type */}
+            <h1
+              style={
+                brief.problem.length > 300
+                  ? { margin: 0, fontSize: "clamp(15px,1.6vw,18px)", fontWeight: 500, lineHeight: 1.6, letterSpacing: "-.01em", maxWidth: 820, color: "var(--t1)", whiteSpace: "pre-wrap" }
+                  : { margin: 0, fontSize: "clamp(24px,3vw,36px)", fontWeight: 600, lineHeight: 1.22, letterSpacing: "-.03em", maxWidth: 760 }
+              }
+            >
               {brief.problem}
             </h1>
             <button
@@ -320,6 +333,14 @@ export default function SimWorkspace({
           )}
         </div>
       )}
+
+      {/* the understanding mirror — WHAT I UNDERSTOOD (6-PR1) */}
+      <UnderstandingCard
+        simId={sim.id}
+        hasProblem={Boolean(brief.problem.trim())}
+        initialContract={initialContract}
+        parsedDocNames={parsedDocs.map((d) => d.name)}
+      />
 
       {/* corpus */}
       <div id="stage-corpus" className="card" style={{ padding: "26px 30px", marginTop: 36, scrollMarginTop: 20 }}>

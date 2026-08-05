@@ -18,14 +18,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
   const problem = (body.problem ?? "").trim();
-  if (!problem || problem.length > 2000) {
-    return NextResponse.json({ error: "Problem statement must be 1–2000 characters" }, { status: 400 });
+  if (!problem || problem.length > 6000) {
+    return NextResponse.json({ error: "Problem statement must be 1–6000 characters" }, { status: 400 });
   }
+
+  // a brief edit never wipes the contract — it survives, flagged stale so
+  // the understanding card offers RE-DERIVE (6-PR1)
+  const { data: existing } = await supabase.from("simulations").select("brief").eq("id", id).maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Simulation not found" }, { status: 404 });
+  const prior = (existing.brief ?? {}) as { problem?: string; contract?: Record<string, unknown> };
+  const contract = prior.contract
+    ? { ...prior.contract, ...(prior.problem !== problem ? { stale: true } : {}) }
+    : undefined;
+
   const brief = {
     problem,
     questions: normalizeQuestions(body.questions),
     template: (body.template ?? "Custom").slice(0, 60),
     success: normalizeSuccess(body.success),
+    ...(contract ? { contract } : {}),
   };
 
   const { data, error } = await supabase
