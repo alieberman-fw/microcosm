@@ -5,7 +5,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
-import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, REPORT_BLOCKS_SCHEMA, blocksSpecFor, blocksSynthSystem, clipText, judgePatchSystem, judgeSystem, mergePatchedBlocks, mergePatchedSections, normalizeBlocks, parseJudgeVerdict, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, synthBudgetFor, synthesizePlain, verifierSystem } from "@/lib/report";
+import { REPORT_DIRECTOR_SCHEMA, REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, REPORT_BLOCKS_SCHEMA, blocksSpecFor, blocksSynthSystem, clipText, judgePatchSystem, judgeSystem, mergePatchedBlocks, mergePatchedSections, normalizeBlocks, parseJudgeVerdict, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, sectionWorkerSystem, synthBudgetFor, synthesizePlain, verifierSystem } from "@/lib/report";
 import { BriefContract } from "@/lib/understand";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { normalizeEnabledTools } from "@/lib/tools";
@@ -249,9 +249,96 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         // dedupe + clamp: dense now STARTS high enough that pass 1 normally
         // lands (a 24K ceiling truncated a 22K dense draft in the field and
         // doubled the wall-clock with a full 250s retry)
-        const budgets = [...new Set([synthBudget, Math.min(synthBudget * 2, 48_000), 48_000])];
         let raw: Record<string, unknown> | null = null;
         let lastErr = "";
+
+        // ---- 6-PR4b (§8): PARALLEL SECTION SYNTHESIS — one worker per
+        // question drafts concurrently, then a DIRECTOR writes everything
+        // else consistent with the drafts. Wall-clock ≈ slowest section +
+        // director, instead of one monolithic pass emitting every token
+        // serially. Any failure falls back to the single-pass ladder below,
+        // honestly and completely. ----
+        const outlineQs = questions.slice(0, 8);
+        if (outlineQs.length >= 3) {
+          send({ type: "stage", value: "compile", note: `DRAFTING ${outlineQs.length} SECTIONS IN PARALLEL…` });
+          let drafted = 0;
+          const workerBudget = effLength === "dense" ? 6_000 : 4_000;
+          const one = async (q: { label: string; detail?: string }): Promise<Record<string, unknown> | null> => {
+            for (const wb of [workerBudget, workerBudget * 2]) {
+              const t0 = Date.now();
+              try {
+                const res = await anthropic.messages.create({
+                  model: synthModel, max_tokens: wb,
+                  system: sectionWorkerSystem(effLength),
+                  messages: [{ role: "user", content: `${briefText}\nASSIGNED QUESTION: ${q.label}${q.detail ? ` — ${q.detail}` : ""}\nTRANSCRIPT:\n${transcript.slice(0, 140_000)}` }],
+                });
+                await logCall("report.section", synthModel, res.usage, t0, undefined, { q: q.label.slice(0, 60), budget: wb, stop: res.stop_reason });
+                if (res.stop_reason === "max_tokens") continue; // escalate once
+                const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+                const parsed = parseLooseObject(text);
+                if (parsed && typeof parsed.finding === "string" && (parsed.finding as string).length > 20) {
+                  drafted += 1;
+                  send({ type: "stage", value: "compile", note: `SECTIONS · ${drafted}/${outlineQs.length} DRAFTED IN PARALLEL…` });
+                  return parsed;
+                }
+                lastErr = "unparseable section draft";
+              } catch (e) {
+                await logCall("report.section", synthModel, null, t0, e instanceof Error ? e.message : "worker failed");
+                return null;
+              }
+            }
+            return null;
+          };
+          const results: (Record<string, unknown> | null)[] = new Array(outlineQs.length).fill(null);
+          let nextQ = 0;
+          const lane = async () => { for (;;) { const i = nextQ++; if (i >= outlineQs.length) return; results[i] = await one(outlineQs[i]); } };
+          await Promise.all(Array.from({ length: Math.min(4, outlineQs.length) }, lane));
+
+          if (results.every(Boolean)) {
+            send({ type: "stage", value: "compile", note: "SECTIONS DRAFTED — THE DIRECTOR IS WRITING THE VERDICT, RISKS & DISSENTS…" });
+            for (const db of [12_000, 24_000]) {
+              const t0 = Date.now();
+              try {
+                const ms = anthropic.messages.stream({
+                  model: synthModel, max_tokens: db,
+                  system: reportSynthSystem(effLength, { director: true }),
+                  messages: [{ role: "user", content: `${briefText}\nSECTION DRAFTS (final — write everything else consistent with these):\n${JSON.stringify(results)}\nTRANSCRIPT:\n${transcript.slice(0, 160_000)}` }],
+                  output_config: { format: { type: "json_schema", schema: REPORT_DIRECTOR_SCHEMA } },
+                });
+                let dbuf = "";
+                let dNote = Date.now();
+                ms.on("text", (t) => {
+                  dbuf += t;
+                  if (Date.now() - dNote > 2000) {
+                    dNote = Date.now();
+                    const tick = synthTicker(dbuf, { elapsedMs: Date.now() - t0 });
+                    send({ type: "stage", value: "compile", note: tick ?? `DIRECTOR · ~${Math.round(dbuf.length / 6).toLocaleString()} WORDS…` });
+                  }
+                });
+                const res = await ms.finalMessage();
+                await logCall("report.director", synthModel, res.usage as { input_tokens: number; output_tokens: number }, t0, undefined, { budget: db, stop: res.stop_reason, sections: outlineQs.length });
+                if (res.stop_reason === "max_tokens") { lastErr = "director outran the ceiling"; continue; }
+                const dtext = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+                const dRaw = parseLooseObject(dtext);
+                if (!dRaw) { lastErr = "unparseable director pass"; continue; }
+                const merged = { ...dRaw, sections: results };
+                const incomplete = reportSpecIncomplete(merged, { questions: questions.length, criteria: success.length });
+                if (incomplete) { lastErr = `incomplete director pass — ${incomplete}`; break; } // single-pass rescues
+                raw = merged;
+                break;
+              } catch (e) {
+                lastErr = e instanceof Error ? e.message : "director failed";
+                await logCall("report.director", synthModel, null, t0, lastErr);
+                break;
+              }
+            }
+          } else {
+            lastErr = lastErr || "a section worker failed";
+          }
+          if (!raw) send({ type: "stage", value: "compile", note: "PARALLEL PATH FELL SHORT — FALLING BACK TO THE SINGLE-PASS SYNTHESIS…" });
+        }
+
+        const budgets = [...new Set([synthBudget, Math.min(synthBudget * 2, 48_000), 48_000])];
         for (let attempt = 0; attempt < budgets.length && !raw; attempt++) {
           const t0 = Date.now();
           try {

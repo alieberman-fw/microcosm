@@ -776,6 +776,8 @@ just decides which voice leads. Forum language is untouched.
   judge receipt in methodology, executive register via eager synthesizePlain;
   parallel Desk-section synthesis + ranking/matrix/free-probe crowd instruments
   split to 6-PR4b so the synthesis restructure lands isolated)
+  ✅ 6-PR4b SHIPPED (2026-08-05: parallel workers + derived director schema +
+  honest single-pass fallback; instruments deferred to ride with 6d-2 cohorts)
 
 **RE-ORDERED (Adam's field report, 2026-08-05, edge-industrial run 0a367882):** the
 report ranked 6 of the brief's 11 enumerated categories (the rest narrated in prose) and

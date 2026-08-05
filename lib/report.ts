@@ -311,7 +311,11 @@ export function reportDepthRule(length: ReportLength): string {
   return `DEPTH: STANDARD — executive summary 4-6 sentences; findings 3-5 sentences each.`;
 }
 
-export function reportSynthSystem(length: ReportLength = "standard"): string {
+/** 6-PR4b (§8) — the DIRECTOR variant writes everything EXCEPT sections
+ *  (drafted in parallel by section workers and provided as input); the
+ *  full variant is the single-call path, unchanged. */
+export function reportSynthSystem(length: ReportLength = "standard", opts?: { director?: boolean }): string {
+  const director = opts?.director === true;
   return (
     `You are the report director for Microcosm, an agent-swarm simulation platform for real-estate decisions. ` +
     `You are given a research brief and the full transcript of a panel deliberation (posts numbered by [seq]). ` +
@@ -321,8 +325,10 @@ export function reportSynthSystem(length: ReportLength = "standard"): string {
     ` "bottom_line": {"answer": "ONE plain sentence answering the brief — no jargon, a CEO reads only this", "changes_it": "ONE plain sentence: the single thing most likely to change this answer", "next_step": "ONE plain sentence: what to do in the next two weeks"},\n` +
     ` "executive_summary": "4-6 sentences a decision-maker reads first — concrete, numbers included",\n` +
     ` "dimension_scores": [{"name": "...", "score": 0-10, "note": "one line"}],   // 4-6 dimensions THIS brief actually turns on\n` +
-    ` "sections": [{"question": "the user's question AS THEY ASKED IT (shorten but keep their words — never replace with an analyst label)", "answer": "1-2 sentences that DIRECTLY answer the question as asked — verdict first, then the number ('Yes — 900 units absorb, but at $1.95-2.05/SF, not the underwritten $2.05+')", "finding": "3-5 sentences of supporting argument", "numbers": [{"label": "ABSORPTION", "value": "20-24 units/mo"}], "cites": [seq, ...]}],  // one per question-to-resolve IN ORDER, THEN one per success criterion the question sections don't already fully deliver; 2-4 numbers per section ([] only if truly qualitative)\n` +
-    `RANKING RULE (non-negotiable): when the brief ENUMERATES a set of items to rank, order, or compare (categories, options, sites, plans), the section answering it must place the COMPLETE ordered list in "numbers" — one entry per enumerated item, {"label": "#1", "value": "item name — one-clause reason"}, EVERY item from the brief present with an explicit position, even the ones the panel barely discussed (say so in the reason: "never debated — ranked on thesis fit alone"). A ranking that covers a subset and narrates the rest in prose FAILS the user's ask.\n` +
+    (director
+      ? `SECTION DRAFTS ARE PROVIDED in the user message — they were written in parallel by section workers and are FINAL. Do NOT emit a "sections" field; write every other field CONSISTENT with those drafts (same verdict direction, same numbers, cite the same posts where relevant).\n`
+      : ` "sections": [{"question": "the user's question AS THEY ASKED IT (shorten but keep their words — never replace with an analyst label)", "answer": "1-2 sentences that DIRECTLY answer the question as asked — verdict first, then the number ('Yes — 900 units absorb, but at $1.95-2.05/SF, not the underwritten $2.05+')", "finding": "3-5 sentences of supporting argument", "numbers": [{"label": "ABSORPTION", "value": "20-24 units/mo"}], "cites": [seq, ...]}],  // one per question-to-resolve IN ORDER, THEN one per success criterion the question sections don't already fully deliver; 2-4 numbers per section ([] only if truly qualitative)\n` +
+        `RANKING RULE (non-negotiable): when the brief ENUMERATES a set of items to rank, order, or compare (categories, options, sites, plans), the section answering it must place the COMPLETE ordered list in "numbers" — one entry per enumerated item, {"label": "#1", "value": "item name — one-clause reason"}, EVERY item from the brief present with an explicit position, even the ones the panel barely discussed (say so in the reason: "never debated — ranked on thesis fit alone"). A ranking that covers a subset and narrates the rest in prose FAILS the user's ask.\n`) +
     ` "criteria": [{"criterion": "the success criterion verbatim (shortened ok)", "where": "one line: which section/part of this report delivers it"}],  // one entry per success criterion — this is the delivery receipt\n` +
     ` "risks": [{"risk": "...", "severity": "high|medium|low", "mitigation": "...", "watch_signal": "the observable that says it's happening"}],\n` +
     ` "dissents": [{"name": "...", "role": "...", "position": "one line", "quote": "VERBATIM sentence from their post", "seq": N}],\n` +
@@ -407,6 +413,32 @@ export function normalizeBlocks(raw: unknown): ReportBlock[] {
     if (out.length >= 4) break;
   }
   return out;
+}
+
+/** 6-PR4b (§8) — the director's structured-output schema: the full report
+ *  schema MINUS sections (drafted by parallel workers, merged at assembly).
+ *  Derived, never hand-copied — the two schemas cannot drift. */
+export const REPORT_DIRECTOR_SCHEMA: Record<string, unknown> = (() => {
+  const base = REPORT_JSON_SCHEMA as { required: string[]; properties: Record<string, unknown> };
+  const { sections: _sections, ...properties } = base.properties;
+  return { ...REPORT_JSON_SCHEMA, required: base.required.filter((k) => k !== "sections"), properties };
+})();
+
+/** 6-PR4b — one section worker: drafts ONE question's section, in parallel
+ *  with its siblings. Same section rules as the single-call path. */
+export function sectionWorkerSystem(length: ReportLength = "standard"): string {
+  return (
+    `You are a section worker on a decision-report desk. You get the research brief, the deliberation transcript (posts numbered ` +
+    `by [seq]), and ONE ASSIGNED QUESTION. Write that question's report section — and nothing else. Reply with ONLY a JSON object:\n` +
+    `{"question": "the assigned question AS THE USER ASKED IT (shorten but keep their words)", ` +
+    `"answer": "1-2 sentences that DIRECTLY answer it — verdict first, then the number", ` +
+    `"finding": "the supporting argument from the transcript", ` +
+    `"numbers": [{"label": "ABSORPTION", "value": "20-24 units/mo"}], "cites": [seq, ...]}\n` +
+    `RANKING RULE (non-negotiable): if the assigned question enumerates items to rank or compare, "numbers" carries the COMPLETE ` +
+    `ordered list — {"label": "#1", "value": "item — one-clause reason"}, EVERY item placed, barely-debated ones honestly noted.\n` +
+    `Rules: ANSWER FIRST; every number from the transcript or the brief; cites are real post seqs that support the finding; ` +
+    `commit — hedging is a product failure. ${reportDepthRule(length)}`
+  );
 }
 
 /** 6-PR4: blocks synthesize in their OWN structured call — folding them into
