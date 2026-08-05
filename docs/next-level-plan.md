@@ -655,6 +655,37 @@ rounds before trends render, and every sentiment event already carries its own
 question+options (PR-B) so round-varying polls need NO schema change — the report's
 trend slider groups by angle. §4.2's auto-decide table gains the row.
 
+
+**The instrument palette (added 2026-08-05 after studying Aaru):** Aaru's agents answer
+survey instruments — single choice, multi-select, RANKING, MATRIX, free response — but
+never deliberate; our crowd deliberates-adjacent but polls with two instruments. Steal
+the palette, keep the argument. The poll plan picks from: **proposition**
+(support/conditional/oppose/disengaged — today) · **choice** (pick one entity — PR-B) ·
+**ranking** (the crowd orders the entities — and for "conclude with a ranked list"
+briefs the crowd's ranking lands NEXT TO the panel's ranked-list block, comparable
+side by side) · **matrix** (entities × the brief's qualities, rated — feeding the same
+matrix block the panel argues) · **free probe** (one open question per run; answers
+theme-clustered into a citable "in their own words" report card) · **none**. The
+alignment is the point: each instrument maps onto the 6e block it feeds, so crowd data
+and panel argument converge on the SAME artifact instead of living in different rooms.
+Users can also AUTHOR instruments directly in the preflight poll plan — derived by
+default, authorable always.
+
+### 6d-2 · Crowd cohorts — named segments, split results (from Aaru's Audiences)
+
+Aaru names its audiences ("Experience seekers", "Value optimizers") and reports per
+audience. Our crowd is one pool split only experts/residents. The Understanding pass
+(or the user, in the Studio) defines **named cohorts** with hard parameters in plain
+language ("renters within 3 miles" · "move-up buyers, HH income $95–150K" · "owners on
+adjacent blocks"); crowd members are generated tagged to a cohort, and every
+instrument reports **per-cohort splits** — the poll card gains a BY COHORT toggle, the
+report's sentiment blocks break out cohorts ("Value optimizers oppose 62% · Experience
+seekers support 55%"), and dissent BETWEEN cohorts becomes a first-class finding.
+This is the bridge to 5a: Phase 6 ships narrative cohorts; PUMS later grounds the same
+cohort objects in census joint distributions (geography + income filters become real
+sampling constraints). Migration-light: a `cohort` field on crowd spec_frozen +
+ballots already carry names.
+
 ### 6e · Reports that take the answer's shape (+ the semantic gate)
 
 The report schema gains contract-driven **blocks** alongside sections (kept FLAT — the
