@@ -10,10 +10,10 @@ export const dynamic = "force-dynamic";
 
 export default async function RunPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ replay?: string }>;
+  searchParams: Promise<{ replay?: string; autostart?: string }>;
 }) {
   const { id } = await params;
-  const { replay } = await searchParams;
+  const { replay, autostart } = await searchParams;
   const supabase = await createServerSupabase();
   const { data: sim } = await supabase!
     .from("simulations").select("id, status, brief, config").eq("id", id).maybeSingle();
@@ -101,6 +101,7 @@ export default async function RunPage({ params, searchParams }: {
       initialVotes={initialVotes}
       initialCoverage={initialCoverage}
       initialAgendas={initialAgendas}
+      autoStart={autostart === "1"}
       initialStatus={sim.status as string}
       maxRounds={cfg.rounds}
       hasReport={(() => {

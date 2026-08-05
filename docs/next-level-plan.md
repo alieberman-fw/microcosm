@@ -757,6 +757,11 @@ just decides which voice leads. Forum language is untouched.
   review UI; downstream consumers read contract when present, else today's path)
   ✅ SHIPPED (PR #75; PR #76 folded the understanding-first workspace choreography)
 - **6-PR2** — prompt-first hero composer (entry UX; smallest risk, big feel)
+  ✅ SHIPPED (2026-08-05 as QUICK RUN per the DECISION block: view toggle +
+  persisted preference, progressive mode-cards→pills reveal, population-in-
+  the-prompt honored, estimate on the RUN button, understand→cast pipeline
+  with the one-line UNDERSTOOD receipt, ?autostart=1 into LiveRun's proven
+  crowd+launch path)
 - **6-PR3** — round agendas + resolution tracker + COVERAGE strip + adaptive poll plan
   (engine work; full offline matrix additions before ship) ✅ SHIPPED (2026-08-05:
   agendas in opener instructions for Agora/Roundtable, tracker as engine.tracker

@@ -1,4 +1,4 @@
-import BriefComposer from "@/components/app/BriefComposer";
+import NewSimClient from "@/components/app/NewSimClient";
 
 export const metadata = { title: "New simulation — Microcosm" };
 export const dynamic = "force-dynamic";
@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export default function NewSimulationPage() {
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "56px 40px 90px" }}>
-      <BriefComposer mode="create" />
+      <NewSimClient />
     </div>
   );
 }

@@ -147,7 +147,7 @@ function layoutLeads(mode: string, leads: LiveLead[], w: number, h: number): Rec
 }
 
 export default function LiveRun({
-  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialVotes = [], initialTools = [], initialCoverage = [], initialAgendas = {}, initialStatus, maxRounds, hasReport = false, hasStaleReport = false,
+  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialVotes = [], initialTools = [], initialCoverage = [], initialAgendas = {}, autoStart = false, initialStatus, maxRounds, hasReport = false, hasStaleReport = false,
 }: {
   simId: string;
   problem: string;
@@ -166,6 +166,9 @@ export default function LiveRun({
   /** 6-PR3 — latest tracker scores (the COVERAGE strip) + agenda labels */
   initialCoverage?: { id: string; ask: string; score: number; missing: string }[];
   initialAgendas?: Record<number, string>;
+  /** 6-PR2 Quick Run: launch on mount (?autostart=1) — the proven launch
+   *  path materializes the crowd and streams; ignored if a run exists */
+  autoStart?: boolean;
   initialStatus: string;
   maxRounds: number;
   hasReport?: boolean;
@@ -757,9 +760,13 @@ export default function LiveRun({
     try { await fetch(`/api/simulations/${simId}/run/stop`, { method: "POST" }); } catch { /* the poll below will surface reality */ }
   };
 
-  // 3c: landing on a RUNNING sim means the run is going server-side — watch it
+  // 3c: landing on a RUNNING sim means the run is going server-side — watch it.
+  // 6-PR2 Quick Run: ?autostart=1 launches immediately through the proven
+  // path (crowd materialization + stream + walkaway) — but never over an
+  // existing run or transcript, so a reload of the URL can't double-launch.
   useEffect(() => {
     if (initialStatus === "running") void observe();
+    else if (autoStart && initialPosts.length === 0 && leads.length >= 2) void launch(false);
     return () => { observing.current = false; }; // leaving the page stops the tail, never the run
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
