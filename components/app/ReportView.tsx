@@ -599,8 +599,13 @@ export default function ReportView({
     setPlainBusy(true);
     try {
       const res = await fetch(`/api/reports/${reportId}/plain`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error((data as { error?: string }).error ?? "Translation failed");
+      // platform timeouts return PLAIN TEXT ("An error occurred…") — never
+      // JSON.parse blind, or the user sees "Unexpected token 'A'" instead of
+      // an actionable message
+      const raw = await res.text();
+      let data: { error?: string; plain?: ReportPlain } = {};
+      try { data = JSON.parse(raw); } catch { /* non-JSON body — handled below */ }
+      if (!res.ok || !data.plain) throw new Error(data.error ?? `Translation failed (${res.status || "network"}) — hit SIMPLIFY to retry`);
       setPlain((data as { plain: ReportPlain }).plain);
       setView("plain");
     } catch (e) {

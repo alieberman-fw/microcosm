@@ -5,7 +5,7 @@ import { TIER_MODELS, RunConfig } from "@/lib/run";
 import { REPORT_PLAIN_SCHEMA, ReportPlain, ReportSpec, plainSpecIncomplete, reportPlainSystem } from "@/lib/report";
 import { parseLooseObject } from "@/lib/llm-json";
 
-export const maxDuration = 120;
+export const maxDuration = 300; // dense reports translate long — 120s was killed by the platform mid-call, returning a PLAIN-TEXT error the client tried to JSON.parse
 
 /**
  * The PLAIN ENGLISH toggle (3a report overhaul): translate the frozen report
