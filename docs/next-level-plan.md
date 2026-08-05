@@ -574,6 +574,37 @@ The current structured form survives under COMPOSE MANUALLY; suggest-with-AI ret
 a button because it becomes the default behavior. Zero-config stays useful, config
 stays bone-deep (§1 p4).
 
+
+**The three layers (designed with Adam 2026-08-05, after studying Simile's composer):**
+Simile's radical simplicity and our depth are not in conflict — they belong to
+DIFFERENT MOMENTS. Simplicity is for the moment of asking; depth is for the object you
+end up with. The interface is three layers of progressive commitment:
+
+- **Layer 1 — THE ASK.** The hero composer: prompt + file drop + AT MOST THREE inline
+  chips that read as modifiers of the question, never as settings —
+  `PANEL: AUTO ▾` (auto / experts / residents / mixed — the §4.2 composition override),
+  `MODE: AUTO ▾` (the seven ModeDiagram cards in the dropdown; director recommends),
+  and `DEPTH: STANDARD ▾` — ONE intent-level dial (quick read · standard · deep dive)
+  that presets rounds + density + tier + report length and shows the live cost/time
+  estimate right in the chip ("~$4 · ~6 MIN"). Five numeric knobs collapse into one
+  dial; the knobs survive underneath. Nothing else on this screen.
+- **Layer 2 — THE PREFLIGHT (one screen, one Launch).** Submit → the Understanding
+  Mirror at top, then the CAST as it materializes (the casting theater we already
+  have), the poll plan, the report wireframe, and the depth/cost line — each section a
+  one-line summary of what was decided AND WHY ("MIXED — community surface detected"),
+  each a door. Glance, correct anything inline, LAUNCH. The current sequential stage
+  machine becomes sections of one screen.
+- **Layer 3 — THE STUDIO.** Everything that exists today — full population editor,
+  crowd browser, per-seat edits, every §4.1 parameter, the tools rack — reached by
+  drilling into any preflight section. Power users live here; first-time users may
+  never see it. Nothing is removed; it is re-choreographed from "path" to "drill-down".
+
+Returning users get RECENT BRIEFS + one-click "run again with changes" (the 5d fork
+mechanism) on the composer, and later, saved panels as PANEL-chip presets (persona
+sets). Implementation note: this is choreography, not a rebuild — BriefComposer,
+CastingTheater, PopulationStage, RunConfigStage all exist; 6a composes them into
+Ask → Preflight → Studio and adds the DEPTH preset mapping in lib/run.ts.
+
 ### 6b · The Understanding pass (technical)
 
 One CASTING_MODEL-tier call over prompt + doc names + first-N-token excerpts → contract
