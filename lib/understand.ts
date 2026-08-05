@@ -58,6 +58,8 @@ export interface ClarifierFlag {
 
 export interface BriefContract {
   version: 1;
+  /** 3-7 word display name — simulation cards and lists lead with this */
+  title?: string;
   intent: string;                               // verb-first, 3-6 words
   audience: "executive" | "technical";
   mirror: string;                               // 3-6 sentence second-person restatement
@@ -82,7 +84,8 @@ export function understandSystem(docNames: string[]): string {
     `You are the Understanding pass for Microcosm, an agent-swarm simulation platform for the built world. ` +
     `A user wrote a research brief — possibly multi-part, messy, or embedded in their documents. Your job is to capture EXACTLY what they want ` +
     `answered so the simulation can be held to it. Nothing the user asked for may fall out. Reply with ONLY a JSON object:\n` +
-    `{"intent": "verb-first 3-6 word job summary (EVALUATE ASSET CATEGORIES / VALUE A PARCEL / STRESS-TEST DEMAND...)", ` +
+    `{"title": "3-7 word display name for this simulation — a noun phrase a dashboard card leads with (“Edge-industrial category ranking”, “Beverly Hills rate-shock demand”)", ` +
+    `"intent": "verb-first 3-6 word job summary (EVALUATE ASSET CATEGORIES / VALUE A PARCEL / STRESS-TEST DEMAND...)", ` +
     `"audience": "executive|technical", ` +
     `"mirror": "3-6 sentences, SECOND PERSON, restating what they want as a smart colleague would — concrete, no hedging, no meta-talk", ` +
     `"sub_asks": [{"ask": "one specific question the user wants answered", "kind": "feasibility|demand|pricing|ranking|comparison|policy|research|other", "evidence": "the standard the answer must meet (named sources / doc citations / defended range / plain judgment)"}], ` +
@@ -185,8 +188,10 @@ export function normalizeContract(raw: Record<string, unknown> | null, docNames:
     if (flags.length >= 2) break;
   }
 
+  const title = str(raw.title, 60);
   return {
     version: 1,
+    ...(title ? { title } : {}),
     intent,
     audience: raw.audience === "technical" ? "technical" : "executive",
     mirror: str(raw.mirror, 1400),

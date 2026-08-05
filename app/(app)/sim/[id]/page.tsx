@@ -52,9 +52,6 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
   }
   crowd.sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
   const casting = ((sim.config as { casting?: CastingInfo } | null)?.casting) ?? null;
-  // persisted corpus Q&A, newest first (the workspace prepends new answers)
-  const qaRaw = ((sim.config as { qa?: unknown[] } | null)?.qa ?? []) as never[];
-  const qa = [...qaRaw].reverse();
   const run = ((sim.config as { run?: Record<string, unknown> } | null)?.run) ?? null;
   const savedTools = ((sim.config as { tools?: string[] } | null)?.tools) ?? [];
   const [{ count: reportCount }, { count: postCount }] = await Promise.all([
@@ -70,7 +67,6 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
       initialCrowd={crowd}
       initialCasting={casting}
       initialContract={stored.contract ?? null}
-      initialAnswers={qa}
       initialRun={run}
       initialTools={savedTools}
       hasRun={(postCount ?? 0) > 0}

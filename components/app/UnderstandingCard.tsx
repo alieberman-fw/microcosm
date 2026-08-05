@@ -41,11 +41,15 @@ export default function UnderstandingCard({
   hasProblem,
   initialContract,
   parsedDocNames,
+  onPhase,
 }: {
   simId: string;
   hasProblem: boolean;
   initialContract: BriefContract | null;
   parsedDocNames: string[];
+  /** the workspace choreographs around the pass: population + run config
+   *  reveal only after the contract lands (or the pass errors out) */
+  onPhase?: (phase: "idle" | "deriving" | "ready" | "error") => void;
 }) {
   const [contract, setContract] = useState<BriefContract | null>(initialContract);
   const [deriving, setDeriving] = useState(false);
@@ -54,6 +58,28 @@ export default function UnderstandingCard({
   const [askDraft, setAskDraft] = useState("");
   const [entityDraft, setEntityDraft] = useState("");
   const autoRan = useRef(false);
+  const [scanStep, setScanStep] = useState(0);
+
+  // the understanding theater: what the pass is actually doing, narrated
+  const scanLines = [
+    "READING YOUR BRIEF…",
+    ...parsedDocNames.slice(0, 3).map((n) => `READING ${n.toUpperCase().slice(0, 34)}…`),
+    "DECOMPOSING THE ASK INTO SUB-QUESTIONS…",
+    "MAPPING THE SHAPE OF THE ANSWER…",
+    "LOOKING FOR A DESCRIBED POPULATION…",
+    "CLASSIFYING DOCUMENT ROLES…",
+  ];
+  useEffect(() => {
+    if (!deriving) { setScanStep(0); return; }
+    const t = setInterval(() => setScanStep((s) => Math.min(s + 1, scanLines.length - 1)), 2100);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deriving]);
+
+  useEffect(() => {
+    onPhase?.(deriving ? "deriving" : contract ? "ready" : error ? "error" : "idle");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deriving, contract, error]);
 
   // a brief edit refreshed the page — pick up the (possibly stale-flagged)
   // contract without clobbering an in-flight derive
@@ -107,30 +133,48 @@ export default function UnderstandingCard({
 
   if (!hasProblem) return null;
 
-  // shimmer while the pass reads the brief
+  // the understanding theater — the ONLY thing on screen below the brief
+  // while the pass reads (the workspace holds population/config back)
   if (!contract) {
     return (
-      <div className="card" style={{ padding: "24px 30px", marginTop: 20 }}>
+      <div className="card" style={{ padding: "26px 30px", marginTop: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ ...mono, fontSize: 10.5, letterSpacing: ".12em", color: "var(--acc)" }}>✻ WHAT I UNDERSTOOD</span>
-          {deriving ? (
-            <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--t6)", animation: "shim 1.2s ease infinite" }}>
-              READING YOUR BRIEF{parsedDocNames.length ? ` + ${parsedDocNames.length} DOC${parsedDocNames.length > 1 ? "S" : ""}` : ""}…
-            </span>
-          ) : error ? (
+          <span style={{ ...mono, fontSize: 10.5, letterSpacing: ".12em", color: "var(--acc)" }}>✻ UNDERSTANDING YOUR BRIEF</span>
+          {!deriving && error && (
             <>
               <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".05em", color: "var(--warn)" }}>{error.toUpperCase().slice(0, 80)}</span>
               <button onClick={() => void derive()} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, background: "transparent", border: "1px solid var(--ln6)", color: "var(--acc)", cursor: "pointer" }}>
                 RETRY
               </button>
             </>
-          ) : null}
+          )}
         </div>
         {deriving && (
-          <div style={{ marginTop: 16 }}>
-            {[86, 68, 74].map((w, i) => (
-              <div key={i} style={{ height: 10, borderRadius: 100, background: "var(--sf2)", width: `${w}%`, marginTop: i ? 8 : 0, animation: "shim 1.2s ease infinite" }} />
-            ))}
+          <div style={{ marginTop: 18 }}>
+            {/* narrated progress: a pulsing dot + the current step, with a
+                stepped bar that fills as the theater advances */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />
+              <span key={scanStep} style={{ ...mono, fontSize: 10.5, letterSpacing: ".08em", color: "var(--t3)", animation: "fadeUp .3s ease both" }}>
+                {scanLines[scanStep]}
+              </span>
+            </div>
+            <div style={{ height: 4, borderRadius: 100, background: "var(--sf2)", marginTop: 14, overflow: "hidden" }}>
+              <div style={{ height: 4, borderRadius: 100, background: "var(--acc)", width: `${Math.round(((scanStep + 1) / (scanLines.length + 1)) * 100)}%`, transition: "width 2s ease", animation: "shim 1.2s ease infinite" }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 14 }}>
+              {scanLines.map((l, i) => (
+                <div key={l} style={{ display: "flex", alignItems: "center", gap: 9, opacity: i <= scanStep ? 1 : 0.35, transition: "opacity .4s" }}>
+                  <span style={{ ...mono, fontSize: 9, color: i < scanStep ? "var(--acc)" : "var(--t7)", width: 10, flex: "none" }}>
+                    {i < scanStep ? "✓" : i === scanStep ? "·" : ""}
+                  </span>
+                  <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: i < scanStep ? "var(--t5)" : "var(--t7)" }}>{l}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", color: "var(--t7)", marginTop: 14 }}>
+              THE POPULATION & RUN SETUP APPEAR WHEN THE READING LANDS — EVERYTHING IT CAPTURES IS EDITABLE
+            </div>
           </div>
         )}
       </div>
@@ -195,16 +239,21 @@ export default function UnderstandingCard({
         )}
       </div>
 
-      {/* report shape */}
+      {/* report shape — every listed artifact IS in the report; the first
+          one LEADS it (field fix: bare pills read as selected-vs-not) */}
       {c.output_contracts.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
           <span style={label}>THE REPORT YOU’LL GET</span>
           {c.output_contracts.map((o, i) => (
-            <span key={o.type} style={chip(i === 0 ? "var(--acc)" : "var(--ln5)", i === 0 ? "var(--acc)" : "var(--t4)")} title={i === 0 ? "The lead artifact" : undefined}>
-              {TYPE_LABEL[o.type] ?? o.type.toUpperCase()}
+            <span
+              key={o.type}
+              style={chip(i === 0 ? "var(--acc)" : "var(--ln5)", i === 0 ? "var(--acc)" : "var(--t4)", i === 0 ? "var(--acc-dim)" : "transparent")}
+              title={i === 0 ? "The report opens with this artifact" : "Also in the report, after the lead"}
+            >
+              {i === 0 ? "OPENS WITH · " : "+ "}{TYPE_LABEL[o.type] ?? o.type.toUpperCase()}
             </span>
           ))}
-          <span style={drives}>→ REPORT SHAPE</span>
+          <span style={drives}>→ ALL OF THESE, IN THIS ORDER</span>
         </div>
       )}
 

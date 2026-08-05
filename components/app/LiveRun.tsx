@@ -222,6 +222,10 @@ export default function LiveRun({
   const [confirmStop, setConfirmStop] = useState(false);
   const [stopping, setStopping] = useState(false);
   const observing = useRef(false);
+  // field fix: an orphaned run self-heals — the observer reclaims it once
+  // automatically (the reaper cron covers walked-away tabs server-side);
+  // only a failed reclaim falls back to the manual RESUME button
+  const autoReclaimed = useRef(false);
   // dedupe across sources (stream ↔ observer handoff must never double-apply)
   const appliedSeq = useRef<Set<number>>(new Set(initialPosts.map((p) => p.seq)));
   const appliedPolls = useRef<Set<number>>(new Set(initialSentiments.map((s) => s.round)));
@@ -668,7 +672,10 @@ export default function LiveRun({
           supa.from("simulations").select("status, config").eq("id", simId).maybeSingle(),
         ]);
         const rows = (postsQ.data ?? []) as Record<string, unknown>[];
-        if (rows.length) lastProgress = Date.now();
+        if (rows.length) {
+          lastProgress = Date.now();
+          autoReclaimed.current = false; // real progress — a future orphaning earns a fresh auto-reclaim
+        }
         for (const r of rows) {
           maxSeq = Math.max(maxSeq, Number(r.seq) || 0);
           handleEvt(postRowToEvt(r));
@@ -707,8 +714,14 @@ export default function LiveRun({
         // seconds), so only a long silence marks the run orphaned
         const hb = cfg2.run_state?.heartbeat_at ? Date.parse(cfg2.run_state.heartbeat_at) : NaN;
         if (Number.isFinite(hb) && Date.now() - hb < 60_000) lastProgress = Date.now();
-        if (Date.now() - lastProgress > 180_000) {
+        if (Date.now() - lastProgress > 120_000) {
           observing.current = false;
+          if (!autoReclaimed.current) {
+            autoReclaimed.current = true;
+            setNote("NO HEARTBEAT FROM THE RUN — RECLAIMING IT AUTOMATICALLY FROM THE PERSISTED TRANSCRIPT");
+            void launch(true); // a 409 (reaper or another tab got there first) drops back into observing
+            return;
+          }
           setStale(true);
           setStatus("idle");
           setNote("NO HEARTBEAT FROM THE RUN — IT LOOKS ORPHANED (DEPLOY OR CRASH). RESUME CONTINUES FROM THE PERSISTED TRANSCRIPT");
