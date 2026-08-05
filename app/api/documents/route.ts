@@ -98,8 +98,17 @@ export async function POST(request: Request) {
   if (process.env.ANTHROPIC_API_KEY) {
     try {
       const anthropic = new Anthropic();
+      // document blocks accept ONLY PDF and PLAINTEXT file sources — a .md
+      // upload kept text/markdown and every agent turn 400'd at launch
+      // ("Unsupported document file format"). Text-like formats (md/csv/html/
+      // geojson) upload as text/plain: same bytes, supported type; the real
+      // name + mime stay on the DB row for display.
+      const isPdf = file.type === "application/pdf";
+      const isImage = file.type.startsWith("image/");
+      const apiType = isPdf || isImage ? file.type : "text/plain";
+      const apiName = isPdf || isImage ? safeName : `${safeName.replace(/\.(md|markdown|csv|html?|geojson|json|txt)$/i, "")}.txt`;
       const uploaded = await anthropic.beta.files.upload({
-        file: await toFile(buffer, safeName, { type: file.type }),
+        file: await toFile(buffer, apiName, { type: apiType }),
         betas: [FILES_BETA],
       });
       fileId = uploaded.id;

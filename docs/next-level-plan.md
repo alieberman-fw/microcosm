@@ -493,6 +493,71 @@ describe pipeline, and the existing chat surface) — before the data tools.
 
 ---
 
+## Phase 6 — The brief-to-report contract: Claude-grade answers (PROPOSED 2026-08-04 — Adam to order vs Phase 5)
+
+**The observation (Adam, testing a multi-part research brief):** the swarm machinery is
+sound (population, casting, graph, deliberation), but the pipeline doesn't guarantee the
+REPORT answers everything the user actually asked. A Claude-style prompt carries several
+sub-asks ("for each category, determine X; name every player with sources; if no play
+pencils, what instead; conclude with a ranked list") plus OUTPUT CONTRACTS (ranked list)
+and EVIDENCE STANDARDS — and today those survive only as one long problem string. The
+classic stance poll also gets bolted onto briefs where support/oppose is meaningless.
+The interface itself should feel like Claude: one prompt + attachments, structure derived.
+
+### 6a · Prompt-first composer
+One composer: a big prompt box + file drop, nothing else required. The current
+structured brief (question chips, success criteria, template) becomes the DERIVED,
+editable layer underneath — the suggest pass runs automatically on submit and shows its
+decomposition as chips the user can correct or ignore (the "enrich" flow survives; the
+form-first path remains as an advanced view). Zero-config stays useful; config stays
+bone-deep (§1 principle 4).
+
+### 6b · Brief decomposition — sub-asks, output contracts, evidence standards
+A dedicated frontier-tier parse (like casting, quality bounds everything downstream)
+turns ANY prompt + attachments into: **sub-questions** (each becomes an owned report
+section — today's questions-to-resolve, but extracted reliably even when buried in one
+paragraph), **output contracts** (ranked list · per-category verdict matrix · comparison
+table · timeline — these drive report STRUCTURE, not just content), **constraints &
+evidence standards** ("named, with sources" → citation density requirements fed to
+agents AND the fact gate), and **audience** (see 6f). Persisted in the brief; visible
+and editable.
+
+### 6c · Dynamic report structures
+The report schema grows contract-driven section types beyond prose findings: a RANKED
+LIST block (ordered, per-item verdict + rationale + cites), a PER-CATEGORY MATRIX
+(rows = the brief's categories, columns = the brief's evaluation criteria), and a
+COMPARISON TABLE. The synthesizer picks blocks from 6b's contracts; the completeness
+gate refuses a ranked-list brief that came back without a ranked list. Adam's example
+brief would produce: matrix over asset categories × (real-estate-exists · players ·
+price · alternative expression) + the ranked list as the lead artifact.
+
+### 6d · Answer-completeness gate (semantic)
+Today's gate checks SHAPE (sections cover questions, criteria receipt). Add a JUDGE
+pass over the draft vs 6b's parsed asks: "is sub-ask 3 actually ANSWERED (not just
+mentioned)? does the ranked list rank ALL categories? are players named with sources
+where the brief demanded sources?" Failures retry synthesis TARGETED ("sub-ask 3 and
+the ranked list are missing — fix only those"), not from scratch. This is the direct
+fix for "our swarms are not directly answering the user's specific questions."
+
+### 6e · Instrument fit — polls that match the brief (or none at all)
+The derivation gains two more shapes beyond proposition/choice: **none** (expert
+research briefs with no public-sentiment surface — the crowd participates through
+interjections and votes, and the poll card simply doesn't exist; support/oppose on
+"which categories deserve pursuit, with sources" was noise) and **per-sub-question**
+(later: a multi-part brief polls the crowd on the one or two sub-asks where public
+preference genuinely matters). The §4.2 auto-decide table gets a row for it.
+
+### 6f · Audience register
+Deliberation stays technical — personas arguing at full depth IS the product. The
+REPORT gets an audience dial derived from the brief (or set explicitly): `executive`
+(plain-language findings first, technical depth folded below — closer to today's
+SIMPLIFY as the default posture) vs `technical` (today's expert view). SIMPLIFY
+remains the hard translation; the register decides which voice leads.
+
+**Sequencing note:** 6b + 6d are the highest-leverage pair (every run's answer quality)
+and are independent of Phase 5's data work; 6a/6c ride behind them; 6e is small and can
+ship with 6b. Adam decides: interleave with 5a or run Phase 6 first.
+
 ## Parked — deliberately (needs its own planning session; do not rush)
 
 **Scenario / stress-test simulations**: world-state timelines ("rates +1.5% by month 6,
