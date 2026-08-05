@@ -15,7 +15,7 @@
 
 import { CSSProperties, useState } from "react";
 import Link from "next/link";
-import { LEAD_KIND_LABEL, ReportLead, ReportPlain, ReportSpec, VERDICT_STYLE, fmtMoney } from "@/lib/report";
+import { LEAD_KIND_LABEL, ReportBlock, ReportLead, ReportPlain, ReportSpec, VERDICT_STYLE, fmtMoney } from "@/lib/report";
 import { LivePost } from "@/components/app/LiveRun";
 import Markdown from "@/components/app/Markdown";
 import { distShares } from "@/lib/dist";
@@ -324,6 +324,81 @@ function KeyMaterials({ media, urls }: { media: NonNullable<ReportSpec["media"]>
 }
 
 /** decimal scores → word grades for the simplified read */
+/** 6-PR4 (§6e) — the answer's ARTIFACTS: contract-driven blocks. One flat
+ *  shape, three renderings: ranked list (numbered wrapping rows), matrix
+ *  (a real table, horizontally scrollable), comparison (side-by-side cards). */
+function BlocksSection({ blocks, onJump }: { blocks: ReportBlock[]; onJump?: (seq: number) => void }) {
+  const label: CSSProperties = { fontFamily: "var(--font-mono), monospace", fontSize: 10, letterSpacing: ".1em", color: "var(--t6)" };
+  const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
+  const kindLabel = { ranked_list: "RANKED LIST", matrix: "MATRIX", comparison: "COMPARISON" } as const;
+  return (
+    <div style={{ marginTop: 30 }}>
+      <div style={label}>THE ANSWER, AS ARTIFACTS</div>
+      {blocks.map((b, bi) => (
+        <div key={bi} className="card" style={{ marginTop: 14, padding: "20px 24px" }}>
+          <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".09em", color: "var(--acc)" }}>
+            {kindLabel[b.kind]} · {b.title.toUpperCase()}
+          </div>
+          {b.kind === "matrix" ? (
+            <div style={{ overflowX: "auto", marginTop: 12 }}>
+              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: Math.max(560, 170 * (b.columns.length + 1)) }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)", textAlign: "left", padding: "8px 12px 8px 0", borderBottom: "1px solid var(--ln4)" }} />
+                    {b.columns.map((c, ci) => (
+                      <th key={ci} style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)", textAlign: "left", padding: "8px 12px", borderBottom: "1px solid var(--ln4)", textTransform: "uppercase" }}>{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {b.rows.map((r, ri) => (
+                    <tr key={ri}>
+                      <td style={{ fontSize: 12.5, fontWeight: 600, color: "var(--t1)", padding: "9px 12px 9px 0", borderBottom: "1px solid var(--ln2)", verticalAlign: "top", minWidth: 140 }}>{r.label}</td>
+                      {b.columns.map((_, ci) => (
+                        <td key={ci} style={{ fontSize: 11.5, lineHeight: 1.5, color: "var(--t4)", padding: "9px 12px", borderBottom: "1px solid var(--ln2)", verticalAlign: "top", minWidth: 150 }}>
+                          {r.cells[ci] ?? "—"}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : b.kind === "comparison" ? (
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(240px, 1fr))`, gap: 12, marginTop: 12 }}>
+              {b.rows.map((r, ri) => (
+                <div key={ri} style={{ border: "1px solid var(--ln3)", borderRadius: 12, padding: "14px 16px", background: "var(--sf2)" }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--t1)" }}>{r.label}</div>
+                  {b.columns.map((c, ci) => (r.cells[ci] ? (
+                    <div key={ci} style={{ marginTop: 9 }}>
+                      <div style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--t6)", textTransform: "uppercase" }}>{c}</div>
+                      <div style={{ fontSize: 12, lineHeight: 1.55, color: "var(--t4)", marginTop: 3 }}>{r.cells[ci]}</div>
+                    </div>
+                  ) : null))}
+                  {onJump && r.cites && r.cites.length > 0 && <div style={{ marginTop: 8 }}><CiteChips cites={r.cites} onJump={onJump} /></div>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+              {b.rows.map((r, ri) => (
+                <div key={ri} style={{ border: "1px solid var(--ln3)", borderRadius: 10, padding: "11px 14px", background: "var(--sf2)" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+                    <span style={{ ...mono, fontSize: 11, color: "var(--acc)", flex: "none", fontWeight: 500 }}>{r.label}</span>
+                    <span style={{ fontSize: 13, lineHeight: 1.55, color: "var(--t2)", minWidth: 0, flex: 1 }}>{r.cells[0] ?? ""}</span>
+                    {onJump && r.cites && r.cites.length > 0 && <CiteChips cites={r.cites} onJump={onJump} />}
+                  </div>
+                  {r.note && <div style={{ fontSize: 11.5, lineHeight: 1.55, color: "var(--t5)", marginTop: 6 }}>{r.note}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function gradeOf(score: number): { word: string; color: string } {
   if (score >= 7) return { word: "STRONG", color: "var(--acc)" };
   if (score > 4.5) return { word: "MIXED", color: "var(--t4)" };
@@ -374,6 +449,9 @@ function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
 
       {/* PR-A — the winning photo / key file speaks for itself in plain view too */}
       {(spec.media?.length ?? 0) > 0 && <KeyMaterials media={spec.media!} urls={mediaUrls} />}
+
+      {/* 6-PR4 — the artifacts read plainly already (short verdicts per cell) */}
+      {(spec.blocks?.length ?? 0) > 0 && <BlocksSection blocks={spec.blocks!} />}
 
       {/* every brief question, answered like a person would */}
       <div style={{ marginTop: 34 }}>
@@ -609,8 +687,11 @@ export default function ReportView({
   const [flash, setFlash] = useState<number | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   // SIMPLIFY toggle (3a): a cached TRANSLATION of the frozen spec —
-  // generated on first use, identical answers and numbers, jargon-free
-  const [view, setView] = useState<"expert" | "plain">("expert");
+  // generated on first use, identical answers and numbers, jargon-free.
+  // 6-PR4 (§6f): the contract's REGISTER decides which voice LEADS — an
+  // executive-audience report opens in the plain view (translated eagerly
+  // at synthesis); one click flips to the full technical read either way.
+  const [view, setView] = useState<"expert" | "plain">(spec.audience === "executive" && spec.plain ? "plain" : "expert");
   const [plain, setPlain] = useState<ReportPlain | null>(spec.plain ?? null);
   const [plainBusy, setPlainBusy] = useState(false);
   const [plainErr, setPlainErr] = useState<string | null>(null);
@@ -821,6 +902,9 @@ export default function ReportView({
           <p style={{ margin: "22px 0 0", fontSize: 15, lineHeight: 1.75, color: "var(--t2)", maxWidth: 900 }}>
             {spec.executive_summary}
           </p>
+
+          {/* 6-PR4 — the answer's artifacts (ranked list / matrix / comparison) */}
+          {(spec.blocks?.length ?? 0) > 0 && <BlocksSection blocks={spec.blocks!} onJump={jump} />}
 
           {/* stat tiles */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginTop: 26 }}>
@@ -1048,6 +1132,18 @@ export default function ReportView({
               {m.docs.length ? ` grounded in: ${m.docs.join(", ")} · ` : " no documents attached · "}
               generated {new Date(m.generated_at).toLocaleString()}
             </p>
+            {/* 6-PR4 — the completeness judge's receipt: an honest instrument
+                says whether the answer was CHECKED against the brief */}
+            {spec.judge && (
+              <p style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.7, color: spec.judge.pass || spec.judge.fixed > 0 ? "var(--t5)" : "var(--warn)" }}>
+                <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>ANSWER-COMPLETENESS JUDGE · </span>
+                {spec.judge.pass
+                  ? "passed — every sub-ask answered, every required artifact complete"
+                  : spec.judge.fixed > 0
+                  ? `flagged ${spec.judge.notes?.length ?? 0} gap${(spec.judge.notes?.length ?? 0) > 1 ? "s" : ""}; ${spec.judge.fixed} piece${spec.judge.fixed > 1 ? "s" : ""} repaired before delivery`
+                  : `flagged gaps the repair pass could not close: ${(spec.judge.notes ?? []).slice(0, 3).join("; ")}`}
+              </p>
+            )}
             {spec.cast && spec.cast.length > 0 && (
               <p style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.7, color: "var(--t5)" }}>
                 <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>THE PANEL THAT RAN · </span>

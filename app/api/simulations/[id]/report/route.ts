@@ -5,7 +5,8 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
-import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, clipText, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, synthBudgetFor, verifierSystem } from "@/lib/report";
+import { REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, REPORT_BLOCKS_SCHEMA, blocksSpecFor, blocksSynthSystem, clipText, judgePatchSystem, judgeSystem, mergePatchedBlocks, mergePatchedSections, normalizeBlocks, parseJudgeVerdict, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, synthBudgetFor, synthesizePlain, verifierSystem } from "@/lib/report";
+import { BriefContract } from "@/lib/understand";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { normalizeEnabledTools } from "@/lib/tools";
 import { synthTicker } from "@/lib/synth-progress";
@@ -33,7 +34,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const { data: sim } = await supabase.from("simulations").select("id, brief, config, status").eq("id", id).maybeSingle();
   if (!sim) return NextResponse.json({ error: "Simulation not found" }, { status: 404 });
-  const brief = (sim.brief ?? {}) as { problem?: string; questions?: unknown; success?: unknown; template?: string };
+  const brief = (sim.brief ?? {}) as { problem?: string; questions?: unknown; success?: unknown; template?: string; contract?: BriefContract };
+  // 6-PR4: the contract drives the answer's ARTIFACTS (blocks), the
+  // completeness judge, and the audience register — absent = today's path
+  const contract = brief.contract ?? null;
   const config = (sim.config as Record<string, unknown>) ?? {};
   const cfg: RunConfig = { ...RUN_DEFAULTS, ...((config.run as Partial<RunConfig>) ?? {}) };
   const runResult = (config.run_result as { posts?: number; converged?: boolean; stop?: string; mode?: string } | undefined) ?? {};
@@ -117,6 +121,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     // hint only; the synthesizer re-reads the brief and self-corrects
     (brief.template ? `DECISION SHAPE HINT: ${brief.template}\n` : "") +
     (questions.length ? `QUESTIONS TO RESOLVE (one report section EACH, in order):\n${questions.map((q) => `- ${q.label}${q.detail ? ` — ${q.detail}` : ""}`).join("\n")}\n` : "") +
+    // 6-PR4: the contract's sub-asks carry evidence standards the sections
+    // must meet — the completeness judge checks against exactly these lines
+    (contract?.sub_asks?.length ? `THE BRIEF CONTRACT (every sub-ask below must be ANSWERED by a section — the report is judged against this):\n${contract.sub_asks.map((s) => `- [${s.id}] ${s.ask} (evidence standard: ${s.evidence})`).join("\n")}\n` : "") +
     (success.length ? `SUCCESS CRITERIA (the report is held to every one):\n${success.map((x) => `- ${x}`).join("\n")}\n` : "") +
     (sentiments.length ? `CROWD SENTIMENT BY ROUND${pollQuestion ? ` (the crowd was asked: "${pollQuestion}")` : ""}${pollOptions ? ` (a preference poll — the crowd chose among: ${pollOptions.join(" · ")})` : ""}:\n${sentiments.map((x) => `- round ${x.round}${new Set(sentiments.map((s) => s.question).filter(Boolean)).size > 1 && x.question ? ` (asked: "${x.question}")` : ""}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
     (toolFindings.length ? `TOOL FINDINGS (live web searches the panel ran — citable as "source: web", URLs are real):\n${toolFindings.map((f) => `- [${f.agent}] searched "${f.query}" → ${f.results.slice(0, 3).map((x) => `${x.title} <${x.url}>`).join(" · ") || "no results"}`).join("\n")}\n` : "") +
@@ -125,6 +132,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const synthModel = TIER_MODELS[cfg.tier].synth;
   const verifyModel = TIER_MODELS[cfg.tier].verifier;
+  const judgeModel = TIER_MODELS[cfg.tier].judge;
+  // 6-PR4: which answer artifacts this brief demands (null = none required)
+  const blocksSpec = contract
+    ? blocksSpecFor(contract.output_contracts, contract.entities ?? [], contract.success_criteria ?? [])
+    : null;
   // §4.1 REPORT LENGTH: auto scales depth to the transcript; explicit choices win
   const effLength: ReportLength = cfg.report_length === "auto" || !cfg.report_length
     ? (postRows.length >= 40 ? "dense" : postRows.length <= 12 ? "brief" : "standard")
@@ -342,6 +354,20 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         // ---- 3 · assemble the spec (methodology computed, never generated) ----
         const num = (v: unknown, lo: number, hi: number) => Math.min(Math.max(Number(v) || 0, lo), hi);
         const rawSpec = raw as Partial<ReportSpec> & { verdict?: { label?: string; tone?: string; headline?: string } };
+        // shared by assembly AND the judge's repair pass (6-PR4)
+        const normSections = (rawSections: unknown): ReportSpec["sections"] =>
+          (Array.isArray(rawSections) ? rawSections : []).slice(0, 16)
+            .map((x: { question?: unknown; answer?: unknown; finding?: unknown; numbers?: unknown; cites?: unknown }) => ({
+              question: String(x.question ?? "").slice(0, 160),
+              answer: String(x.answer ?? "").slice(0, 600), // 3a: the direct answer, first
+              finding: String(x.finding ?? "").slice(0, findingClamp),
+              // field fix: a ranking section carries EVERY enumerated item as a
+              // numbers entry — wide caps, word-boundary clipping; the view
+              // renders long entries as rows.
+              numbers: (Array.isArray(x.numbers) ? x.numbers : []).slice(0, 16)
+                .map((n: { label?: unknown; value?: unknown }) => ({ label: String(n.label ?? "").slice(0, 40), value: clipText(String(n.value ?? ""), 220) })),
+              cites: (Array.isArray(x.cites) ? x.cites : []).map((c) => Number(c) || 0).filter(Boolean).slice(0, 8),
+            }));
         const spec: ReportSpec = {
           version: REPORT_VERSION,
           verdict: {
@@ -391,20 +417,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           executive_summary: String(rawSpec.executive_summary ?? "").slice(0, 3000),
           dimension_scores: (Array.isArray(rawSpec.dimension_scores) ? rawSpec.dimension_scores : []).slice(0, 8)
             .map((d) => ({ name: String(d.name ?? "").slice(0, 60), score: num(d.score, 0, 10), note: String(d.note ?? "").slice(0, 200) })),
-          sections: (Array.isArray(rawSpec.sections) ? rawSpec.sections : []).slice(0, 16)
-            .map((x) => ({
-              question: String(x.question ?? "").slice(0, 160),
-              answer: String(x.answer ?? "").slice(0, 600), // 3a: the direct answer, first
-              finding: String(x.finding ?? "").slice(0, findingClamp),
-              // field fix: a ranking section carries EVERY enumerated item as a
-              // numbers entry — the old 6×60 cap silently chopped an 11-item
-              // ranking to 6 mid-word ("…tenant demand toda"). Wide enough for
-              // full ordered lists, clipped at word boundaries; the view
-              // renders long entries as rows.
-              numbers: (Array.isArray(x.numbers) ? x.numbers : []).slice(0, 16)
-                .map((n) => ({ label: String(n.label ?? "").slice(0, 40), value: clipText(String(n.value ?? ""), 220) })),
-              cites: (Array.isArray(x.cites) ? x.cites : []).map((c) => Number(c) || 0).filter(Boolean).slice(0, 8),
-            })),
+          sections: normSections(rawSpec.sections),
+          // 6-PR4 (§6f): the register that leads the report; blocks land in
+          // their own dedicated call below (grammar budget — see lib/report.ts)
+          audience: contract?.audience,
           criteria: (Array.isArray(rawSpec.criteria) ? rawSpec.criteria : []).slice(0, 8)
             .map((c) => ({ criterion: String(c.criterion ?? "").slice(0, 220), where: String(c.where ?? "").slice(0, 220) })),
           risks: (Array.isArray(rawSpec.risks) ? rawSpec.risks : []).slice(0, 10)
@@ -449,6 +465,123 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             "Synthetic, directional output from persona-grounded AI agents — not counsel, engineering of record, or a substitute for primary diligence. " +
             "Verify quantitative claims with the cited sources before acting; crowd sentiment is simulated, not surveyed.",
         };
+
+        // ---- 3b · the answer's ARTIFACTS (6-PR4, §6e): a dedicated small
+        // structured call — folding blocks into the main schema blew the
+        // grammar budget. Soft-fail: a missing artifact is exactly what the
+        // judge below flags and the repair pass regenerates. ----
+        if (blocksSpec) {
+          send({ type: "stage", value: "compile", note: "BUILDING THE ANSWER'S ARTIFACTS — RANKED LIST · MATRIX · COMPARISON…" });
+          for (const bBudget of [12_000, 24_000]) {
+            const tb = Date.now();
+            try {
+              const bres = await anthropic.messages.create({
+                model: synthModel, max_tokens: bBudget,
+                system: blocksSynthSystem(blocksSpec),
+                messages: [{
+                  role: "user",
+                  content:
+                    `${briefText}\nDRAFT ANSWERS (align the artifacts with these):\n` +
+                    `${JSON.stringify(spec.sections.map((s) => ({ question: s.question, answer: s.answer })))}\n` +
+                    `TRANSCRIPT:\n${transcript.slice(0, 120_000)}`,
+                }],
+                output_config: { format: { type: "json_schema", schema: REPORT_BLOCKS_SCHEMA } },
+              });
+              await logCall("report.blocks", synthModel, bres.usage, tb, undefined, { budget: bBudget, stop: bres.stop_reason });
+              if (bres.stop_reason === "max_tokens") continue; // escalate, never accept a partial artifact
+              const btext = bres.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+              const parsed = parseLooseObject(btext) as { blocks?: unknown } | null;
+              const blocks = normalizeBlocks(parsed?.blocks);
+              if (blocks.length) { spec.blocks = blocks; break; }
+            } catch (e) {
+              await logCall("report.blocks", synthModel, null, tb, e instanceof Error ? e.message : "blocks failed");
+              break; // the judge will flag the gap; its repair pass regenerates
+            }
+          }
+        }
+
+        // ---- 4 · the answer-completeness judge (6-PR4, §6e): the HARD
+        // guarantee at the end of the chain — the draft is checked against
+        // the CONTRACT (every sub-ask answered, every artifact complete,
+        // evidence standards met), and failures trigger a TARGETED repair of
+        // only the failing pieces, never a blind retry. Soft by design: a
+        // judge that errors ships the draft with an honest receipt. ----
+        if (contract?.sub_asks?.length) {
+          send({ type: "stage", value: "verify", note: "JUDGING THE ANSWER AGAINST YOUR BRIEF — EVERY SUB-ASK, EVERY ARTIFACT…" });
+          const judgeInput = JSON.stringify({
+            contract: {
+              sub_asks: contract.sub_asks,
+              entities: contract.entities ?? [],
+              output_contracts: contract.output_contracts ?? [],
+              success_criteria: contract.success_criteria ?? [],
+            },
+            answers: {
+              verdict: spec.verdict,
+              bottom_line: spec.bottom_line,
+              sections: spec.sections.map((s) => ({ question: s.question, answer: s.answer, finding: s.finding.slice(0, 600), numbers: s.numbers, cites: s.cites })),
+              blocks: spec.blocks ?? [],
+              criteria: spec.criteria ?? [],
+            },
+          });
+          let verdict: ReturnType<typeof parseJudgeVerdict> = null;
+          const tj = Date.now();
+          try {
+            const jres = await anthropic.messages.create({
+              model: judgeModel, max_tokens: 3000,
+              system: judgeSystem(),
+              messages: [{ role: "user", content: judgeInput.slice(0, 60_000) }],
+            });
+            await logCall("report.judge", judgeModel, jres.usage, tj, undefined, { sub_asks: contract.sub_asks.length, blocks: spec.blocks?.length ?? 0 });
+            const jtext = jres.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+            verdict = parseJudgeVerdict(parseLooseObject(jtext));
+          } catch (e) {
+            await logCall("report.judge", judgeModel, null, tj, e instanceof Error ? e.message : "judge failed");
+          }
+
+          if (verdict && !verdict.pass) {
+            send({ type: "stage", value: "verify", note: `THE JUDGE FLAGGED ${verdict.failures.length} GAP${verdict.failures.length > 1 ? "S" : ""} — REPAIRING ONLY THOSE…` });
+            const tp = Date.now();
+            let fixed = 0;
+            try {
+              const pres = await anthropic.messages.create({
+                model: synthModel, max_tokens: 16_000,
+                system: judgePatchSystem(),
+                messages: [{
+                  role: "user",
+                  content:
+                    `${briefText}\nTHE JUDGE'S FAILURES (repair EXACTLY these):\n${verdict.failures.map((f) => `- ${f.target}: ${f.problem}${f.must_fix ? ` — fix: ${f.must_fix}` : ""}`).join("\n")}\n` +
+                    `CURRENT DRAFT ANSWERS (JSON):\n${judgeInput.slice(0, 30_000)}\nTRANSCRIPT:\n${transcript.slice(0, 120_000)}`,
+                }],
+              });
+              await logCall("report.judge_patch", synthModel, pres.usage, tp, undefined, { failures: verdict.failures.length, stop: pres.stop_reason });
+              const ptext = pres.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+              const patch = parseLooseObject(ptext) as { sections?: unknown; blocks?: unknown } | null;
+              if (patch) {
+                const pSections = normSections(patch.sections).filter((s) => s.question && s.finding);
+                const pBlocks = normalizeBlocks(patch.blocks);
+                if (pSections.length) spec.sections = mergePatchedSections(spec.sections, pSections);
+                if (pBlocks.length) spec.blocks = mergePatchedBlocks(spec.blocks ?? [], pBlocks);
+                fixed = pSections.length + pBlocks.length;
+              }
+            } catch (e) {
+              await logCall("report.judge_patch", synthModel, null, tp, e instanceof Error ? e.message : "repair failed");
+            }
+            spec.judge = { pass: false, fixed, notes: verdict.failures.map((f) => `${f.target} — ${f.problem}`) };
+          } else if (verdict) {
+            spec.judge = { pass: true, fixed: 0 };
+          }
+        }
+
+        // ---- 5 · the audience register (§6f): an executive-audience report
+        // opens in the plain voice — translate EAGERLY inside the detached
+        // pipeline so the report is instant to read. Soft-fail: the SIMPLIFY
+        // toggle still generates lazily when this pass misses. ----
+        if (spec.audience === "executive") {
+          send({ type: "stage", value: "verify", note: "TRANSLATING FOR THE EXECUTIVE READ — YOUR REPORT OPENS IN PLAIN LANGUAGE…" });
+          const { plain } = await synthesizePlain(anthropic, spec, TIER_MODELS[cfg.tier].plain,
+            async (model, usage, t0, error, detail) => { await logCall("report.plain", model, usage, t0, error, { ...detail, eager: true }); });
+          if (plain) spec.plain = plain;
+        }
 
         const { data: prev } = await supabase.from("reports").select("version").eq("sim_id", id).order("version", { ascending: false }).limit(1);
         const version = ((prev?.[0]?.version as number) ?? 0) + 1;

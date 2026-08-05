@@ -6,6 +6,9 @@
  * the verifier pass (§4.1) audits numeric claims against the corpus.
  */
 
+import type Anthropic from "@anthropic-ai/sdk";
+import { parseLooseObject } from "@/lib/llm-json";
+
 export const REPORT_VERSION = 1;
 
 export interface ReportCite { seq: number }
@@ -35,6 +38,19 @@ export interface ReportLead {
   drivers?: string[];                                 // 2–3 things that move the odds
 }
 
+/** 6-PR4 (§6e) — contract-driven answer ARTIFACTS, kept FLAT (the 3b
+ *  schema-budget lesson): one generic table-ish shape renders three ways.
+ *  ranked_list: rows in rank order, label = "#n · entity", cells[0] = the
+ *  verdict clause, note = rationale. matrix: columns = the brief's criteria,
+ *  one row per entity, cells aligned to columns (short verdicts). comparison:
+ *  columns = ["PROS","CONS","BOTTOM LINE"], one row per option. */
+export interface ReportBlock {
+  kind: "ranked_list" | "matrix" | "comparison";
+  title: string;
+  columns: string[];
+  rows: { label: string; cells: string[]; note?: string; cites?: number[] }[];
+}
+
 export interface ReportSpec {
   version: number;
   verdict: { label: string; tone: "go" | "conditional" | "no-go" | "split"; headline: string };
@@ -48,6 +64,15 @@ export interface ReportSpec {
   /** answer-first sections: `answer` directly answers the question AS ASKED;
    *  `finding` is the supporting argument; `numbers` are the key figures */
   sections: { question: string; answer?: string; finding: string; numbers?: { label: string; value: string }[]; cites: number[] }[];
+  /** 6-PR4 — the answer's shape as artifacts (ranked list / matrix /
+   *  comparison), required by the contract's output_contracts */
+  blocks?: ReportBlock[];
+  /** 6-PR4 (§6f) — which voice LEADS the report (from the contract); the
+   *  executive register opens in the plain view, technical opens expert */
+  audience?: "executive" | "technical";
+  /** 6-PR4 (§6e) — the answer-completeness judge's receipt: did the draft
+   *  answer every contract line, and what did the repair pass fix */
+  judge?: { pass: boolean; fixed: number; notes?: string[] };
   /** success-criteria delivery map — the brief's bar, checked off explicitly */
   criteria?: { criterion: string; where: string }[];
   risks: { risk: string; severity: "high" | "medium" | "low"; mitigation: string; watch_signal: string }[];
@@ -162,10 +187,11 @@ export function clipText(s: string, max: number): string {
 }
 
 export function synthBudgetFor(length: ReportLength): number {
-  // dense starts at 32K: adaptive thinking bills against the same ceiling,
-  // and a field 22K-token dense draft truncated at 24K — costing a full
-  // second synthesis pass (~250s). Ceilings are free; truncation is not.
-  return length === "brief" ? 8_000 : length === "dense" ? 32_000 : 16_000;
+  // starting ceilings sized so pass 1 normally lands: adaptive thinking
+  // bills against the same cap, and truncation costs a FULL retry pass —
+  // a 22K dense draft truncated at 24K (~250s wasted), then a standard
+  // draft needed 16,431 against 16K (~177s wasted). Ceilings are free.
+  return length === "brief" ? 10_000 : length === "dense" ? 32_000 : 24_000;
 }
 
 /** structured-outputs schema for the synthesis — the API constrains the reply
@@ -326,6 +352,183 @@ export function reportSynthSystem(length: ReportLength = "standard"): string {
   );
 }
 
+/* ---- 6-PR4 (§6e) — blocks + the answer-completeness judge --------------- */
+
+/** what blocks the contract demands, rendered for the synth prompt. Only
+ *  artifact-shaped contracts (ranked_list/matrix/comparison) become blocks —
+ *  verdict/range/odds are already the lead's job. */
+export function blocksSpecFor(
+  outputContracts: { type: string }[] | undefined,
+  entities: string[],
+  criteria: string[],
+): string | null {
+  if (!outputContracts?.length) return null;
+  const lines: string[] = [];
+  for (const c of outputContracts) {
+    if (c.type === "ranked_list" && entities.length) {
+      lines.push(`- ranked_list: rank ALL of these, every one placed: ${entities.join(" · ")}`);
+    } else if (c.type === "matrix" && entities.length) {
+      lines.push(`- matrix: entities (${entities.join(" · ")}) × the brief's criteria${criteria.length ? ` (${criteria.slice(0, 6).join(" · ")})` : " (derive 3-5 from the brief)"} — verdict per cell`);
+    } else if (c.type === "comparison" && entities.length >= 2) {
+      lines.push(`- comparison: ${entities.join(" vs ")} side by side`);
+    }
+  }
+  return lines.length ? lines.join("\n") : null;
+}
+
+/** normalize + clip the synthesizer's blocks (word-boundary, never mid-word) */
+export function normalizeBlocks(raw: unknown): ReportBlock[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ReportBlock[] = [];
+  for (const b of raw) {
+    if (!b || typeof b !== "object") continue;
+    const o = b as Record<string, unknown>;
+    const kind = (["ranked_list", "matrix", "comparison"] as const).find((k) => k === o.kind);
+    if (!kind) continue;
+    const rows = (Array.isArray(o.rows) ? o.rows : []).slice(0, 16).flatMap((r) => {
+      if (!r || typeof r !== "object") return [];
+      const ro = r as Record<string, unknown>;
+      const label = clipText(String(ro.label ?? "").trim(), 90);
+      if (!label) return [];
+      return [{
+        label,
+        cells: (Array.isArray(ro.cells) ? ro.cells : []).slice(0, 8).map((c) => clipText(String(c ?? ""), 240)),
+        ...(ro.note ? { note: clipText(String(ro.note), 400) } : {}),
+        ...(Array.isArray(ro.cites) ? { cites: ro.cites.map((c) => Number(c) || 0).filter(Boolean).slice(0, 6) } : {}),
+      }];
+    });
+    if (!rows.length) continue;
+    out.push({
+      kind,
+      title: clipText(String(o.title ?? kind.replace("_", " ")).trim() || kind, 120),
+      columns: (Array.isArray(o.columns) ? o.columns : []).slice(0, 8).map((c) => clipText(String(c ?? ""), 60)),
+      rows,
+    });
+    if (out.length >= 4) break;
+  }
+  return out;
+}
+
+/** 6-PR4: blocks synthesize in their OWN structured call — folding them into
+ *  REPORT_JSON_SCHEMA blew the structured-outputs grammar budget live
+ *  ("The compiled grammar is too large"), the exact failure 3b hit with the
+ *  nested lead. A dedicated small schema keeps the guarantee per artifact,
+ *  and this call is the beachhead for 6-PR4b's parallel-section synthesis. */
+export const REPORT_BLOCKS_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["blocks"],
+  properties: {
+    blocks: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false, required: ["kind", "title", "columns", "rows"],
+        properties: {
+          kind: { type: "string", enum: ["ranked_list", "matrix", "comparison"] },
+          title: { type: "string" },
+          columns: { type: "array", items: { type: "string" } },
+          rows: {
+            type: "array",
+            items: {
+              type: "object", additionalProperties: false, required: ["label", "cells"],
+              properties: {
+                label: { type: "string" },
+                cells: { type: "array", items: { type: "string" } },
+                note: { type: "string" },
+                cites: { type: "array", items: { type: "integer" } },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+export function blocksSynthSystem(blocksSpec: string): string {
+  return (
+    `You are the report director building the ANSWER'S ARTIFACTS for a decision report — the exact structures the brief demanded. ` +
+    `You get the brief, the report's drafted answers (align with them — never contradict the report), and the transcript (posts numbered by [seq]). ` +
+    `Reply with ONLY a JSON object: {"blocks": [{"kind": "ranked_list|matrix|comparison", "title": "...", "columns": ["..."], "rows": [{"label": "...", "cells": ["..."], "note": "...", "cites": [seq]}]}]}\n` +
+    `BLOCKS REQUIRED (from the brief's contract — every one, complete):\n${blocksSpec}\n` +
+    `Block shapes: ranked_list — rows IN RANK ORDER, label "#<rank> · <item>", cells = [one committed verdict clause], note = 1-2 sentence rationale, cites = supporting post seqs; EVERY enumerated item present ("never debated — ranked on thesis fit alone" is an honest note). ` +
+    `matrix — columns = the criteria; ONE row per entity; each cell a SHORT committed verdict aligned to its column ("YES — 480V in place" / "WEAK — no comps"), never a paragraph. ` +
+    `comparison — columns ["PROS", "CONS", "BOTTOM LINE"], one row per option, cells aligned (compact "·"-separated clauses).\n` +
+    `Every number from the transcript or the brief; cites are real post seqs. Commit in every cell — hedges are a failure.`
+  );
+}
+
+/** the judge: does the draft ANSWER every contract line? Compact input (the
+ *  contract + the draft's answer-carrying parts), small verdict output. */
+export function judgeSystem(): string {
+  return (
+    `You are the answer-completeness judge for a decision report. You get the BRIEF CONTRACT (what the user asked for) and the ` +
+    `DRAFT REPORT'S ANSWERS. Judge whether the draft ANSWERS every contract line — answered means a committed verdict/number/position, ` +
+    `not a mention. Checks, in order:\n` +
+    `1. Every sub-ask has a section whose "answer" actually answers IT (not an adjacent question).\n` +
+    `2. Every required block exists and is COMPLETE — a ranked_list must place EVERY enumerated entity; a matrix must cover every entity × criterion.\n` +
+    `3. Where a sub-ask's evidence standard demands named sources or citations, the answering section/block carries cites.\n` +
+    `4. Every success criterion's receipt points at content that genuinely delivers it.\n` +
+    `Reply with ONLY a JSON object: {"pass": true|false, "failures": [{"target": "section:<the sub-ask, shortened>|block:ranked_list|block:matrix|block:comparison|criteria", ` +
+    `"problem": "one line — what is missing or evasive", "must_fix": "one line — the specific repair"}]}\n` +
+    `Judge strictly but honestly: a committed answer you'd personally disagree with still PASSES; an artful dodge FAILS. No prose outside the JSON.`
+  );
+}
+
+export interface JudgeVerdict { pass: boolean; failures: { target: string; problem: string; must_fix: string }[] }
+
+export function parseJudgeVerdict(raw: Record<string, unknown> | null): JudgeVerdict | null {
+  if (!raw || typeof raw.pass !== "boolean") return null;
+  const failures = (Array.isArray(raw.failures) ? raw.failures : []).flatMap((f) => {
+    if (!f || typeof f !== "object") return [];
+    const o = f as Record<string, unknown>;
+    const target = String(o.target ?? "").trim().slice(0, 120);
+    const problem = String(o.problem ?? "").trim().slice(0, 220);
+    if (!target || !problem) return [];
+    return [{ target, problem, must_fix: String(o.must_fix ?? "").trim().slice(0, 220) }];
+  }).slice(0, 6);
+  // an inconsistent verdict (pass but failures listed) reads as a fail —
+  // the judge's own doubt is the signal
+  return { pass: raw.pass === true && failures.length === 0, failures };
+}
+
+/** the repair pass regenerates ONLY the failing pieces; merge them in place.
+ *  Sections match by question (case/space-insensitive) — unmatched patches
+ *  append (the judge may demand a MISSING section). */
+export function mergePatchedSections<T extends { question: string }>(existing: T[], patched: T[]): T[] {
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const out = [...existing];
+  for (const p of patched) {
+    const i = out.findIndex((s) => norm(s.question) === norm(p.question));
+    if (i >= 0) out[i] = p;
+    else out.push(p);
+  }
+  return out;
+}
+
+/** blocks match by kind (one block per kind in practice); unmatched append */
+export function mergePatchedBlocks(existing: ReportBlock[], patched: ReportBlock[]): ReportBlock[] {
+  const out = [...existing];
+  for (const p of patched) {
+    const i = out.findIndex((b) => b.kind === p.kind);
+    if (i >= 0) out[i] = p;
+    else out.push(p);
+  }
+  return out;
+}
+
+export function judgePatchSystem(): string {
+  return (
+    `You are the report director repairing a decision report the completeness judge rejected. You get the brief contract, the ` +
+    `transcript, the current draft's answers, and the judge's failures. Regenerate ONLY the failing pieces — repaired, complete, ` +
+    `committed. Reply with ONLY a JSON object (omit keys with nothing to repair):\n` +
+    `{"sections": [{"question": "...", "answer": "...", "finding": "...", "numbers": [{"label": "...", "value": "..."}], "cites": [seq]}], ` +
+    `"blocks": [{"kind": "ranked_list|matrix|comparison", "title": "...", "columns": ["..."], "rows": [{"label": "...", "cells": ["..."], "note": "...", "cites": [seq]}]}]}\n` +
+    `Repaired sections keep their EXACT question text (they replace in place). A repaired block must be the COMPLETE artifact, not a delta. ` +
+    `Same rules as the original synthesis: commit to answers, every number from the transcript, cites are real post seqs.`
+  );
+}
+
 /* ---- Plain English translation (the report toggle) ----------------------
  * A TRANSLATION of the frozen spec — never a re-synthesis. Same verdict,
  * same numbers, same section list; the prose is rewritten for a smart
@@ -425,4 +628,53 @@ export function fmtMoney(n: number, currency = "$"): string {
   if (abs >= 1e6) return compact(1e6, "M");
   if (abs >= 1e3) return compact(1e3, "K");
   return `${currency}${Math.round(n).toLocaleString()}`;
+}
+
+/* ---- 6-PR4 (§6f) — shared plain-English synthesis ------------------------
+ * One implementation serves the SIMPLIFY toggle (lazy, on first click) and
+ * the executive register (eager, during detached synthesis, so an
+ * executive-audience report opens instantly in the plain voice). */
+
+export async function synthesizePlain(
+  anthropic: Anthropic,
+  spec: ReportSpec,
+  model: string,
+  log: (model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string, detail?: Record<string, unknown>) => Promise<void>,
+): Promise<{ plain: ReportPlain | null; lastErr: string }> {
+  // translation input: the decision content of the frozen spec — never the transcript
+  const input = JSON.stringify({
+    verdict: spec.verdict,
+    bottom_line: spec.bottom_line,
+    executive_summary: spec.executive_summary,
+    sections: spec.sections.map((s) => ({ question: s.question, answer: s.answer, finding: s.finding, numbers: s.numbers })),
+    risks: spec.risks,
+    tripwires: spec.tripwires,
+    dissents: spec.dissents?.map((d) => ({ role: d.role, position: d.position })),
+  });
+  let lastErr = "";
+  // same ceiling policy as everywhere: escalate on truncation, never accept a partial
+  for (const budget of [6_000, 12_000]) {
+    const t0 = Date.now();
+    try {
+      const res = await anthropic.messages.create({
+        model,
+        max_tokens: budget,
+        system: reportPlainSystem(),
+        messages: [{ role: "user", content: `TECHNICAL REPORT (JSON):\n${input.slice(0, 60_000)}` }],
+        output_config: { format: { type: "json_schema", schema: REPORT_PLAIN_SCHEMA } },
+      });
+      await log(model, res.usage as { input_tokens: number; output_tokens: number }, t0, undefined, { budget });
+      if (res.stop_reason === "max_tokens") { lastErr = "translation outran the ceiling"; continue; }
+      const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+      const parsed = parseLooseObject(text);
+      if (!parsed) { lastErr = "unparseable translation"; continue; }
+      const incomplete = plainSpecIncomplete(parsed, spec.sections.length);
+      if (incomplete) { lastErr = `incomplete translation — ${incomplete}`; continue; }
+      return { plain: parsed as unknown as ReportPlain, lastErr: "" };
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "translation failed";
+      await log(model, null, t0, lastErr);
+    }
+  }
+  return { plain: null, lastErr };
 }
