@@ -33,11 +33,6 @@ export interface DocRow {
 
 interface PendingUpload { key: string; name: string; size: number; error?: string }
 
-const fmtBytes = (n: number | null) => {
-  if (!n) return "";
-  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-};
 const fmtTokens = (n: number | null | undefined) => {
   if (!n) return null;
   return n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}K` : String(n);
@@ -79,7 +74,7 @@ export default function SimWorkspace({
   const [modeSel, setModeSel] = useState<string | null>(initialCasting?.mode ?? null);
   const [docs, setDocs] = useState<DocRow[]>(initialDocs);
   const [pending, setPending] = useState<PendingUpload[]>([]);
-  const [filesOpen, setFilesOpen] = useState(false);   // the cluster's expanded panel
+  const [hoverDoc, setHoverDoc] = useState<string | null>(null); // circle hover → the "−" remove badge
   const [dragOver, setDragOver] = useState(false);
   // understanding-first choreography: population + run config stay hidden
   // while the pass reads a fresh brief, so the loading state is ONE story
@@ -253,33 +248,55 @@ export default function SimWorkspace({
             CREATED {new Date(sim.created_at).toLocaleDateString()} · {sim.status.toUpperCase()}
           </div>
 
-          {/* files ride WITH the brief — overlapping circles + "+", the big
-              corpus card is gone; details expand on demand (field fix) */}
+          {/* files ride WITH the brief — overlapping circles + "+"; hover a
+              circle for the "−" remove badge (field fix: deletion used to
+              hide inside a details panel that no longer exists) */}
           <div id="stage-corpus" style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16, flexWrap: "wrap", scrollMarginTop: 20 }}>
             <div style={{ display: "flex", alignItems: "center" }}>
               {docs.slice(0, 7).map((d, i) => {
                 const ext = (d.name.split(".").pop() ?? "").toUpperCase().slice(0, 4);
+                const hovered = hoverDoc === d.id;
                 return (
-                  <button
+                  <span
                     key={d.id}
-                    title={`${d.name}${d.parse_status === "parsed" ? "" : d.parse_status === "error" ? " — PARSE ERROR" : " — parsing…"}`}
-                    onClick={() => (thumbs[d.id] ? setLightbox({ url: thumbs[d.id], name: d.name }) : void openDoc(d.id))}
-                    style={{
-                      width: 32, height: 32, borderRadius: "50%", padding: 0, marginLeft: i ? -9 : 0,
-                      border: `1px solid ${d.parse_status === "error" ? "var(--warn)" : "var(--ln5)"}`,
-                      background: "var(--sf2)", cursor: "pointer", overflow: "hidden", flex: "none",
-                      display: "inline-flex", alignItems: "center", justifyContent: "center", position: "relative", zIndex: 7 - i,
-                    }}
+                    onMouseEnter={() => setHoverDoc(d.id)}
+                    onMouseLeave={() => setHoverDoc((h) => (h === d.id ? null : h))}
+                    style={{ position: "relative", display: "inline-flex", marginLeft: i ? -9 : 0, zIndex: hovered ? 20 : 7 - i, flex: "none" }}
                   >
-                    {thumbs[d.id] ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL
-                      <img src={thumbs[d.id]} alt={d.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    ) : d.name.startsWith("Field notes") ? (
-                      <span style={{ color: "var(--acc)", fontSize: 12, lineHeight: 1 }}>✎</span>
-                    ) : (
-                      <span style={{ ...mono, fontSize: 7, letterSpacing: ".04em", color: d.parse_status === "parsed" ? "var(--t4)" : "var(--t6)" }}>{ext || "DOC"}</span>
+                    <button
+                      title={`${d.name}${imageOrdinals.has(d.id) ? ` · IMAGE ${imageOrdinals.get(d.id)} to the panel` : ""}${d.parse_status === "parsed" ? "" : d.parse_status === "error" ? " — PARSE ERROR" : " — parsing…"}`}
+                      onClick={() => (thumbs[d.id] ? setLightbox({ url: thumbs[d.id], name: d.name }) : void openDoc(d.id))}
+                      style={{
+                        width: 32, height: 32, borderRadius: "50%", padding: 0,
+                        border: `1px solid ${d.parse_status === "error" ? "var(--warn)" : hovered ? "var(--ln7)" : "var(--ln5)"}`,
+                        background: "var(--sf2)", cursor: "pointer", overflow: "hidden", flex: "none",
+                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      }}
+                    >
+                      {thumbs[d.id] ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL
+                        <img src={thumbs[d.id]} alt={d.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : d.name.startsWith("Field notes") ? (
+                        <span style={{ color: "var(--acc)", fontSize: 12, lineHeight: 1 }}>✎</span>
+                      ) : (
+                        <span style={{ ...mono, fontSize: 7, letterSpacing: ".04em", color: d.parse_status === "parsed" ? "var(--t4)" : "var(--t6)" }}>{ext || "DOC"}</span>
+                      )}
+                    </button>
+                    {hovered && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setHoverDoc(null); void removeDoc(d.id); }}
+                        title={`Remove ${d.name} from the corpus`}
+                        aria-label={`Remove ${d.name}`}
+                        style={{
+                          position: "absolute", top: -5, right: -5, width: 15, height: 15, borderRadius: "50%",
+                          border: "1px solid var(--warn)", background: "var(--warn-dim)", color: "var(--warn)",
+                          fontSize: 11, lineHeight: "12px", padding: 0, cursor: "pointer", fontWeight: 600,
+                        }}
+                      >
+                        −
+                      </button>
                     )}
-                  </button>
+                  </span>
                 );
               })}
               {docs.length > 7 && (
@@ -311,18 +328,21 @@ export default function SimWorkspace({
                 style={{ display: "none" }}
               />
             </div>
-            {docs.length > 0 ? (
-              <button
-                onClick={() => setFilesOpen((v) => !v)}
-                style={{ ...mono, fontSize: 9, letterSpacing: ".08em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0 }}
-              >
-                {parsedDocs.length} DOC{parsedDocs.length === 1 ? "" : "S"} IN CONTEXT{totalTokens ? ` · ~${fmtTokens(totalTokens)} TOK` : ""} {filesOpen ? "▴" : "▾ DETAILS"}
+            <span style={{ ...mono, fontSize: 9, letterSpacing: ".07em", color: "var(--t7)" }}>
+              {docs.length > 0
+                ? `${parsedDocs.length} DOC${parsedDocs.length === 1 ? "" : "S"} IN CONTEXT${totalTokens ? ` · ~${fmtTokens(totalTokens)} TOK` : ""}${totalTokens > DIRECT_CONTEXT_BUDGET ? " · LARGE CORPUS — 1M-CONTEXT TIER" : ""} · HOVER A FILE TO REMOVE`
+                : "ATTACH DILIGENCE FILES — AGENTS CITE THEM BY NAME"}
+              {" · "}
+              <button onClick={() => setNotesOpen(true)} style={{ ...mono, fontSize: 9, letterSpacing: ".07em", background: "none", border: "none", color: "var(--acc)", cursor: "pointer", padding: 0 }}>
+                ✎ WRITE WHAT YOU KNOW
               </button>
-            ) : (
-              <span style={{ ...mono, fontSize: 9, letterSpacing: ".07em", color: "var(--t7)" }}>
-                ATTACH DILIGENCE FILES — AGENTS CITE THEM BY NAME · OR <button onClick={() => setNotesOpen(true)} style={{ ...mono, fontSize: 9, letterSpacing: ".07em", background: "none", border: "none", color: "var(--acc)", cursor: "pointer", padding: 0 }}>✎ WRITE WHAT YOU KNOW</button>
+            </span>
+            {pending.filter((p) => p.error).map((p) => (
+              <span key={p.key} style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--warn)" }}>
+                {p.name.toUpperCase().slice(0, 28)}: {p.error!.toUpperCase().slice(0, 40)}
+                <button onClick={() => setPending((prev) => prev.filter((x) => x.key !== p.key))} aria-label="Dismiss" style={{ background: "none", border: "none", color: "var(--warn)", cursor: "pointer", padding: "0 0 0 6px", fontSize: 11 }}>×</button>
               </span>
-            )}
+            ))}
           </div>
           {brief.questions?.length > 0 && (
             brief.questions.some((q) => q.detail) ? (
@@ -375,206 +395,71 @@ export default function SimWorkspace({
         onPhase={setUnderstanding}
       />
 
-      {/* file details + field notes — expands from the brief's file cluster */}
-      {(filesOpen || notesOpen) && (
-      <div className="card" style={{ padding: "26px 30px", marginTop: 20, animation: "fadeUp .25s ease both" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-          <div style={label}>
-            DILIGENCE MATERIALS{parsedDocs.length > 0 && ` · ${parsedDocs.length} DOC${parsedDocs.length > 1 ? "S" : ""} · ~${fmtTokens(totalTokens)} TOKENS`}
-          </div>
-          {parsedDocs.length > 0 && (
-            <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: totalTokens > DIRECT_CONTEXT_BUDGET ? "var(--warn)" : "var(--acc)" }}>
-              {totalTokens > DIRECT_CONTEXT_BUDGET ? "LARGE CORPUS · 1M-CONTEXT TIER" : "GROUNDING · FULL DOCUMENTS IN CONTEXT"}
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 16 }}>
-          {docs.map((d) => (
-            <div
-              key={d.id}
-              className="doc-row"
-              style={{ display: "flex", alignItems: "center", gap: 14, border: "1px solid var(--ln3)", borderRadius: 10, padding: "11px 16px", animation: "fadeUp .35s ease both" }}
-            >
-              {thumbs[d.id] ? (
-                // eslint-disable-next-line @next/next/no-img-element -- signed, short-lived storage URL
-                <img
-                  src={thumbs[d.id]}
-                  alt={d.name}
-                  onClick={() => setLightbox({ url: thumbs[d.id], name: d.name })}
-                  style={{ width: 38, height: 28, objectFit: "cover", borderRadius: 6, border: "1px solid var(--ln4)", cursor: "zoom-in", flex: "none" }}
-                />
-              ) : d.name.startsWith("Field notes") ? (
-                <span style={{ color: "var(--acc)", fontSize: 13, flex: "none", lineHeight: 1 }}>✎</span>
-              ) : (
-                <svg width="14" height="16" viewBox="0 0 14 17" fill="none" stroke="currentColor" strokeWidth="1.3" style={{ color: "var(--t6)", flex: "none" }}>
-                  <path d="M2 1h7l4 4v10.5H2z" /><path d="M9 1v4h4M4.5 9h5M4.5 12h5" />
-                </svg>
-              )}
-              <button
-                onClick={() => thumbs[d.id] ? setLightbox({ url: thumbs[d.id], name: d.name }) : void openDoc(d.id)}
-                title={thumbs[d.id] ? "Preview the image" : "Open the original"}
-                style={{ ...mono, fontSize: 11, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}
-              >
-                {d.name}
-              </button>
-              {imageOrdinals.has(d.id) && (
-                <span
-                  title="How the panel refers to this image — the same ordinal agents see in their context"
-                  style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--acc)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "2px 8px", flex: "none" }}
-                >
-                  IMAGE {imageOrdinals.get(d.id)}
-                </span>
-              )}
-              <span style={{ ...mono, fontSize: 10, color: "var(--t7)", flex: "none" }}>{fmtBytes(d.size_bytes)}</span>
-              <span style={{ flex: 1 }} />
-              {(d.page_count || d.token_estimate) && (
-                <span style={{ ...mono, fontSize: 10, color: "var(--t6)", flex: "none" }}>
-                  {d.page_count ? `${d.page_count}P · ` : ""}{fmtTokens(d.token_estimate)} TOK
-                </span>
-              )}
-              {d.parse_status === "parsed" ? (
-                <span style={{ ...mono, fontSize: 10, color: "var(--acc)", flex: "none" }}>PARSED ✓</span>
-              ) : d.parse_status === "error" ? (
-                <span title={d.parse_error ?? undefined} style={{ ...mono, fontSize: 10, color: "var(--warn)", flex: "none" }}>ERROR</span>
-              ) : (
-                <span style={{ ...mono, fontSize: 10, color: "var(--t6)", flex: "none", animation: "shim 1.2s ease infinite" }}>PARSING…</span>
-              )}
-              <button
-                onClick={() => removeDoc(d.id)}
-                aria-label={`Remove ${d.name}`}
-                style={{ background: "none", border: "none", color: "var(--t7)", cursor: "pointer", padding: "0 0 0 4px", fontSize: 14, lineHeight: 1 }}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-
-          {pending.map((p) => (
-            <div key={p.key} style={{ display: "flex", alignItems: "center", gap: 14, border: "1px solid var(--ln3)", borderRadius: 10, padding: "11px 16px" }}>
-              <svg width="14" height="16" viewBox="0 0 14 17" fill="none" stroke="currentColor" strokeWidth="1.3" style={{ color: "var(--t6)", flex: "none" }}>
-                <path d="M2 1h7l4 4v10.5H2z" /><path d="M9 1v4h4M4.5 9h5M4.5 12h5" />
-              </svg>
-              <span style={{ ...mono, fontSize: 11, color: "var(--t3)" }}>{p.name}</span>
-              <span style={{ ...mono, fontSize: 10, color: "var(--t7)", flex: "none" }}>{fmtBytes(p.size)}</span>
-              {p.error ? (
-                <>
-                  <span style={{ flex: 1 }} />
-                  <span style={{ ...mono, fontSize: 10, color: "var(--warn)" }}>{p.error.toUpperCase().slice(0, 60)}</span>
-                  <button onClick={() => setPending((prev) => prev.filter((x) => x.key !== p.key))} style={{ background: "none", border: "none", color: "var(--t7)", cursor: "pointer", padding: 0, fontSize: 14 }}>×</button>
-                </>
-              ) : (
-                <>
-                  <div style={{ flex: 1, height: 3, borderRadius: 100, background: "var(--sf2)", overflow: "hidden" }}>
-                    <div style={{ height: 3, width: "60%", borderRadius: 100, background: "var(--acc)", animation: "shim 1.2s ease infinite" }} />
-                  </div>
-                  <span style={{ ...mono, fontSize: 10, color: "var(--t6)", flex: "none" }}>PARSING · UPLOADING TO CONTEXT…</span>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-
+      {/* field notes — a standalone editor (the diligence card is gone:
+          the brief's circles + hover-remove carry all file management) */}
+      {notesOpen && (
         <div
-          onClick={() => fileRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files); }}
           style={{
-            marginTop: 14, border: `1px dashed ${dragOver ? "var(--acc)" : "var(--ln5)"}`,
-            background: dragOver ? "var(--acc-dim)" : "transparent",
-            borderRadius: 10, padding: "22px 16px", textAlign: "center", cursor: "pointer", transition: "all .15s",
+            marginTop: 16, borderLeft: "3px solid var(--acc)", borderTop: "1px solid var(--ln3)",
+            borderRight: "1px solid var(--ln3)", borderBottom: "1px solid var(--ln3)",
+            borderRadius: "4px 12px 12px 4px", background: "var(--sf2)", padding: "18px 20px",
+            animation: "fadeUp .3s ease both",
           }}
         >
-          <div style={{ ...mono, fontSize: 10.5, letterSpacing: ".08em", color: dragOver ? "var(--acc)" : "var(--t6)" }}>
-            + DROP FILES OR CLICK — PDF · TXT/MD · CSV · HTML · GEOJSON · IMAGES
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ ...mono, fontSize: 10, letterSpacing: ".12em", color: "var(--acc)" }}>✎ FIELD NOTES</span>
+            <span style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--t7)" }}>
+              PARSED, CHUNKED & CITED LIKE ANY UPLOADED DOCUMENT
+            </span>
           </div>
           <input
-            ref={fileRef}
-            type="file"
-            multiple
-            accept=".pdf,.txt,.md,.csv,.html,.json,.geojson,image/*,application/pdf,text/plain,text/markdown,text/csv,text/html"
-            onChange={(e) => { if (e.target.files?.length) void uploadFiles(e.target.files); e.target.value = ""; }}
-            style={{ display: "none" }}
+            value={noteTitle}
+            onChange={(e) => setNoteTitle(e.target.value)}
+            placeholder="WHAT THE BROKER TOLD US ON THE SITE WALK"
+            maxLength={60}
+            style={{
+              ...mono, width: "100%", boxSizing: "border-box", marginTop: 12, fontSize: 11.5,
+              letterSpacing: ".05em", background: "transparent", border: "none",
+              borderBottom: "1px solid var(--ln4)", padding: "6px 0", color: "var(--t1)",
+              outline: "none", caretColor: "var(--acc)", textTransform: "uppercase",
+            }}
           />
-        </div>
-
-        {/* field notes — no documents? write what you know */}
-        {!notesOpen ? (
-          <button
-            onClick={() => setNotesOpen(true)}
+          <textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder={"Everything you know that isn't in a document yet — seller motivation, verbal quotes, site-walk observations, neighborhood chatter, deal history.\n\nAgents will treat these notes as evidence and cite them by name."}
+            rows={6}
+            maxLength={20000}
             style={{
-              ...mono, marginTop: 12, fontSize: 10, letterSpacing: ".08em",
-              background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0,
+              width: "100%", boxSizing: "border-box", marginTop: 10, background: "transparent",
+              border: "none", outline: "none", resize: "vertical", minHeight: 130,
+              fontFamily: "var(--font-sans), sans-serif", fontSize: 13.5, lineHeight: 1.65,
+              color: "var(--t2)", caretColor: "var(--acc)",
             }}
-          >
-            NO DOCUMENTS? <span style={{ color: "var(--acc)" }}>✎ WRITE WHAT YOU KNOW</span> — SAVED TO THE CORPUS LIKE ANY FILE
-          </button>
-        ) : (
-          <div
-            style={{
-              marginTop: 14, borderLeft: "3px solid var(--acc)", borderTop: "1px solid var(--ln3)",
-              borderRight: "1px solid var(--ln3)", borderBottom: "1px solid var(--ln3)",
-              borderRadius: "4px 12px 12px 4px", background: "var(--sf2)", padding: "18px 20px",
-              animation: "fadeUp .3s ease both",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ ...mono, fontSize: 10, letterSpacing: ".12em", color: "var(--acc)" }}>✎ FIELD NOTES</span>
-              <span style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--t7)" }}>
-                PARSED, CHUNKED & CITED LIKE ANY UPLOADED DOCUMENT
-              </span>
-            </div>
-            <input
-              value={noteTitle}
-              onChange={(e) => setNoteTitle(e.target.value)}
-              placeholder="WHAT THE BROKER TOLD US ON THE SITE WALK"
-              maxLength={60}
+          />
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10 }}>
+            <button
+              onClick={saveNotes}
+              disabled={!noteText.trim()}
               style={{
-                ...mono, width: "100%", boxSizing: "border-box", marginTop: 12, fontSize: 11.5,
-                letterSpacing: ".05em", background: "transparent", border: "none",
-                borderBottom: "1px solid var(--ln4)", padding: "6px 0", color: "var(--t1)",
-                outline: "none", caretColor: "var(--acc)", textTransform: "uppercase",
+                background: noteText.trim() ? "var(--acc)" : "var(--sf)", color: noteText.trim() ? "var(--acc-c)" : "var(--t6)",
+                fontWeight: 600, fontSize: 12.5, padding: "9px 20px", borderRadius: 100, border: "none",
+                cursor: noteText.trim() ? "pointer" : "default", fontFamily: "var(--font-sans), sans-serif",
               }}
-            />
-            <textarea
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              placeholder={"Everything you know that isn't in a document yet — seller motivation, verbal quotes, site-walk observations, neighborhood chatter, deal history.\n\nAgents will treat these notes as evidence and cite them by name."}
-              rows={6}
-              maxLength={20000}
-              style={{
-                width: "100%", boxSizing: "border-box", marginTop: 10, background: "transparent",
-                border: "none", outline: "none", resize: "vertical", minHeight: 130,
-                fontFamily: "var(--font-sans), sans-serif", fontSize: 13.5, lineHeight: 1.65,
-                color: "var(--t2)", caretColor: "var(--acc)",
-              }}
-            />
-            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10 }}>
-              <button
-                onClick={saveNotes}
-                disabled={!noteText.trim()}
-                style={{
-                  background: noteText.trim() ? "var(--acc)" : "var(--sf)", color: noteText.trim() ? "var(--acc-c)" : "var(--t6)",
-                  fontWeight: 600, fontSize: 12.5, padding: "9px 20px", borderRadius: 100, border: "none",
-                  cursor: noteText.trim() ? "pointer" : "default", fontFamily: "var(--font-sans), sans-serif",
-                }}
-              >
-                Save to corpus
-              </button>
-              <button
-                onClick={() => setNotesOpen(false)}
-                style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer" }}
-              >
-                CANCEL
-              </button>
-              <span style={{ ...mono, marginLeft: "auto", fontSize: 9, color: "var(--t7)" }}>
-                {noteText.length.toLocaleString()} / 20,000
-              </span>
-            </div>
+            >
+              Save to corpus
+            </button>
+            <button
+              onClick={() => setNotesOpen(false)}
+              style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer" }}
+            >
+              CANCEL
+            </button>
+            <span style={{ ...mono, marginLeft: "auto", fontSize: 9, color: "var(--t7)" }}>
+              {noteText.length.toLocaleString()} / 20,000
+            </span>
           </div>
-        )}
-      </div>
+        </div>
       )}
 
       {/* PR-A — image lightbox for uploaded photos */}
