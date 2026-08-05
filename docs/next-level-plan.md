@@ -574,6 +574,70 @@ The current structured form survives under COMPOSE MANUALLY; suggest-with-AI ret
 a button because it becomes the default behavior. Zero-config stays useful, config
 stays bone-deep (§1 p4).
 
+
+**The three layers (designed with Adam 2026-08-05, after studying Simile's composer):**
+Simile's radical simplicity and our depth are not in conflict — they belong to
+DIFFERENT MOMENTS. Simplicity is for the moment of asking; depth is for the object you
+end up with. The interface is three layers of progressive commitment:
+
+- **Layer 1 — THE ASK.** The hero composer: prompt + file drop + AT MOST THREE inline
+  chips that read as modifiers of the question, never as settings —
+  `PANEL: AUTO ▾` (auto / experts / residents / mixed — the §4.2 composition override),
+  `MODE: AUTO ▾` (the seven ModeDiagram cards in the dropdown; director recommends),
+  and `DEPTH: STANDARD ▾` — ONE intent-level dial (quick read · standard · deep dive)
+  that presets rounds + density + tier + report length and shows the live cost/time
+  estimate right in the chip ("~$4 · ~6 MIN"). Five numeric knobs collapse into one
+  dial; the knobs survive underneath. Nothing else on this screen.
+- **Layer 2 — THE PREFLIGHT (one screen, one Launch).** Submit → the Understanding
+  Mirror at top, then the CAST as it materializes (the casting theater we already
+  have), the poll plan, the report wireframe, and the depth/cost line — each section a
+  one-line summary of what was decided AND WHY ("MIXED — community surface detected"),
+  each a door. Glance, correct anything inline, LAUNCH. The current sequential stage
+  machine becomes sections of one screen.
+- **Layer 3 — THE STUDIO.** Everything that exists today — full population editor,
+  crowd browser, per-seat edits, every §4.1 parameter, the tools rack — reached by
+  drilling into any preflight section. Power users live here; first-time users may
+  never see it. Nothing is removed; it is re-choreographed from "path" to "drill-down".
+
+Returning users get RECENT BRIEFS + one-click "run again with changes" (the 5d fork
+mechanism) on the composer, and later, saved panels as PANEL-chip presets (persona
+sets). Implementation note: this is choreography, not a rebuild — BriefComposer,
+CastingTheater, PopulationStage, RunConfigStage all exist; 6a composes them into
+Ask → Preflight → Studio and adds the DEPTH preset mapping in lib/run.ts.
+
+
+**DECISION (Adam, 2026-08-05 — after reviewing the Flow Lab prototypes):** the current
+staged flow STAYS THE CORE. No re-choreography of the workspace. 6a narrows to two
+concrete moves plus one new alternate view:
+
+1. **The brief step captures more, better.** File/document upload moves ONTO the brief
+   composer (prompt + docs are one gesture — same corpus pipeline underneath), and the
+   prompt box grows into a true free-form ask: users write EVERYTHING they want the
+   simulation to cover/answer/research in their own words, multi-part and messy
+   welcome. Submitting runs the Understanding pass; the WHAT I UNDERSTOOD card renders
+   in the workspace exactly as designed (intent + audience up top, sub-asks as editable
+   chips, output contracts, entities, criteria — each labeled with what it drives).
+   The rest of the flow — population review, run config, launch — is untouched.
+   COMPOSE MANUALLY survives.
+
+2. **QUICK RUN — the one-box alternate view (from Flow Lab's Flow A/D).** A small view
+   toggle on /sim/new switches to the one-box composer. Behavior: the empty state is
+   just the box + file drop; once the user starts typing, the config surfaces
+   progressively BELOW the box — the animated mode cards first, then the compact config
+   params for the selected mode. In this view there is NO population stage: hitting RUN
+   derives the contract, casts leads + generates the crowd behind the casting-theater
+   animation as the loading state, and drops straight into the live run screen. The
+   cost estimate still shows on the RUN button before commit (no-surprise-bills rule),
+   and a one-line "understood" strip (intent · N sub-asks · poll plan) renders between
+   typing and run — compressed trust, no full card. View preference persists per user.
+   Quick Run trades population review for speed; the classic flow remains the default.
+
+Revised PR slicing: **6-PR1** = Understanding pass + contract + files-on-brief + the
+WHAT I UNDERSTOOD card in the current flow · **6-PR2** = Quick Run view · **6-PR3** =
+agendas + resolution tracker + COVERAGE strip + adaptive poll plan · **6-PR4** = report
+blocks + semantic judge + audience register. The three-layers material above stays as
+design rationale; the Preflight-replaces-stages idea is parked, not adopted.
+
 ### 6b · The Understanding pass (technical)
 
 One CASTING_MODEL-tier call over prompt + doc names + first-N-token excerpts → contract
@@ -623,6 +687,37 @@ with sources" was noise). Guardrails: ≤3 distinct angles per run, an angle per
 rounds before trends render, and every sentiment event already carries its own
 question+options (PR-B) so round-varying polls need NO schema change — the report's
 trend slider groups by angle. §4.2's auto-decide table gains the row.
+
+
+**The instrument palette (added 2026-08-05 after studying Aaru):** Aaru's agents answer
+survey instruments — single choice, multi-select, RANKING, MATRIX, free response — but
+never deliberate; our crowd deliberates-adjacent but polls with two instruments. Steal
+the palette, keep the argument. The poll plan picks from: **proposition**
+(support/conditional/oppose/disengaged — today) · **choice** (pick one entity — PR-B) ·
+**ranking** (the crowd orders the entities — and for "conclude with a ranked list"
+briefs the crowd's ranking lands NEXT TO the panel's ranked-list block, comparable
+side by side) · **matrix** (entities × the brief's qualities, rated — feeding the same
+matrix block the panel argues) · **free probe** (one open question per run; answers
+theme-clustered into a citable "in their own words" report card) · **none**. The
+alignment is the point: each instrument maps onto the 6e block it feeds, so crowd data
+and panel argument converge on the SAME artifact instead of living in different rooms.
+Users can also AUTHOR instruments directly in the preflight poll plan — derived by
+default, authorable always.
+
+### 6d-2 · Crowd cohorts — named segments, split results (from Aaru's Audiences)
+
+Aaru names its audiences ("Experience seekers", "Value optimizers") and reports per
+audience. Our crowd is one pool split only experts/residents. The Understanding pass
+(or the user, in the Studio) defines **named cohorts** with hard parameters in plain
+language ("renters within 3 miles" · "move-up buyers, HH income $95–150K" · "owners on
+adjacent blocks"); crowd members are generated tagged to a cohort, and every
+instrument reports **per-cohort splits** — the poll card gains a BY COHORT toggle, the
+report's sentiment blocks break out cohorts ("Value optimizers oppose 62% · Experience
+seekers support 55%"), and dissent BETWEEN cohorts becomes a first-class finding.
+This is the bridge to 5a: Phase 6 ships narrative cohorts; PUMS later grounds the same
+cohort objects in census joint distributions (geography + income filters become real
+sampling constraints). Migration-light: a `cohort` field on crowd spec_frozen +
+ballots already carry names.
 
 ### 6e · Reports that take the answer's shape (+ the semantic gate)
 
