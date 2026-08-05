@@ -523,6 +523,11 @@ brief.contract = {
       spec: { items_from: "entities", criteria: [...] } }
   ],
   entities: ["the nouns the brief is ABOUT — asset categories, options, places"],
+  population_hints: {   // "homebuyers aged 35-45 in Beverly Hills" IN the prompt → casting input
+    described: true,    // false = user left it out; the director decides everything
+    cohorts: [{ desc: "homebuyers aged 35-45", geography: "Beverly Hills, CA" }],
+    composition: "residents"  // inferred lean, still overridable
+  },
   constraints: ["follow the evaluation framework in query.md", ...],
   success_criteria: [...]
 }
