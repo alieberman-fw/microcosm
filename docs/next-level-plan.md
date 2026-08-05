@@ -533,27 +533,69 @@ verdict contract; an open-ended exploration = intent "explore", narrative contra
 poll; Adam's edge-industrial prompt = 4 sub-asks + entities (the asset categories) +
 matrix and ranked-list contracts + a named-sources evidence standard.
 
-### 6a · Prompt-first composer (UI/UX)
+### 6a · Prompt-first composer + the Understanding Mirror (UI/UX — designed with Adam 2026-08-05)
 
 `/sim/new` becomes ONE hero composer: a large prompt box ("Ask the hardest question you
 have") with file drop directly on it. Submit runs the Understanding pass and lands on
-the workspace with a **WHAT I UNDERSTOOD** card: intent + audience up top, sub-asks as
-editable chips, output contracts as chips (RANKED LIST · PER-CATEGORY MATRIX), entities,
-criteria — each chip labeled with what it drives ("every sub-ask gets an owner seat and
-a report section"). Correct anything, or ignore it and launch. The current structured
-form survives under COMPOSE MANUALLY; suggest-with-AI is retired as a button because it
-becomes the default behavior. Zero-config stays useful, config stays bone-deep (§1 p4).
+the workspace with the **UNDERSTANDING MIRROR** — not a form, a smart colleague's
+restatement. Design goals, in priority order: (1) the 80% case never NEEDS to read it —
+launch is one click with good defaults; (2) when the user does read it, it reads human;
+(3) any piece is correctable in seconds; (4) nothing the user asked for can silently
+fall out.
+
+**The card, top to bottom:**
+- **Intent + audience pills** ("EVALUATE OPTIONS · EXECUTIVE READ") — one glance.
+- **The mirror**: a 3–6 sentence second-person restatement — "You're deciding which of
+  the asset categories in your briefings deserve pursuit… For each category you want to
+  know whether the real estate exists to buy today, who every player is (named, with
+  sources)… You expect a ranked list." Every load-bearing phrase is subtly underlined;
+  clicking one opens its structured chip for inline edit. Prose that edits like data.
+- **YOUR FILES, with roles** (new — and the gap Adam's edge-industrial run exposed):
+  each document classified as **evidence** (argue from it) · **framework/instructions**
+  ("follow the evaluation standards in query.md" — feeds agent instructions and the
+  report outline, not just the citable corpus) · **question-source** (the brief lives in
+  the doc) · **reference**. Roles editable per file; mis-roled docs are today's silent
+  failure mode.
+- **THE REPORT YOU'LL GET**: a mini wireframe of the future report — lead artifact
+  (ranked list), blocks (category × criteria matrix), one section per sub-ask, register.
+  Seeing the answer's SHAPE before spending a run is the trust moment; editing the
+  wireframe edits the output contracts.
+- **POLL PLAN**: the angles and their instruments — or "NO CROWD POLL — expert research
+  brief" stated plainly, so a missing poll reads as a decision, not a bug.
+- **Clarifying questions, 0–2, one-tap, never blocking**: only when the pass emits a
+  low-confidence flag ("Should the report recommend NON-real-estate expressions when no
+  play pencils? [Include them / Real estate only]"). Ignored = sensible default,
+  recorded in the contract.
+- **Collapsed by default below the mirror**: THE BREAKDOWN — numbered sub-asks (each
+  tagged with its evidence standard + "owner seat"), entities, constraints, success
+  criteria; add/edit/delete chips; RE-DERIVE re-runs the pass after brief edits.
+
+The current structured form survives under COMPOSE MANUALLY; suggest-with-AI retires as
+a button because it becomes the default behavior. Zero-config stays useful, config
+stays bone-deep (§1 p4).
 
 ### 6b · The Understanding pass (technical)
 
 One CASTING_MODEL-tier call over prompt + doc names + first-N-token excerpts → contract
 JSON (structured outputs; completeness-gated + salvaged like the casting plan; logged as
-`brief.understand`). Consumers: **casting** (sub-asks → owner seats; evidence standards
-enter seat prompts; entities seed disciplines), **engine** (round agendas, 6c),
-**instrument derivation** (poll plan from intent + entities, 6d), **report outline**
-(sections from sub_asks, blocks from output_contracts, 6e), **gate** (semantic
-completeness, 6e). Back-compat: no contract → today's behavior, unchanged.
+`brief.understand`) — now including **per-document roles** and **confidence flags**
+(each flag becomes a one-tap clarifier on the card; unanswered flags resolve to stated
+defaults). The **mirror prose** is generated in the same call and stored beside the
+contract; chip edits mutate the CONTRACT (the truth) and mark the mirror stale until
+regenerated (one cheap call). Consumers: **casting** (sub-asks → owner seats; evidence
+standards enter seat prompts; entities seed disciplines), **engine** (round agendas, 6c;
+framework-docs quoted in instructions), **instrument derivation** (poll plan, 6d),
+**report outline** (sections from sub_asks, blocks from output_contracts, framework-docs
+shaping the skeleton, 6e), **gate** (semantic completeness, 6e). Back-compat: no
+contract → today's behavior, unchanged.
 
+**The honest chain of guarantees** (what "ensures" actually means here): the
+Understanding pass is probabilistic — the card exists so the user can catch a bad parse
+in seconds, and the confidence flags surface the pass's OWN doubt. The rounds are
+steered (agendas), not scripted. The HARD guarantee sits at the end: the semantic
+completeness judge refuses any report that doesn't answer every contract line, with
+targeted re-synthesis until it does. Perfect understanding is not assumed anywhere;
+checked completeness is enforced exactly once, where it matters.
 ### 6c · Rounds that walk the brief (agendas + the coverage strip)
 
 Rounds stop being undirected passes. The engine keeps a **resolution tracker** — after
