@@ -493,70 +493,176 @@ describe pipeline, and the existing chat surface) — before the data tools.
 
 ---
 
-## Phase 6 — The brief-to-report contract: Claude-grade answers (PROPOSED 2026-08-04 — Adam to order vs Phase 5)
+## Phase 6 — The Brief Contract: any question in, a report that answers it (DESIGNED 2026-08-04, ships before 5a)
 
-**The observation (Adam, testing a multi-part research brief):** the swarm machinery is
-sound (population, casting, graph, deliberation), but the pipeline doesn't guarantee the
-REPORT answers everything the user actually asked. A Claude-style prompt carries several
-sub-asks ("for each category, determine X; name every player with sources; if no play
-pencils, what instead; conclude with a ranked list") plus OUTPUT CONTRACTS (ranked list)
-and EVIDENCE STANDARDS — and today those survive only as one long problem string. The
-classic stance poll also gets bolted onto briefs where support/oppose is meaningless.
-The interface itself should feel like Claude: one prompt + attachments, structure derived.
+**The diagnosis (Adam's field reports, distilled):** the deliberation machine is sound —
+population, casting, modes, the graph, the living forum. What's missing is an explicit,
+machine-readable representation of USER INTENT. Today the brief survives downstream as
+one long string, so casting, the rounds, the poll, and the report each re-guess what the
+user wanted — and each guesses differently. A multi-part research prompt gets a
+support/oppose poll bolted on; "conclude with a ranked list" never becomes a ranked
+list; rounds orbit the loudest sub-question while quieter ones go unanswered. The fix is
+one new spine — the **Brief Contract** — that every stage consumes instead of re-guessing.
 
-### 6a · Prompt-first composer
-One composer: a big prompt box + file drop, nothing else required. The current
-structured brief (question chips, success criteria, template) becomes the DERIVED,
-editable layer underneath — the suggest pass runs automatically on submit and shows its
-decomposition as chips the user can correct or ignore (the "enrich" flow survives; the
-form-first path remains as an advanced view). Zero-config stays useful; config stays
-bone-deep (§1 principle 4).
+### The Brief Contract (the spine everything else hangs on)
 
-### 6b · Brief decomposition — sub-asks, output contracts, evidence standards
-A dedicated frontier-tier parse (like casting, quality bounds everything downstream)
-turns ANY prompt + attachments into: **sub-questions** (each becomes an owned report
-section — today's questions-to-resolve, but extracted reliably even when buried in one
-paragraph), **output contracts** (ranked list · per-category verdict matrix · comparison
-table · timeline — these drive report STRUCTURE, not just content), **constraints &
-evidence standards** ("named, with sources" → citation density requirements fed to
-agents AND the fact gate), and **audience** (see 6f). Persisted in the brief; visible
-and editable.
+Derived once per brief by a frontier-tier **Understanding pass** (same rule as casting:
+this call's quality bounds everything downstream), persisted at `brief.contract`,
+editable in the UI, versioned, re-derived only on explicit request:
 
-### 6c · Dynamic report structures
-The report schema grows contract-driven section types beyond prose findings: a RANKED
-LIST block (ordered, per-item verdict + rationale + cites), a PER-CATEGORY MATRIX
-(rows = the brief's categories, columns = the brief's evaluation criteria), and a
-COMPARISON TABLE. The synthesizer picks blocks from 6b's contracts; the completeness
-gate refuses a ranked-list brief that came back without a ranked list. Adam's example
-brief would produce: matrix over asset categories × (real-estate-exists · players ·
-price · alternative expression) + the ranked list as the lead artifact.
+```jsonc
+brief.contract = {
+  intent: "decide | evaluate_options | explore | diagnose | forecast | validate",
+  audience: "executive | technical | community",
+  sub_asks: [            // EVERY answerable ask, even buried mid-paragraph
+    { id, ask, kind: "question | determination | enumeration",
+      evidence: "opinion-ok | cited | quantified | named-sources" }
+  ],
+  output_contracts: [    // the SHAPE the answer must take — drives report STRUCTURE
+    { type: "ranked_list | matrix | comparison | verdict | range | odds | timeline",
+      spec: { items_from: "entities", criteria: [...] } }
+  ],
+  entities: ["the nouns the brief is ABOUT — asset categories, options, places"],
+  constraints: ["follow the evaluation framework in query.md", ...],
+  success_criteria: [...]
+}
+```
 
-### 6d · Answer-completeness gate (semantic)
-Today's gate checks SHAPE (sections cover questions, criteria receipt). Add a JUDGE
-pass over the draft vs 6b's parsed asks: "is sub-ask 3 actually ANSWERED (not just
-mentioned)? does the ranked list rank ALL categories? are players named with sources
-where the brief demanded sources?" Failures retry synthesis TARGETED ("sub-ask 3 and
-the ranked list are missing — fix only those"), not from scratch. This is the direct
-fix for "our swarms are not directly answering the user's specific questions."
+Handles every brief style by construction: a single sharp question = one sub-ask + a
+verdict contract; an open-ended exploration = intent "explore", narrative contract, no
+poll; Adam's edge-industrial prompt = 4 sub-asks + entities (the asset categories) +
+matrix and ranked-list contracts + a named-sources evidence standard.
 
-### 6e · Instrument fit — polls that match the brief (or none at all)
-The derivation gains two more shapes beyond proposition/choice: **none** (expert
-research briefs with no public-sentiment surface — the crowd participates through
-interjections and votes, and the poll card simply doesn't exist; support/oppose on
-"which categories deserve pursuit, with sources" was noise) and **per-sub-question**
-(later: a multi-part brief polls the crowd on the one or two sub-asks where public
-preference genuinely matters). The §4.2 auto-decide table gets a row for it.
+### 6a · Prompt-first composer + the Understanding Mirror (UI/UX — designed with Adam 2026-08-05)
 
-### 6f · Audience register
-Deliberation stays technical — personas arguing at full depth IS the product. The
-REPORT gets an audience dial derived from the brief (or set explicitly): `executive`
-(plain-language findings first, technical depth folded below — closer to today's
-SIMPLIFY as the default posture) vs `technical` (today's expert view). SIMPLIFY
-remains the hard translation; the register decides which voice leads.
+`/sim/new` becomes ONE hero composer: a large prompt box ("Ask the hardest question you
+have") with file drop directly on it. Submit runs the Understanding pass and lands on
+the workspace with the **UNDERSTANDING MIRROR** — not a form, a smart colleague's
+restatement. Design goals, in priority order: (1) the 80% case never NEEDS to read it —
+launch is one click with good defaults; (2) when the user does read it, it reads human;
+(3) any piece is correctable in seconds; (4) nothing the user asked for can silently
+fall out.
 
-**Sequencing note:** 6b + 6d are the highest-leverage pair (every run's answer quality)
-and are independent of Phase 5's data work; 6a/6c ride behind them; 6e is small and can
-ship with 6b. Adam decides: interleave with 5a or run Phase 6 first.
+**The card, top to bottom:**
+- **Intent + audience pills** ("EVALUATE OPTIONS · EXECUTIVE READ") — one glance.
+- **The mirror**: a 3–6 sentence second-person restatement — "You're deciding which of
+  the asset categories in your briefings deserve pursuit… For each category you want to
+  know whether the real estate exists to buy today, who every player is (named, with
+  sources)… You expect a ranked list." Every load-bearing phrase is subtly underlined;
+  clicking one opens its structured chip for inline edit. Prose that edits like data.
+- **YOUR FILES, with roles** (new — and the gap Adam's edge-industrial run exposed):
+  each document classified as **evidence** (argue from it) · **framework/instructions**
+  ("follow the evaluation standards in query.md" — feeds agent instructions and the
+  report outline, not just the citable corpus) · **question-source** (the brief lives in
+  the doc) · **reference**. Roles editable per file; mis-roled docs are today's silent
+  failure mode.
+- **THE REPORT YOU'LL GET**: a mini wireframe of the future report — lead artifact
+  (ranked list), blocks (category × criteria matrix), one section per sub-ask, register.
+  Seeing the answer's SHAPE before spending a run is the trust moment; editing the
+  wireframe edits the output contracts.
+- **POLL PLAN**: the angles and their instruments — or "NO CROWD POLL — expert research
+  brief" stated plainly, so a missing poll reads as a decision, not a bug.
+- **Clarifying questions, 0–2, one-tap, never blocking**: only when the pass emits a
+  low-confidence flag ("Should the report recommend NON-real-estate expressions when no
+  play pencils? [Include them / Real estate only]"). Ignored = sensible default,
+  recorded in the contract.
+- **Collapsed by default below the mirror**: THE BREAKDOWN — numbered sub-asks (each
+  tagged with its evidence standard + "owner seat"), entities, constraints, success
+  criteria; add/edit/delete chips; RE-DERIVE re-runs the pass after brief edits.
+
+The current structured form survives under COMPOSE MANUALLY; suggest-with-AI retires as
+a button because it becomes the default behavior. Zero-config stays useful, config
+stays bone-deep (§1 p4).
+
+### 6b · The Understanding pass (technical)
+
+One CASTING_MODEL-tier call over prompt + doc names + first-N-token excerpts → contract
+JSON (structured outputs; completeness-gated + salvaged like the casting plan; logged as
+`brief.understand`) — now including **per-document roles** and **confidence flags**
+(each flag becomes a one-tap clarifier on the card; unanswered flags resolve to stated
+defaults). The **mirror prose** is generated in the same call and stored beside the
+contract; chip edits mutate the CONTRACT (the truth) and mark the mirror stale until
+regenerated (one cheap call). Consumers: **casting** (sub-asks → owner seats; evidence
+standards enter seat prompts; entities seed disciplines), **engine** (round agendas, 6c;
+framework-docs quoted in instructions), **instrument derivation** (poll plan, 6d),
+**report outline** (sections from sub_asks, blocks from output_contracts, framework-docs
+shaping the skeleton, 6e), **gate** (semantic completeness, 6e). Back-compat: no
+contract → today's behavior, unchanged.
+
+**The honest chain of guarantees** (what "ensures" actually means here): the
+Understanding pass is probabilistic — the card exists so the user can catch a bad parse
+in seconds, and the confidence flags surface the pass's OWN doubt. The rounds are
+steered (agendas), not scripted. The HARD guarantee sits at the end: the semantic
+completeness judge refuses any report that doesn't answer every contract line, with
+targeted re-synthesis until it does. Perfect understanding is not assumed anywhere;
+checked completeness is enforced exactly once, where it matters.
+### 6c · Rounds that walk the brief (agendas + the coverage strip)
+
+Rounds stop being undirected passes. The engine keeps a **resolution tracker** — after
+each round a Haiku pass scores every sub-ask 0–100 "how settled, what's missing" — and
+each round opens with an **agenda**: round 1 broad, middle rounds target the
+least-resolved sub-asks by name ("Round 2 focus: 'does the real estate exist to buy
+today?' — unresolved for micro-fulfillment and edge-compute"), the final round forces
+synthesis/ranking. Mode choreographies are untouched — the agenda rides in the opener
+instruction. **UI:** round dividers carry the agenda label, and the run screen gets a
+**COVERAGE strip** — one chip per sub-ask filling toward resolved — so convergence is
+visible and MEANS something (Adam's convergence-audit concern, made structural).
+Benefit: transcripts that systematically cover the brief are the raw material reports
+need; today's orbit-the-loudest-thread failure mode disappears.
+
+### 6d · Adaptive polling — a poll PLAN, not one frozen instrument (Adam's ask)
+
+The Understanding pass emits a **poll plan**: which angles of this brief have a genuine
+preference/sentiment surface, each with its own instrument — proposition, choice over
+entities, or **none**. Per round, the poll asks the angle matched to the round's agenda:
+early = the broad gut-read, middle = per-category choice ("which category most deserves
+pursuit?"), late = the decision-shaped closer ("back the ranked list's #1?"). Expert
+research briefs with no sentiment surface poll NOT AT ALL (crowd still interjects and
+votes — the poll card simply doesn't exist; support/oppose on "rank these categories
+with sources" was noise). Guardrails: ≤3 distinct angles per run, an angle persists ≥2
+rounds before trends render, and every sentiment event already carries its own
+question+options (PR-B) so round-varying polls need NO schema change — the report's
+trend slider groups by angle. §4.2's auto-decide table gains the row.
+
+### 6e · Reports that take the answer's shape (+ the semantic gate)
+
+The report schema gains contract-driven **blocks** alongside sections (kept FLAT — the
+3b schema-budget lesson): **RANKED LIST** (ordered items, per-item verdict + rationale +
+cites), **MATRIX** (entities × the brief's criteria, verdict per cell), **COMPARISON**
+(side-by-side). The 3b typed lead stays the headline; blocks are the body artifacts —
+Adam's example renders a category×criteria matrix with the ranked list as the lead
+artifact. Then the **answer-completeness judge**: the draft is checked against the
+contract — every sub-ask ANSWERED (not mentioned), the ranked list ranks ALL entities,
+sources named where the evidence standard demands — and failures trigger TARGETED
+re-synthesis ("sub-ask 3 and the ranked list are missing — fix only those"), never a
+blind retry. This is the direct guarantee behind "answer all of the user's points."
+
+### 6f · Audience register — digestible by default, technical by choice
+
+Deliberation stays technical: personas arguing at full professional depth IS the
+product. The REPORT leads with the register the contract derived: **executive** (the
+answer in plain language first, technical depth folded beneath each finding) or
+**technical** (today's expert view). SIMPLIFY remains the full translation; the register
+just decides which voice leads. Forum language is untouched.
+
+### PR slicing, cost, and the bar
+
+- **6-PR1** — contract + Understanding pass + WHAT I UNDERSTOOD card (the spine + its
+  review UI; downstream consumers read contract when present, else today's path)
+- **6-PR2** — prompt-first hero composer (entry UX; smallest risk, big feel)
+- **6-PR3** — round agendas + resolution tracker + COVERAGE strip + adaptive poll plan
+  (engine work; full offline matrix additions before ship)
+- **6-PR4** — report blocks + semantic completeness judge + audience register
+- Cost: +1 frontier call per brief (understand), +1 Haiku per round (tracker), +1–2
+  judge calls per synthesis — noise against run cost; estimator lines updated anyway.
+- Bar per PR: offline pins (contract parse salvage, agenda selection math, poll-plan
+  shapes, block gates), live smoke additions (a multi-part brief must produce a ranked
+  list + matrix and a round-2 agenda), browser passes in both themes, docs + README.
+- Success test (the phase's exit): Adam's edge-industrial prompt, pasted verbatim into
+  the hero composer with its two documents, produces — unassisted — a report whose lead
+  is a ranked list over the categories, a matrix answering each sub-ask per category,
+  named sources where demanded, polls that read sensibly per round, and an executive
+  register a non-technical reader can absorb.
 
 ## Parked — deliberately (needs its own planning session; do not rush)
 
