@@ -10,6 +10,7 @@ import { BriefContract } from "@/lib/understand";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { normalizeEnabledTools } from "@/lib/tools";
 import { synthTicker } from "@/lib/synth-progress";
+import { ReportState, reportSynthFresh } from "@/lib/report-state";
 
 export const maxDuration = 800; // the synthesis ladder may run a dense Opus pass more than once
 
@@ -49,6 +50,70 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const { data: postRows } = await supabase.from("posts")
     .select("seq, agent_key, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true });
   if (!postRows?.length) return NextResponse.json({ error: "Run the simulation first — there is no transcript yet" }, { status: 400 });
+
+  // ---- PR D (field-report 2): reports you can walk away from -------------
+  // Synthesis used to live INSIDE the response stream — leave the page and
+  // there was no status anywhere and no way back in. Now `config.report_state`
+  // is the truth (3c's heartbeat pattern): the pipeline runs under waitUntil,
+  // every note lands in report_state, and the response is just a TAIL of that
+  // state — any tab (or a return visit) attaches to the same synthesis.
+  const stateDb = createAdminSupabase() ?? supabase;
+  const writeState = async (patch: Partial<ReportState>) => {
+    const { data: row } = await stateDb.from("simulations").select("config").eq("id", id).maybeSingle();
+    const cfgNow = (row?.config as Record<string, unknown>) ?? {};
+    const prev = (cfgNow.report_state as ReportState | undefined) ?? { stage: "compile" };
+    await stateDb.from("simulations").update({
+      config: { ...cfgNow, report_state: { ...prev, ...patch, heartbeat_at: new Date().toISOString() } },
+    }).eq("id", id);
+  };
+  const tailResponse = () => {
+    const enc = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const push = (obj: unknown) => controller.enqueue(enc.encode(`${JSON.stringify(obj)}\n`));
+        let lastNote = "";
+        const t0 = Date.now();
+        try {
+          for (;;) {
+            const { data: row } = await supabase.from("simulations").select("config").eq("id", id).maybeSingle();
+            const st = ((row?.config as Record<string, unknown>)?.report_state ?? null) as ReportState | null;
+            if (!st) { push({ type: "error", error: "Synthesis state lost" }); break; }
+            if (st.stage === "done" && st.report_id) { push({ type: "done", reportId: st.report_id, version: st.version }); break; }
+            if (st.stage === "error") { push({ type: "error", error: st.error ?? "Report synthesis failed" }); break; }
+            if (!reportSynthFresh(st, Date.now())) { push({ type: "error", error: "Synthesis heartbeat lost — hit SYNTHESIZE to retry" }); break; }
+            const noteLine = `${st.stage}·${st.note ?? ""}`;
+            if (noteLine !== lastNote) { lastNote = noteLine; push({ type: "stage", value: st.stage, note: st.note ?? "SYNTHESIZING…" }); }
+            if (Date.now() - t0 > 780_000) { push({ type: "error", error: "Synthesis is taking unusually long — reattach from the run screen" }); break; }
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+        } catch { /* client went away — the WORKER keeps going; report_state is the truth */ }
+        try { controller.close(); } catch { /* already closed */ }
+      },
+    });
+    return new Response(stream, {
+      headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" },
+    });
+  };
+
+  // a fresh synthesis is already running → ATTACH to it, never start a second
+  const priorState = ((config.report_state ?? null) as ReportState | null);
+  if (reportSynthFresh(priorState, Date.now())) {
+    return tailResponse();
+  }
+
+  // ---- the QUEUED state lands FIRST (field fix, 2026-08-06): this write
+  // used to happen after every transcript read below — trigger a synthesis
+  // and navigate away inside that window and EVERY surface (run screen,
+  // workspace, Home) read "no synthesis" and showed the generate button over
+  // a synthesis already in flight. REPLACED, not merged — a previous
+  // done/error must not bleed in. ----
+  {
+    const { data: row } = await stateDb.from("simulations").select("config").eq("id", id).maybeSingle();
+    const cfgNow = (row?.config as Record<string, unknown>) ?? {};
+    await stateDb.from("simulations").update({
+      config: { ...cfgNow, report_state: { stage: "compile", note: "QUEUED — READING THE TRANSCRIPT…", started_at: new Date().toISOString(), heartbeat_at: new Date().toISOString() } satisfies ReportState },
+    }).eq("id", id);
+  }
 
   const { data: agents } = await supabase.from("sim_agents").select("agent_key, spec_frozen").eq("sim_id", id);
   const leadCount = (agents ?? []).filter((a) => (a.spec_frozen as { seat?: { tier?: string } }).seat?.tier !== "crowd").length;
@@ -155,7 +220,6 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const synthBudget = synthBudgetFor(effLength);
   const findingClamp = effLength === "dense" ? 4500 : 2500;
   const anthropic = new Anthropic();
-  const encoder = new TextEncoder();
 
   const logCall = async (surface: string, model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string, detail?: Record<string, unknown>) => {
     await supabase.from("agent_interactions").insert({
@@ -165,58 +229,6 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       detail: detail ?? { mode, posts: postRows.length, docs: (docs ?? []).length },
     });
   };
-
-  // ---- PR D (field-report 2): reports you can walk away from -------------
-  // Synthesis used to live INSIDE the response stream — leave the page and
-  // there was no status anywhere and no way back in. Now `config.report_state`
-  // is the truth (3c's heartbeat pattern): the pipeline runs under waitUntil,
-  // every note lands in report_state, and the response is just a TAIL of that
-  // state — any tab (or a return visit) attaches to the same synthesis.
-  interface ReportState { stage: string; note?: string; heartbeat_at?: string; report_id?: string; version?: number; error?: string; started_at?: string }
-  const stateDb = createAdminSupabase() ?? supabase;
-  const writeState = async (patch: Partial<ReportState>) => {
-    const { data: row } = await stateDb.from("simulations").select("config").eq("id", id).maybeSingle();
-    const cfgNow = (row?.config as Record<string, unknown>) ?? {};
-    const prev = (cfgNow.report_state as ReportState | undefined) ?? { stage: "compile" };
-    await stateDb.from("simulations").update({
-      config: { ...cfgNow, report_state: { ...prev, ...patch, heartbeat_at: new Date().toISOString() } },
-    }).eq("id", id);
-  };
-  const tailResponse = () => {
-    const stream = new ReadableStream({
-      async start(controller) {
-        const push = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
-        let lastNote = "";
-        const t0 = Date.now();
-        try {
-          for (;;) {
-            const { data: row } = await supabase.from("simulations").select("config").eq("id", id).maybeSingle();
-            const st = ((row?.config as Record<string, unknown>)?.report_state ?? null) as ReportState | null;
-            if (!st) { push({ type: "error", error: "Synthesis state lost" }); break; }
-            if (st.stage === "done" && st.report_id) { push({ type: "done", reportId: st.report_id, version: st.version }); break; }
-            if (st.stage === "error") { push({ type: "error", error: st.error ?? "Report synthesis failed" }); break; }
-            const beat = new Date(st.heartbeat_at ?? 0).getTime();
-            if (Date.now() - beat > 90_000) { push({ type: "error", error: "Synthesis heartbeat lost — hit SYNTHESIZE to retry" }); break; }
-            const noteLine = `${st.stage}·${st.note ?? ""}`;
-            if (noteLine !== lastNote) { lastNote = noteLine; push({ type: "stage", value: st.stage, note: st.note ?? "SYNTHESIZING…" }); }
-            if (Date.now() - t0 > 780_000) { push({ type: "error", error: "Synthesis is taking unusually long — reattach from the run screen" }); break; }
-            await new Promise((r) => setTimeout(r, 1500));
-          }
-        } catch { /* client went away — the WORKER keeps going; report_state is the truth */ }
-        try { controller.close(); } catch { /* already closed */ }
-      },
-    });
-    return new Response(stream, {
-      headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" },
-    });
-  };
-
-  // a fresh synthesis is already running → ATTACH to it, never start a second
-  const priorState = ((config.report_state ?? null) as ReportState | null);
-  if (priorState && priorState.stage !== "done" && priorState.stage !== "error"
-    && Date.now() - new Date(priorState.heartbeat_at ?? 0).getTime() < 90_000) {
-    return tailResponse();
-  }
 
   // state writes are SERIALIZED — a throttled note still in flight must never
   // land after (and clobber) the final done/error state
@@ -692,15 +704,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       }
   };
 
-  // fresh state (REPLACED, not merged — a previous done/error must not bleed in)
-  {
-    const { data: row } = await stateDb.from("simulations").select("config").eq("id", id).maybeSingle();
-    const cfgNow = (row?.config as Record<string, unknown>) ?? {};
-    await stateDb.from("simulations").update({
-      config: { ...cfgNow, report_state: { stage: "compile", note: "QUEUED — READING THE TRANSCRIPT…", started_at: new Date().toISOString(), heartbeat_at: new Date().toISOString() } },
-    }).eq("id", id);
-  }
-  // the WORKER — survives the response stream being cancelled (3c's pattern)
+  // the WORKER — survives the response stream being cancelled (3c's pattern);
+  // the QUEUED state already landed up top, before the transcript reads
+
   waitUntil((async () => {
     try {
       const { reportId, version } = await runSynthesis();

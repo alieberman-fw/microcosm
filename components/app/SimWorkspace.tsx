@@ -17,6 +17,7 @@ import StageRail from "@/components/app/StageRail";
 import { BriefContract } from "@/lib/understand";
 import { RunConfig } from "@/lib/run";
 import { DIRECT_CONTEXT_BUDGET, MAX_DOC_BYTES, imageOrdinalsSafe } from "@/lib/corpus";
+import { REPORTS_REFRESH_EVENT } from "@/lib/report-state";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -52,6 +53,7 @@ export default function SimWorkspace({
   initialTools = [],
   hasRun = false,
   hasReport = false,
+  synthesizing = false,
 }: {
   sim: { id: string; status: string; brief: Brief; created_at: string };
   initialDocs: DocRow[];
@@ -65,11 +67,32 @@ export default function SimWorkspace({
   initialTools?: string[];
   hasRun?: boolean;
   hasReport?: boolean;
+  /** PR D / field fix (2026-08-06): a report synthesis is live for this sim */
+  synthesizing?: boolean;
 }) {
   const router = useRouter();
   const [brief, setBrief] = useState<Brief>(sim.brief);
   const [editing, setEditing] = useState(false);
   const [populationCount, setPopulationCount] = useState(initialSeats.length);
+
+  // PR D / field fix (2026-08-06): while a synthesis is live, keep the
+  // workspace honest with a soft server refresh — the `synthesizing` prop
+  // recomputes each pass, the banner clears itself when the report lands,
+  // and the unread badge is told the moment we watch it finish.
+  const sawSynth = useRef(false);
+  useEffect(() => {
+    if (synthesizing) {
+      sawSynth.current = true;
+      const t = setInterval(() => {
+        if (document.visibilityState === "visible") router.refresh();
+      }, 8_000);
+      return () => clearInterval(t);
+    }
+    if (sawSynth.current) {
+      sawSynth.current = false;
+      window.dispatchEvent(new Event(REPORTS_REFRESH_EVENT));
+    }
+  }, [synthesizing, router]);
   const [castingBusy, setCastingBusy] = useState(false);
   // the mode is CHOSEN in run config; a fresh cast re-seeds it to the director's pick
   const [modeSel, setModeSel] = useState<string | null>(initialCasting?.mode ?? null);
@@ -226,17 +249,39 @@ export default function SimWorkspace({
               done: stageDone[i],
               current: !reportStage && activeStage === i,
               onClick: () => {
-                if (reportStage) { if (hasReport) router.push(`/sim/${sim.id}/report`); return; }
+                if (reportStage) {
+                  if (synthesizing) { router.push(`/sim/${sim.id}/run`); return; } // watch the ticker live
+                  if (hasReport) router.push(`/sim/${sim.id}/report`);
+                  return;
+                }
                 if (i === 3 && hasRun) { router.push(`/sim/${sim.id}/run`); return; }
                 if (target) document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
               },
               title: reportStage
-                ? (hasReport ? "Open the report" : "Synthesize on the run screen after a run")
+                ? (synthesizing ? "Synthesizing now — watch it on the run screen" : hasReport ? "Open the report" : "Synthesize on the run screen after a run")
                 : i === 3 && hasRun ? "Open the run" : target ? `Jump to ${s.toLowerCase()}` : undefined,
             };
           })}
         />
       </div>
+
+      {/* PR D / field fix (2026-08-06): a report synthesizing right now shows
+          its status HERE too — leaving the run screen mid-synthesis used to
+          leave the workspace claiming there was no report activity at all */}
+      {synthesizing && sim.status !== "running" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 14, border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 12, padding: "12px 18px", marginTop: 22, flexWrap: "wrap" }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />
+          <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)", minWidth: 0, flex: 1 }}>
+            THE REPORT IS SYNTHESIZING — IT KEEPS GOING IF YOU LEAVE, AND THE REPORTS TAB LIGHTS UP WHEN IT LANDS
+          </span>
+          <button
+            onClick={() => router.push(`/sim/${sim.id}/run`)}
+            style={{ background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 13, padding: "9px 20px", borderRadius: 100, border: "none", cursor: "pointer", fontFamily: "var(--font-sans), sans-serif", flex: "none" }}
+          >
+            Watch it live →
+          </button>
+        </div>
+      )}
 
       {/* field fix: while a run is LIVE the whole workspace is read-only —
           brief, files, understanding, population AND config (the server

@@ -4,6 +4,7 @@ import HomeClient, {
 } from "@/components/app/HomeClient";
 import { PersonaSpec } from "@/lib/personas";
 import { ReportSpec } from "@/lib/report";
+import { ReportState, reportSynthFresh } from "@/lib/report-state";
 
 export const metadata = { title: "Home — Microcosm" };
 export const dynamic = "force-dynamic";
@@ -72,11 +73,10 @@ export default async function HomePage() {
   })) as HomeConversation[];
 
   const sims: HomeSim[] = (simRows ?? []).map((s) => {
-    const cfg = (s.config ?? {}) as { casting?: { mode?: string }; run_result?: { mode?: string; posts?: number }; report_state?: { stage?: string; heartbeat_at?: string } };
-    // PR D: a report being synthesized right now (fresh heartbeat, not done)
-    const rs = cfg.report_state;
-    const synthesizing = !!rs && rs.stage !== "done" && rs.stage !== "error"
-      && Date.now() - new Date(rs.heartbeat_at ?? 0).getTime() < 90_000;
+    const cfg = (s.config ?? {}) as { casting?: { mode?: string }; run_result?: { mode?: string; posts?: number }; report_state?: ReportState };
+    // PR D: a report being synthesized right now — the ONE shared freshness
+    // rule (lib/report-state), same as the run screen and the workspace
+    const synthesizing = reportSynthFresh(cfg.report_state, Date.now());
     return {
       id: s.id as string,
       problem: ((s.brief as { problem?: string } | null)?.problem ?? "Untitled simulation").slice(0, 200),
