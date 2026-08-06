@@ -228,15 +228,22 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
                 borderTop: i === 0 ? "none" : "1px solid var(--ln1)",
               }}
             >
+              {/* unread dot leads the row, LEFT of the version chip — the slot
+                  is always reserved so read/unread rows stay aligned */}
+              <span
+                title={seen !== null && !seen.has(r.id) ? "New — you haven't opened this version" : undefined}
+                style={{
+                  width: 7, height: 7, borderRadius: "50%", flex: "none",
+                  background: seen !== null && !seen.has(r.id) ? "var(--acc)" : "transparent",
+                  ...(seen !== null && !seen.has(r.id) ? { animation: "pulseDot 1.6s ease infinite" } : {}),
+                }}
+              />
               <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--acc)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "3px 10px", flex: "none" }}>
                 V{r.version}
               </span>
               <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", flex: "none", padding: "3px 10px", borderRadius: 100, border: `1px solid ${bucketOf(r) === "insight" ? "var(--acc)" : toneColor(r.tone)}`, color: bucketOf(r) === "insight" ? "var(--acc)" : toneColor(r.tone), maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {bucketOf(r) === "insight" ? (r.leadMetric ?? "KEY FINDING") : r.label}
               </span>
-              {seen !== null && !seen.has(r.id) && (
-                <span title="New — you haven't opened this report" style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.6s ease infinite", flex: "none" }} />
-              )}
               <span style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {r.name ?? r.problem}
               </span>
@@ -256,7 +263,10 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
           const r = g.latest;
           const menuOpen = menuFor === r.id;
           const isOpen = expanded.has(r.sim_id);
-          const unread = seen !== null && !seen.has(r.id);
+          // the card dot means ANY version of this report is unread — an
+          // unopened V1 keeps signaling even after the latest was read
+          const unreadOf = (id: string) => seen !== null && !seen.has(id);
+          const unread = g.all.some((v) => unreadOf(v.id));
           const clamp = (n: number): CSSProperties => ({ display: "-webkit-box", WebkitLineClamp: n, WebkitBoxOrient: "vertical", overflow: "hidden" });
           const collapsible = Boolean(r.name) || r.problem.length > 220;
           return (
@@ -341,15 +351,19 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
                       <Link
                         key={v.id}
                         href={`/sim/${v.sim_id}/report?v=${v.version}`}
-                        title={`${v.label} · ${new Date(v.created_at).toLocaleDateString()}`}
+                        title={`${v.label} · ${new Date(v.created_at).toLocaleDateString()}${unreadOf(v.id) ? " · UNREAD" : ""}`}
                         style={{
-                          ...mono, fontSize: 8, letterSpacing: ".05em", padding: "3px 9px", borderRadius: 100,
+                          ...mono, position: "relative", fontSize: 8, letterSpacing: ".05em", padding: "3px 9px", borderRadius: 100,
                           border: `1px solid ${v.version === r.version ? "var(--acc)" : "var(--ln4)"}`,
                           color: v.version === r.version ? "var(--acc)" : "var(--t6)",
                           background: v.version === r.version ? "var(--acc-dim)" : "transparent",
                         }}
                       >
                         V{v.version}
+                        {/* per-version unread: an unopened V1 carries its own dot */}
+                        {unreadOf(v.id) && (
+                          <span style={{ position: "absolute", top: -2, right: -2, width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.6s ease infinite" }} />
+                        )}
                       </Link>
                     ))
                   ) : (
@@ -361,7 +375,7 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
                     >
                       {[...g.all].sort((a, b) => b.version - a.version).map((v) => (
                         <option key={v.id} value={v.version}>
-                          V{v.version} · {v.mode.toUpperCase()} · {new Date(v.created_at).toLocaleDateString()}
+                          {unreadOf(v.id) ? "● " : ""}V{v.version} · {v.mode.toUpperCase()} · {new Date(v.created_at).toLocaleDateString()}
                         </option>
                       ))}
                     </select>

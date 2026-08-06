@@ -133,28 +133,53 @@ export default function MonitoringClient({ rows: initialRows, rollup = [], conve
   const [rows, setRows] = useState<InteractionRow[]>(initialRows);
   const [convs, setConvs] = useState<Record<string, ConvMeta>>(conversations);
   const [loadingMore, setLoadingMore] = useState(false);
+  // one page of older history: fetch below the cursor + backfill conv titles
+  const fetchOlder = async (beforeId: number): Promise<InteractionRow[]> => {
+    const { data } = await supabase!
+      .from("agent_interactions")
+      .select("id, surface, agent_name, model, input_tokens, output_tokens, latency_ms, status, error, created_at, conversation_id, sim_id, detail")
+      .lt("id", beforeId)
+      .order("id", { ascending: false })
+      .limit(500);
+    const older = (data ?? []) as InteractionRow[];
+    const newConvIds = [...new Set(older.map((r) => r.conversation_id).filter((x): x is string => Boolean(x) && !convs[x!]))];
+    if (newConvIds.length) {
+      const { data: cs } = await supabase!.from("conversations").select("id, title, participant_keys").in("id", newConvIds);
+      setConvs((prev) => {
+        const next = { ...prev };
+        (cs ?? []).forEach((c) => { next[c.id as string] = { title: c.title as string, participants: (c.participant_keys as string[]).length }; });
+        return next;
+      });
+    }
+    return older;
+  };
   const loadMore = async () => {
     if (loadingMore || rows.length === 0) return;
     setLoadingMore(true);
     try {
-      const oldest = rows[rows.length - 1].id;
-      const { data } = await supabase!
-        .from("agent_interactions")
-        .select("id, surface, agent_name, model, input_tokens, output_tokens, latency_ms, status, error, created_at, conversation_id, sim_id, detail")
-        .lt("id", oldest)
-        .order("id", { ascending: false })
-        .limit(500);
-      const older = (data ?? []) as InteractionRow[];
-      const newConvIds = [...new Set(older.map((r) => r.conversation_id).filter((x): x is string => Boolean(x) && !convs[x!]))];
-      if (newConvIds.length) {
-        const { data: cs } = await supabase!.from("conversations").select("id, title, participant_keys").in("id", newConvIds);
-        setConvs((prev) => {
-          const next = { ...prev };
-          (cs ?? []).forEach((c) => { next[c.id as string] = { title: c.title as string, participants: (c.participant_keys as string[]).length }; });
-          return next;
-        });
-      }
+      const older = await fetchOlder(rows[rows.length - 1].id);
       setRows((prev) => [...prev, ...older]);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+  // "load back to a date": page 500s until the window covers the FROM date
+  // (capped per click so one tap can't pull the whole table into the browser)
+  const LOAD_TO_DATE_BATCHES = 8;
+  const loadToDate = async (fromDate: string) => {
+    if (loadingMore || rows.length === 0) return;
+    setLoadingMore(true);
+    try {
+      const target = new Date(`${fromDate}T00:00:00`);
+      let current = rows;
+      for (let i = 0; i < LOAD_TO_DATE_BATCHES; i++) {
+        const last = current[current.length - 1];
+        if (!last || new Date(last.created_at) <= target) break;
+        const older = await fetchOlder(last.id);
+        if (!older.length) break;
+        current = [...current, ...older];
+        setRows(current);
+      }
     } finally {
       setLoadingMore(false);
     }
@@ -163,27 +188,37 @@ export default function MonitoringClient({ rows: initialRows, rollup = [], conve
   const [model, setModel] = useState("ALL");
   const [status, setStatus] = useState("ALL");
   const [q, setQ] = useState("");
+  const [from, setFrom] = useState(""); // date range — "" = unbounded
+  const [to, setTo] = useState("");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [page, setPage] = useState(0);
   const PAGE = 50;
   const [ctx, setCtx] = useState<Record<number, Ctx>>({});
 
-  useEffect(() => { setPage(0); }, [area, model, status, q]);
+  useEffect(() => { setPage(0); }, [area, model, status, q, from, to]);
   const models = useMemo(() => [...new Set([...rows.map((r) => r.model), ...rollup.map((r) => r.model)])], [rows, rollup]);
   const areas = useMemo(() => [...new Set([...rows.map((r) => areaOf(r.surface)), ...rollup.map((r) => areaOf(r.surface))])], [rows, rollup]);
 
   const ql = q.trim().toLowerCase();
+  const fromT = from ? new Date(`${from}T00:00:00`).getTime() : null;
+  const toT = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
   const filtered = rows
     .filter((r) => area === "ALL" || areaOf(r.surface) === area)
     .filter((r) => model === "ALL" || r.model === model)
     .filter((r) => status === "ALL" || (status === "OK" ? r.status === "ok" : r.status !== "ok"))
+    .filter((r) => {
+      if (fromT === null && toT === null) return true;
+      const t = new Date(r.created_at).getTime();
+      return (fromT === null || t >= fromT) && (toT === null || t <= toT);
+    })
     .filter((r) => !ql || [r.agent_name ?? "", r.surface, r.model, convs[r.conversation_id ?? ""]?.title ?? ""].join(" ").toLowerCase().includes(ql));
 
   // analytics source: with NO filters active, the SQL rollup gives EXACT
   // 14-day numbers (the raw window caps at the newest rows and a heavy day
-  // used to blank all earlier days); the search filter always falls back to
-  // the row window since text search can't run on aggregates
-  const rollupActive = rollup.length > 0 && !ql;
+  // used to blank all earlier days); search AND date-range fall back to the
+  // row window — text can't run on aggregates, and a range can reach past
+  // the rollup's 14-day horizon (tiles must match the table exactly).
+  const rollupActive = rollup.length > 0 && !ql && !from && !to;
   const rollupFiltered = useMemo(() => rollup
     .filter((r) => area === "ALL" || areaOf(r.surface) === area)
     .filter((r) => model === "ALL" || r.model === model)
@@ -192,6 +227,13 @@ export default function MonitoringClient({ rows: initialRows, rollup = [], conve
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const pageRows = filtered.slice(page * PAGE, (page + 1) * PAGE);
+  // footer helpers: how far back the loaded window reaches, and whether a
+  // FROM date asks for history the window doesn't hold yet
+  const oldestRow = rows.length ? rows[rows.length - 1] : null;
+  const oldestLoaded = oldestRow ? new Date(oldestRow.created_at).toLocaleDateString() : null;
+  const needsHistoryForRange = Boolean(
+    from && fromT !== null && rows.length < total && oldestRow && new Date(oldestRow.created_at).getTime() > fromT,
+  );
   const calls = rollupActive
     ? rollupFiltered.reduce((a, r) => a + (status === "ERRORS" ? Number(r.errors) : Number(r.calls)), 0)
     : filtered.length;
@@ -296,6 +338,37 @@ export default function MonitoringClient({ rows: initialRows, rollup = [], conve
         <PillGroup label="AREA" options={areas} value={area} onChange={setArea} />
         <PillGroup label="MODEL" options={models} value={model} onChange={setModel} />
         <PillGroup label="STATUS" options={["OK", "ERRORS"]} value={status} onChange={setStatus} />
+        {/* date range — bounds the table, tiles, and charts; the footer
+            offers to pull older history when the range outruns the window */}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+          <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>FROM</span>
+          <input
+            type="date"
+            value={from}
+            max={to || undefined}
+            onChange={(e) => setFrom(e.target.value)}
+            aria-label="Show calls from this date"
+            style={{ ...mono, fontSize: 10.5, boxSizing: "border-box", background: "var(--sf2)", border: `1px solid ${from ? "var(--acc)" : "var(--ln5)"}`, borderRadius: 100, padding: "6px 12px", color: from ? "var(--acc)" : "var(--t4)", outline: "none", colorScheme: "inherit" }}
+          />
+          <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>TO</span>
+          <input
+            type="date"
+            value={to}
+            min={from || undefined}
+            onChange={(e) => setTo(e.target.value)}
+            aria-label="Show calls up to this date"
+            style={{ ...mono, fontSize: 10.5, boxSizing: "border-box", background: "var(--sf2)", border: `1px solid ${to ? "var(--acc)" : "var(--ln5)"}`, borderRadius: 100, padding: "6px 12px", color: to ? "var(--acc)" : "var(--t4)", outline: "none", colorScheme: "inherit" }}
+          />
+          {(from || to) && (
+            <button
+              onClick={() => { setFrom(""); setTo(""); }}
+              aria-label="Clear the date range"
+              style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "6px 12px", borderRadius: 100, border: "1px solid var(--ln5)", background: "transparent", color: "var(--t5)", cursor: "pointer" }}
+            >
+              × CLEAR
+            </button>
+          )}
+        </span>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -307,7 +380,11 @@ export default function MonitoringClient({ rows: initialRows, rollup = [], conve
       </div>
 
       <div className="grid4" style={{ marginTop: 24 }}>
-        <Tile k={rollupActive ? "MODEL CALLS · 14 DAYS" : `MODEL CALLS · SEARCH · LAST ${rows.length}`} v={calls.toLocaleString()} sub={errors ? `${errors} ERRORS` : "NO ERRORS"} />
+        <Tile
+          k={rollupActive ? "MODEL CALLS · 14 DAYS" : from || to ? `MODEL CALLS · ${from || "START"} → ${to || "NOW"}` : `MODEL CALLS · SEARCH · LAST ${rows.length}`}
+          v={calls.toLocaleString()}
+          sub={errors ? `${errors} ERRORS` : "NO ERRORS"}
+        />
         <Tile k="TOKENS IN" v={tokIn.toLocaleString()} />
         <Tile k="TOKENS OUT" v={tokOut.toLocaleString()} />
         <Tile k="EST. SPEND" v={`$${cost.toFixed(2)}`} sub={`AVG LATENCY ${avgLatency}MS · ESTIMATE ONLY`} accent />
@@ -496,33 +573,56 @@ export default function MonitoringClient({ rows: initialRows, rollup = [], conve
               })}
             </tbody>
           </table>
-          {pages > 1 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, fontFamily: "var(--font-mono), monospace", fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)" }}>
-              <button disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}
-                style={{ fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, border: "1px solid var(--ln4)", background: "transparent", color: page === 0 ? "var(--t7)" : "var(--t4)", cursor: page === 0 ? "default" : "pointer" }}>
-                ← NEWER
-              </button>
-              <span>PAGE {page + 1} / {pages} · {filtered.length.toLocaleString()} CALLS</span>
-              <button disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
-                style={{ fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, border: "1px solid var(--ln4)", background: "transparent", color: page >= pages - 1 ? "var(--t7)" : "var(--t4)", cursor: page >= pages - 1 ? "default" : "pointer" }}>
-                OLDER →
-              </button>
-            </div>
-          )}
-          {/* the full history is browsable — responses cap at a window, the table doesn't */}
-          {rows.length < total && (
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12, fontFamily: "var(--font-mono), monospace", fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)" }}>
-              <span>{rows.length.toLocaleString()} OF {total.toLocaleString()} CALLS LOADED</span>
-              <button
-                onClick={() => void loadMore()}
-                disabled={loadingMore}
-                style={{ fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".06em", padding: "6px 16px", borderRadius: 100, border: "1px solid var(--acc)", background: "var(--acc-dim)", color: "var(--acc)", cursor: loadingMore ? "wait" : "pointer" }}
-              >
-                {loadingMore ? "LOADING…" : "LOAD 500 OLDER →"}
-              </button>
-            </div>
-          )}
         </div>
+        {/* footer bar — OUTSIDE the horizontal scroller, padded inside the
+            card (field fix: the old rows rode the scroller flush against the
+            card edge and clipped at the rounded bottom border) */}
+        {(pages > 1 || rows.length < total) && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", padding: "14px 20px", borderTop: "1px solid var(--ln2)", fontFamily: "var(--font-mono), monospace", fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+              {pages > 1 && (
+                <>
+                  <button disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    style={{ fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, border: "1px solid var(--ln4)", background: "transparent", color: page === 0 ? "var(--t7)" : "var(--t4)", cursor: page === 0 ? "default" : "pointer" }}>
+                    ← NEWER
+                  </button>
+                  <span>PAGE {page + 1} / {pages} · {filtered.length.toLocaleString()} CALLS</span>
+                  <button disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
+                    style={{ fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".06em", padding: "5px 14px", borderRadius: 100, border: "1px solid var(--ln4)", background: "transparent", color: page >= pages - 1 ? "var(--t7)" : "var(--t4)", cursor: page >= pages - 1 ? "default" : "pointer" }}>
+                    OLDER →
+                  </button>
+                </>
+              )}
+            </span>
+            {/* the full history is browsable — responses cap at a window, the table doesn't */}
+            {rows.length < total && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ color: "var(--t7)" }}>
+                  {rows.length.toLocaleString()} OF {total.toLocaleString()} LOADED
+                  {oldestLoaded && <> · BACK TO {oldestLoaded}</>}
+                </span>
+                {needsHistoryForRange ? (
+                  <button
+                    onClick={() => void loadToDate(from)}
+                    disabled={loadingMore}
+                    title={`Pages older history in until the window reaches ${from} (up to ${(LOAD_TO_DATE_BATCHES * 500).toLocaleString()} calls per click)`}
+                    style={{ fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".06em", padding: "6px 16px", borderRadius: 100, border: "1px solid var(--acc)", background: "var(--acc-dim)", color: "var(--acc)", cursor: loadingMore ? "wait" : "pointer" }}
+                  >
+                    {loadingMore ? "LOADING…" : `LOAD HISTORY TO ${from} →`}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => void loadMore()}
+                    disabled={loadingMore}
+                    style={{ fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".06em", padding: "6px 16px", borderRadius: 100, border: "1px solid var(--acc)", background: "var(--acc-dim)", color: "var(--acc)", cursor: loadingMore ? "wait" : "pointer" }}
+                  >
+                    {loadingMore ? "LOADING…" : "LOAD 500 OLDER →"}
+                  </button>
+                )}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
