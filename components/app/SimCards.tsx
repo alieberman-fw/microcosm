@@ -24,7 +24,9 @@ export interface SimCardRow {
   summary?: string | null;
   questionCount: number;
   docCount: number;
+  /** lead seats only — crowd members are counted separately */
   seatCount: number;
+  crowdCount?: number;
   mode?: string | null;
   runPosts?: number | null;
   reportCount?: number;
@@ -116,6 +118,7 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
           s.questionCount ? `${s.questionCount} QUESTIONS` : null,
           s.docCount ? `${s.docCount} DOC${s.docCount > 1 ? "S" : ""}` : null,
           s.seatCount ? `${s.seatCount} LEADS` : null,
+          s.crowdCount ? `${s.crowdCount} CROWD` : null,
         ].filter(Boolean).join(" · ") || "BRIEF ONLY";
         const menuOpen = menuFor === s.id;
         const isOpen = expanded.has(s.id);

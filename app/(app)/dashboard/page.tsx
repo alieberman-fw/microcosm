@@ -10,9 +10,12 @@ export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
   const supabase = await createServerSupabase();
+  // sim_agents(count) is the whole population; the aliased crowd embed counts
+  // seat.tier "crowd" rows so cards can report leads and crowd separately
   const { data } = await supabase!
     .from("simulations")
-    .select("id, status, brief, config, created_at, documents(count), sim_agents(count), reports(count)")
+    .select("id, status, brief, config, created_at, documents(count), sim_agents(count), crowd:sim_agents(count), reports(count)")
+    .eq("crowd.spec_frozen->seat->>tier", "crowd")
     .order("created_at", { ascending: false })
     .limit(200);
 
@@ -22,6 +25,7 @@ export default async function Dashboard() {
     config: { name?: string; casting?: { mode?: string }; run_result?: { posts?: number; converged?: boolean; at?: string } } | null;
     documents: { count: number }[];
     sim_agents: { count: number }[];
+    crowd: { count: number }[];
     reports: { count: number }[];
   }[]).map((s) => ({
     id: s.id,
@@ -34,7 +38,9 @@ export default async function Dashboard() {
     summary: s.brief?.contract?.mirror ?? null,
     questionCount: s.brief?.questions?.length ?? 0,
     docCount: s.documents?.[0]?.count ?? 0,
-    seatCount: s.sim_agents?.[0]?.count ?? 0,
+    // leads = population minus crowd rows (lead seats may predate seat.tier)
+    seatCount: Math.max(0, (s.sim_agents?.[0]?.count ?? 0) - (s.crowd?.[0]?.count ?? 0)),
+    crowdCount: s.crowd?.[0]?.count ?? 0,
     mode: s.config?.casting?.mode ?? null,
     runPosts: s.config?.run_result?.posts ?? null,
     reportCount: s.reports?.[0]?.count ?? 0,
