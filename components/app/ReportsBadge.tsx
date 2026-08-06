@@ -11,6 +11,8 @@
  */
 
 import { CSSProperties, useCallback, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { REPORTS_REFRESH_EVENT } from "@/lib/report-state";
 
 export const SEEN_KEY = "mc-seen-reports";
 
@@ -36,6 +38,7 @@ export function markReportSeen(id: string) {
 
 export default function ReportsBadge({ collapsed }: { collapsed: boolean }) {
   const [unread, setUnread] = useState(0);
+  const pathname = usePathname();
 
   const refresh = useCallback(async () => {
     try {
@@ -52,9 +55,21 @@ export default function ReportsBadge({ collapsed }: { collapsed: boolean }) {
     const t = setInterval(() => void refresh(), 45_000);
     const onSeen = () => void refresh();
     window.addEventListener("mc-reports-seen", onSeen);
+    // field fix (2026-08-06): a synthesis observed finishing anywhere in the
+    // app announces itself — the badge pops NOW, not at the next 45s poll
+    window.addEventListener(REPORTS_REFRESH_EVENT, onSeen);
     window.addEventListener("focus", onSeen);
-    return () => { clearInterval(t); window.removeEventListener("mc-reports-seen", onSeen); window.removeEventListener("focus", onSeen); };
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("mc-reports-seen", onSeen);
+      window.removeEventListener(REPORTS_REFRESH_EVENT, onSeen);
+      window.removeEventListener("focus", onSeen);
+    };
   }, [refresh]);
+
+  // every in-app navigation revalidates — a report that finished while you
+  // worked elsewhere shows its (n) on the very next page you visit
+  useEffect(() => { void refresh(); }, [pathname, refresh]);
 
   if (unread === 0) return null;
 

@@ -6,6 +6,7 @@ import { Brief } from "@/components/app/BriefComposer";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { FrozenSpec } from "@/lib/casting";
 import { BriefContract } from "@/lib/understand";
+import { ReportState, reportSynthFresh } from "@/lib/report-state";
 
 export const metadata = { title: "Simulation — Microcosm" };
 export const dynamic = "force-dynamic";
@@ -59,6 +60,10 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
     supabase!.from("posts").select("seq", { count: "exact", head: true }).eq("sim_id", id),
   ]);
 
+  // PR D / field fix (2026-08-06): a report synthesizing RIGHT NOW surfaces
+  // on the workspace too — same shared freshness rule as home + run screen
+  const reportState = ((sim.config as { report_state?: ReportState } | null)?.report_state) ?? null;
+
   return (
     <SimWorkspace
       sim={{ id: sim.id, status: sim.status, brief, created_at: sim.created_at }}
@@ -71,6 +76,7 @@ export default async function SimulationPage({ params }: { params: Promise<{ id:
       initialTools={savedTools}
       hasRun={(postCount ?? 0) > 0}
       hasReport={(reportCount ?? 0) > 0}
+      synthesizing={reportSynthFresh(reportState, Date.now())}
     />
   );
 }

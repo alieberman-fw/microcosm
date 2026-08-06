@@ -19,6 +19,7 @@ import { computeToolAttachment } from "@/lib/feed";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import StageRail from "@/components/app/StageRail";
 import { createClient } from "@/lib/supabase/client";
+import { REPORTS_REFRESH_EVENT, ReportState, reportSynthFresh } from "@/lib/report-state";
 import type { PersonaSpec } from "@/lib/personas";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -345,43 +346,75 @@ export default function LiveRun({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // PR D: reports you can walk away from — if a synthesis is already running
-  // for this sim (fresh report_state heartbeat), RE-ATTACH on mount: the strip
-  // shows the live ticker again and READ THE REPORT lights up when it lands.
+  // PR D: reports you can walk away from — a synthesis can be running for
+  // this sim whether or not THIS tab started it. Field fix (2026-08-06): the
+  // old check ran ONCE on mount — trigger a synthesis, navigate away, and
+  // come back inside the queued-write window and this screen showed
+  // "Synthesize the report" over a synthesis already in flight, forever. Now
+  // the screen keeps a soft WATCH (4s) whenever the sim is complete and this
+  // tab isn't streaming its own synthesis: it attaches to a running
+  // synthesis, follows its ticker, and when a NEW report lands it flips
+  // READ THE REPORT and pops the unread-reports badge.
+  const streamingSynth = useRef(false); // this tab's synthesize() stream owns the UI while true
   useEffect(() => {
     if (initialStatus !== "complete") return;
+    const supa = createClient();
+    if (!supa) return;
     let stop = false;
-    type RState = { stage: string; note?: string; heartbeat_at?: string; report_id?: string };
-    const readState = async (): Promise<RState | null> => {
-      const supa = createClient();
-      if (!supa) return null;
+    let sawFresh = false;            // we watched a synthesis run during this mount
+    let seeded = false;              // the first read is baseline — an OLD done is not news
+    let knownDone: string | null = null;
+    const tick = async () => {
+      if (stop || streamingSynth.current) return;
       const { data } = await supa.from("simulations").select("config").eq("id", simId).maybeSingle();
-      return ((data?.config as { report_state?: RState } | null)?.report_state ?? null);
-    };
-    const fresh = (st: RState | null) =>
-      !!st && st.stage !== "done" && st.stage !== "error" && Date.now() - new Date(st.heartbeat_at ?? 0).getTime() < 90_000;
-    void (async () => {
-      const st = await readState();
-      if (!fresh(st) || stop) return;
-      setSynthesizing(st!.note ?? "SYNTHESIZING…");
-      for (;;) {
-        await new Promise((r) => setTimeout(r, 2500));
-        if (stop) return;
-        const cur = await readState();
-        if (cur?.stage === "done") { setReportReady(true); setSynthesizing(null); router.refresh(); return; }
-        if (!fresh(cur)) { setSynthesizing(null); return; } // error or heartbeat lost — the button offers a retry
-        setSynthesizing(cur!.note ?? "SYNTHESIZING…");
+      if (stop || streamingSynth.current) return;
+      const st = ((data?.config as { report_state?: ReportState } | null)?.report_state ?? null);
+      if (reportSynthFresh(st, Date.now())) {
+        sawFresh = true;
+        setSynthesizing(st!.note ?? "SYNTHESIZING…");
+      } else if (st?.stage === "done" && st.report_id) {
+        const isNews = sawFresh || (seeded && st.report_id !== knownDone);
+        knownDone = st.report_id;
+        if (isNews) {
+          sawFresh = false;
+          setSynthesizing(null);
+          setReportReady(true);
+          window.dispatchEvent(new Event(REPORTS_REFRESH_EVENT)); // the (n) badge learns NOW, not at its next poll
+          router.refresh();
+        }
+      } else if (sawFresh) {
+        sawFresh = false;
+        setSynthesizing(null); // error or heartbeat lost — the button offers a retry
       }
-    })();
-    return () => { stop = true; };
+      seeded = true;
+    };
+    void tick();
+    const t = setInterval(() => void tick(), 4_000);
+    return () => { stop = true; clearInterval(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // field fix (2026-08-06): the synthesis TAIL must die with the page. It
+  // used to keep reading after unmount and router.push the report from
+  // wherever the user had navigated to — which also stamped the report SEEN
+  // (ReportView marks on mount), so the unread badge never appeared. The
+  // WORKER is untouched by the abort; the watch above and the badge carry
+  // the news instead.
+  const mountedRef = useRef(true);
+  const synthAbort = useRef<AbortController | null>(null);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; synthAbort.current?.abort(); };
   }, []);
 
   const synthesize = async () => {
     if (synthesizing) return;
     setSynthesizing("SYNTHESIZING…");
+    streamingSynth.current = true;
+    const ac = new AbortController();
+    synthAbort.current = ac;
     try {
-      const res = await fetch(`/api/simulations/${simId}/report`, { method: "POST" });
+      const res = await fetch(`/api/simulations/${simId}/report`, { method: "POST", signal: ac.signal });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error ?? "Synthesis failed");
@@ -400,6 +433,8 @@ export default function LiveRun({
           const evt = JSON.parse(line) as { type: string; note?: string; error?: string };
           if (evt.type === "stage") setSynthesizing(String(evt.note ?? "SYNTHESIZING…"));
           else if (evt.type === "done") {
+            streamingSynth.current = false;
+            if (!mountedRef.current) { window.dispatchEvent(new Event(REPORTS_REFRESH_EVENT)); return; }
             setReportReady(true);
             setSynthesizing(null);
             router.refresh(); // drop any cached payloads before landing on the report
@@ -410,8 +445,13 @@ export default function LiveRun({
         }
       }
     } catch (e) {
+      // page left mid-synthesis: the abort kills only the TAIL — the worker
+      // keeps going and the watch/badge announce the report when it lands
+      if (ac.signal.aborted || !mountedRef.current) return;
       setError(e instanceof Error ? e.message : "Synthesis failed");
       setSynthesizing(null);
+    } finally {
+      streamingSynth.current = false;
     }
   };
   const [expanded, setExpanded] = useState<Set<number>>(new Set());

@@ -8,7 +8,7 @@
  * recent conversations. All in the demo's stat-tile / card grammar (§10).
  */
 
-import { CSSProperties, useState } from "react";
+import { CSSProperties, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -194,6 +194,26 @@ export default function HomeClient({
   const firstName = email.split("@")[0].split(/[._-]/)[0];
   const inProgress = sims.filter((s) => s.status === "running" || s.synthesizing);
   const maxVal = Math.max(1, ...activity.map((d) => d[metric]));
+
+  // field fix (2026-08-06): the in-progress strip was a server SNAPSHOT — a
+  // report synthesis triggered just before landing here (or a router-cached
+  // payload on back-nav) read stale, and a run/synthesis finishing while you
+  // sat here never updated. Refresh on mount + focus, and keep a soft poll
+  // while anything is in flight so the strip tells the truth end to end.
+  useEffect(() => {
+    router.refresh();
+    const onFocus = () => router.refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (inProgress.length === 0) return;
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 12_000);
+    return () => clearInterval(t);
+  }, [inProgress.length, router]);
 
   const clearChecklist = async () => {
     setHidden(true);
