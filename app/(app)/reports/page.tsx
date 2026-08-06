@@ -22,9 +22,16 @@ export default async function ReportsPage() {
     .order("created_at", { ascending: false }).limit(200);
   const simIds = [...new Set((reports ?? []).map((r) => r.sim_id as string))];
   const { data: sims } = simIds.length
-    ? await supabase!.from("simulations").select("id, brief").in("id", simIds)
-    : { data: [] as { id: string; brief: unknown }[] };
+    ? await supabase!.from("simulations").select("id, brief, config").in("id", simIds)
+    : { data: [] as { id: string; brief: unknown; config: unknown }[] };
   const problemOf = new Map((sims ?? []).map((s) => [s.id as string, ((s.brief as { problem?: string } | null)?.problem ?? "Untitled simulation")]));
+  // report names align to the simulation: the sim's rename, else the
+  // understanding pass's title (same resolution SimCards uses)
+  const simNameOf = new Map((sims ?? []).map((s) => {
+    const cfg = s.config as { name?: string } | null;
+    const contract = (s.brief as { contract?: { title?: string } } | null)?.contract;
+    return [s.id as string, cfg?.name ?? contract?.title ?? null];
+  }));
 
   const rows: ReportRow[] = (reports ?? []).map((r) => {
     const spec = r.spec as unknown as ReportSpec;
@@ -32,6 +39,7 @@ export default async function ReportsPage() {
       id: r.id as string,
       sim_id: r.sim_id as string,
       version: r.version as number,
+      name: spec.name ?? simNameOf.get(r.sim_id as string) ?? null,
       created_at: (r.created_at as string) ?? spec.methodology.generated_at,
       tone: spec.verdict.tone,
       label: spec.verdict.label,

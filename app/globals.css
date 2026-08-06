@@ -11,6 +11,21 @@
   --navbg: rgba(10, 11, 12, 0.72);
   color-scheme: dark;
 }
+/* GRAY — the middle theme (Settings → Appearance slider): a warm dark-gray
+   sitting between dark and light. Same accent family; warm-tinted surfaces,
+   softened whites, warm line ramp. */
+html[data-theme="gray"] {
+  --acc: #37d98a; --acc-hero: #37d98a; --acc-dim: rgba(55, 217, 138, 0.13); --acc-c: #21201d;
+  --warn: #d9a03f; --warn-dim: rgba(217, 160, 63, 0.13);
+  --bg: #21201d; --sf: #262521; --sf2: #2d2b27;
+  --t0: #faf9f6; --t1: #edebe6; --t2: #d2cfc8; --t3: #c3c0b9; --t4: #b6b3ac;
+  --t5: #a3a099; --t6: #93908a; --t7: #757269;
+  --ln1: rgba(255, 250, 240, 0.07); --ln2: rgba(255, 250, 240, 0.08); --ln3: rgba(255, 250, 240, 0.09);
+  --ln4: rgba(255, 250, 240, 0.12); --ln5: rgba(255, 250, 240, 0.14); --ln6: rgba(255, 250, 240, 0.15);
+  --ln7: rgba(255, 250, 240, 0.22); --ln8: rgba(255, 250, 240, 0.25);
+  --navbg: rgba(33, 32, 29, 0.72);
+  color-scheme: dark;
+}
 html[data-theme="light"] {
   --acc: #0d9d63; --acc-dim: rgba(13, 157, 99, 0.1); --acc-c: #ffffff;
   --warn: #8f6410; --warn-dim: rgba(143, 100, 16, 0.1);

@@ -16,7 +16,6 @@ import { MiniSwarm } from "@/components/app/CastingTheater";
 import Markdown from "@/components/app/Markdown";
 import { distShares } from "@/lib/dist";
 import { computeToolAttachment } from "@/lib/feed";
-import { markRunSeen } from "@/components/app/ReportsBadge";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import { createClient } from "@/lib/supabase/client";
 import type { PersonaSpec } from "@/lib/personas";
@@ -747,14 +746,6 @@ export default function LiveRun({
     setNote("STOPPING AT THE NEXT SAFE BOUNDARY — THE TRANSCRIPT IS PRESERVED AND THE REPORT CAN SYNTHESIZE IT");
     try { await fetch(`/api/simulations/${simId}/run/stop`, { method: "POST" }); } catch { /* the poll below will surface reality */ }
   };
-
-  // run-finished badge: being ON the run screen when a run is (or becomes)
-  // done IS seeing it — stamp now (a later RE-RUN's newer timestamp makes
-  // the sim unread again)
-  useEffect(() => {
-    if (status === "done") markRunSeen(simId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status]);
 
   // 3c: landing on a RUNNING sim means the run is going server-side — watch it.
   // 6-PR2 Quick Run: ?autostart=1 launches immediately through the proven

@@ -15,7 +15,7 @@ export default async function ReportPage({ params, searchParams }: {
   const { id } = await params;
   const { v } = await searchParams;
   const supabase = await createServerSupabase();
-  const { data: sim } = await supabase!.from("simulations").select("id, brief").eq("id", id).maybeSingle();
+  const { data: sim } = await supabase!.from("simulations").select("id, brief, config").eq("id", id).maybeSingle();
   if (!sim) notFound();
 
   const { data: reports } = await supabase!
@@ -83,6 +83,12 @@ export default async function ReportPage({ params, searchParams }: {
     <ReportView
       simId={sim.id}
       problem={(sim.brief as { problem?: string } | null)?.problem ?? ""}
+      name={
+        spec.name
+        ?? (sim.config as { name?: string } | null)?.name
+        ?? (sim.brief as { contract?: { title?: string } } | null)?.contract?.title
+        ?? null
+      }
       spec={spec}
       posts={posts}
       version={report.version as number}

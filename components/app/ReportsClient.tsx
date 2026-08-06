@@ -4,13 +4,16 @@
  * Reports tab — every synthesized report in the org, one card per simulation
  * (latest version leads; older versions stay reachable from the report's
  * V-chips). Search, verdict filters, date, pagination, and a hover ⋯ menu
- * with per-version delete — reports are permanent run records until the
- * user explicitly removes them.
+ * with rename + per-version delete — reports are permanent run records until
+ * the user explicitly removes them. Cards follow the SimCards grammar: the
+ * NAME leads (spec.name → the sim's name), the brief collapses behind a
+ * FULL BRIEF expander, and unread reports carry a pulsing green dot.
  */
 
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { seenReports } from "@/components/app/ReportsBadge";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 const PAGE = 12;
@@ -19,6 +22,8 @@ export interface ReportRow {
   id: string;
   sim_id: string;
   version: number;
+  /** display name: spec.name (user rename) → the sim's name/title → null */
+  name?: string | null;
   created_at: string;
   tone: string;
   label: string;
@@ -56,7 +61,37 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [confirmFor, setConfirmFor] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set()); // FULL BRIEF open per card
+  const [renaming, setRenaming] = useState<string | null>(null); // sim_id being renamed
+  const [nameDraft, setNameDraft] = useState("");
+  const [seen, setSeen] = useState<Set<string> | null>(null); // unread dots (client-only)
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // "seen" lives in localStorage — read after mount (no hydration mismatch),
+  // refresh when a report is opened in this tab
+  useEffect(() => {
+    const read = () => setSeen(seenReports());
+    read();
+    window.addEventListener("mc-reports-seen", read);
+    window.addEventListener("focus", read);
+    return () => { window.removeEventListener("mc-reports-seen", read); window.removeEventListener("focus", read); };
+  }, []);
+
+  // rename writes spec.name on EVERY version of the sim's report set, so
+  // grouped and flat views agree; clearing re-follows the simulation's name
+  const saveName = async (simId: string) => {
+    const name = nameDraft.trim().slice(0, 80);
+    setRenaming(null);
+    const ids = rows.filter((r) => r.sim_id === simId).map((r) => r.id);
+    setRows((prev) => prev.map((r) => (r.sim_id === simId ? { ...r, name: name || r.name } : r)));
+    for (const id of ids) {
+      await fetch(`/api/reports/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+    }
+  };
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -80,7 +115,7 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
   }, [rows]);
 
   const needle = q.trim().toLowerCase();
-  const matches = (r: ReportRow) => !needle || `${r.problem} ${r.headline} ${r.label}`.toLowerCase().includes(needle);
+  const matches = (r: ReportRow) => !needle || `${r.name ?? ""} ${r.problem} ${r.headline} ${r.label}`.toLowerCase().includes(needle);
   const visible = grouped.filter((g) => {
     if (tone !== "all" && bucketOf(g.latest) !== tone) return false;
     return matches(g.latest);
@@ -199,8 +234,11 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
               <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", flex: "none", padding: "3px 10px", borderRadius: 100, border: `1px solid ${bucketOf(r) === "insight" ? "var(--acc)" : toneColor(r.tone)}`, color: bucketOf(r) === "insight" ? "var(--acc)" : toneColor(r.tone), maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {bucketOf(r) === "insight" ? (r.leadMetric ?? "KEY FINDING") : r.label}
               </span>
+              {seen !== null && !seen.has(r.id) && (
+                <span title="New — you haven't opened this report" style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.6s ease infinite", flex: "none" }} />
+              )}
               <span style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {r.problem}
+                {r.name ?? r.problem}
               </span>
               <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", flex: "none" }}>
                 {r.mode.toUpperCase()} · {r.posts} POSTS
@@ -217,27 +255,80 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
         {pageRows.map((g) => {
           const r = g.latest;
           const menuOpen = menuFor === r.id;
+          const isOpen = expanded.has(r.sim_id);
+          const unread = seen !== null && !seen.has(r.id);
+          const clamp = (n: number): CSSProperties => ({ display: "-webkit-box", WebkitLineClamp: n, WebkitBoxOrient: "vertical", overflow: "hidden" });
+          const collapsible = Boolean(r.name) || r.problem.length > 220;
           return (
             <div key={r.id} className="card simCard" style={{ position: "relative", display: "flex", flexDirection: "column", opacity: deleting === r.sim_id ? 0.4 : 1, transition: "opacity .2s" }}>
               <Link href={`/sim/${r.sim_id}/report`} style={{ display: "block", padding: "22px 24px", flex: 1, boxSizing: "border-box" }}>
                 <div style={{ ...mono, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 9, letterSpacing: ".07em", color: "var(--t6)", paddingRight: 22 }}>
-                  {bucketOf(r) === "insight" ? (
-                    <span style={{ fontSize: 9, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, border: "1px solid var(--acc)", color: "var(--acc)" }}>
-                      {r.leadMetric ?? "KEY FINDING"}
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: 9, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, border: `1px solid ${toneColor(r.tone)}`, color: toneColor(r.tone) }}>
-                      {r.label}
-                    </span>
-                  )}
-                  <span>{new Date(r.created_at).toLocaleDateString()}</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    {unread && (
+                      <span title="New — you haven't opened this report" style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.6s ease infinite", flex: "none" }} />
+                    )}
+                    {bucketOf(r) === "insight" ? (
+                      <span style={{ fontSize: 9, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, border: "1px solid var(--acc)", color: "var(--acc)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r.leadMetric ?? "KEY FINDING"}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 9, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, border: `1px solid ${toneColor(r.tone)}`, color: toneColor(r.tone), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r.label}
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ flex: "none" }}>{new Date(r.created_at).toLocaleDateString()}</span>
                 </div>
-                <div style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.4, margin: "12px 0 8px", color: "var(--t1)" }}>
-                  {r.problem}
-                </div>
-                <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--t5)", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                {renaming === r.sim_id ? (
+                  <input
+                    autoFocus
+                    value={nameDraft}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onChange={(e) => setNameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); void saveName(r.sim_id); }
+                      if (e.key === "Escape") setRenaming(null);
+                    }}
+                    onBlur={() => void saveName(r.sim_id)}
+                    maxLength={80}
+                    placeholder="Name this report"
+                    style={{
+                      width: "100%", boxSizing: "border-box", margin: "12px 0 0", padding: "4px 0",
+                      background: "transparent", border: "none", borderBottom: "1px solid var(--acc)",
+                      outline: "none", fontFamily: "var(--font-sans), sans-serif",
+                      fontSize: 14.5, fontWeight: 600, color: "var(--t0)", caretColor: "var(--acc)",
+                    }}
+                  />
+                ) : (
+                  <div style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.4, margin: "12px 0 8px", color: "var(--t1)", ...clamp(r.name ? 2 : 3) }}>
+                    {r.name ?? r.problem}
+                  </div>
+                )}
+                <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--t5)", ...clamp(3) }}>
                   {r.headline}
                 </div>
+                {collapsible && (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault(); e.stopPropagation();
+                        setExpanded((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(r.sim_id)) next.delete(r.sim_id); else next.add(r.sim_id);
+                          return next;
+                        });
+                      }}
+                      style={{ ...mono, display: "block", marginTop: 10, fontSize: 8.5, letterSpacing: ".1em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0 }}
+                    >
+                      {isOpen ? "▴ HIDE FULL BRIEF" : "▾ FULL BRIEF"}
+                    </button>
+                    {isOpen && (
+                      <p style={{ margin: "8px 0 0", fontSize: 11.5, lineHeight: 1.6, color: "var(--t5)", maxHeight: 220, overflowY: "auto", whiteSpace: "pre-wrap", animation: "fadeUp .2s ease both" }}>
+                        {r.problem}
+                      </p>
+                    )}
+                  </>
+                )}
                 <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t7)", marginTop: 12 }}>
                   V{r.version}{g.versions > 1 ? ` OF ${g.versions}` : ""} · {r.mode.toUpperCase()} · {r.posts} POSTS · {r.dissents} DISSENT{r.dissents === 1 ? "" : "S"}
                 </div>
@@ -307,6 +398,16 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
                   <Link href={`/sim/${r.sim_id}/run`} prefetch={false} style={{ display: "block", padding: "9px 12px", fontSize: 12.5, color: "var(--t2)", borderRadius: 8 }}>
                     View the run
                   </Link>
+                  <button
+                    onClick={() => { setNameDraft(r.name ?? ""); setRenaming(r.sim_id); setMenuFor(null); }}
+                    style={{
+                      width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12.5,
+                      background: "none", border: "none", borderRadius: 8, cursor: "pointer",
+                      color: "var(--t2)", fontFamily: "var(--font-sans), sans-serif",
+                    }}
+                  >
+                    Rename
+                  </button>
                   <button
                     onClick={() => (confirmFor === r.id ? void remove(r, false) : setConfirmFor(r.id))}
                     style={{

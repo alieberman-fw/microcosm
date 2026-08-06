@@ -113,7 +113,9 @@ export default function SimWorkspace({
   const totalTokens = parsedDocs.reduce((s, d) => s + (d.token_estimate ?? 0), 0);
   // a stage is DONE when its artifact exists: parsed docs, a cast panel,
   // persisted run posts, a synthesized report — never mere saved config
-  const stageDone = [true, parsedDocs.length > 0, populationCount > 0, hasRun, hasReport];
+  // Corpus is optional — a run happening at all proves that stage was passed
+  // (field fix: doc-less sims showed a gray CORPUS on fully-complete runs).
+  const stageDone = [true, parsedDocs.length > 0 || hasRun, populationCount > 0, hasRun, hasReport];
 
   // bulk drops: every file queues visibly at once, then uploads 3 at a time —
   // a strictly serial loop made 5-file drops look like only the first landed

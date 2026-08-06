@@ -1,6 +1,7 @@
 import { CSSProperties } from "react";
 import { createServerSupabase, getLocalUser } from "@/lib/supabase/server";
 import ChecklistPref from "@/components/app/ChecklistPref";
+import ThemePref from "@/components/app/ThemePref";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -49,8 +50,10 @@ export default async function Settings() {
       <div className="card" style={{ marginTop: 16, padding: "24px 28px" }}>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Appearance</h3>
         <p style={{ margin: "8px 0 0", fontSize: 13.5, lineHeight: 1.6, color: "var(--t5)" }}>
-          Light and dark themes follow the toggle in your profile menu (bottom of the sidebar). Your choice persists on this device.
+          Three themes: light, a warm gray in the middle, and dark. The profile-menu toggle stays a quick light/dark switch;
+          your choice persists on this device.
         </p>
+        <ThemePref />
       </div>
 
       <div className="card" style={{ marginTop: 16, padding: "24px 28px" }}>

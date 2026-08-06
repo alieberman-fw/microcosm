@@ -9,7 +9,7 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/Nav";
-import ReportsBadge, { RunsBadge } from "@/components/app/ReportsBadge";
+import ReportsBadge from "@/components/app/ReportsBadge";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -36,14 +36,15 @@ const ICONS = {
 
 type NavItem = { href: string | null; label: string; icon: string; soon?: boolean };
 
+// field fix: Adam's requested order — Marketplace (Soon) stays last
 const NAV: NavItem[] = [
   { href: "/home", label: "Home", icon: ICONS.home },
   { href: "/dashboard", label: "Simulations", icon: ICONS.sims },
-  { href: "/conversations", label: "Conversations", icon: ICONS.consult },
+  { href: "/reports", label: "Reports", icon: ICONS.reports },
   { href: "/personas", label: "Agent Library", icon: ICONS.personas },
+  { href: "/conversations", label: "Conversations", icon: ICONS.consult },
   { href: "/monitoring", label: "Monitoring", icon: ICONS.monitor },
   { href: "/docs", label: "Docs", icon: ICONS.docs },
-  { href: "/reports", label: "Reports", icon: ICONS.reports },
   { href: null, label: "Marketplace", icon: ICONS.market, soon: true },
 ];
 
@@ -59,12 +60,16 @@ export default function AppShell({
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "gray" | "light">("dark");
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setCollapsed(localStorage.getItem("mc-sidebar") === "collapsed");
-    setTheme((localStorage.getItem("mc-theme") as "dark" | "light") || "dark");
+    const read = () => setTheme((localStorage.getItem("mc-theme") as "dark" | "gray" | "light") || "dark");
+    read();
+    // the 3-point slider in Settings → Appearance broadcasts changes here
+    window.addEventListener("mc-theme-changed", read);
+    return () => window.removeEventListener("mc-theme-changed", read);
   }, []);
 
   useEffect(() => {
@@ -81,8 +86,10 @@ export default function AppShell({
     localStorage.setItem("mc-sidebar", c ? "collapsed" : "open");
   };
 
+  // quick switch: light ↔ dark (gray counts as dark-family). All three
+  // themes live on the Settings → Appearance slider.
   const toggleTheme = () => {
-    const t = theme === "dark" ? "light" : "dark";
+    const t = theme === "light" ? "dark" : "light";
     localStorage.setItem("mc-theme", t);
     document.documentElement.dataset.theme = t;
     setTheme(t);
@@ -138,7 +145,6 @@ export default function AppShell({
                 <Icon d={item.icon} />
                 {!collapsed && item.label}
                 {item.href === "/reports" && <ReportsBadge collapsed={collapsed} />}
-                {item.href === "/dashboard" && <RunsBadge collapsed={collapsed} />}
                 {!collapsed && item.soon && (
                   <span style={{ ...mono, marginLeft: "auto", fontSize: 8.5, letterSpacing: ".06em", color: "var(--t7)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "2px 7px" }}>
                     SOON

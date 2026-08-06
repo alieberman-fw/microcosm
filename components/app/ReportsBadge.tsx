@@ -70,65 +70,6 @@ export default function ReportsBadge({ collapsed }: { collapsed: boolean }) {
     : <span style={{ ...badge, marginLeft: "auto" }}>{unread > 99 ? "99+" : unread}</span>;
 }
 
-/* ---- the run-finished badge (Simulations nav) ---------------------------
- * Same pattern, different subject: a RUN completing is news even before
- * anyone synthesizes a report. Seen = {simId: finishedAtISO} — a RE-RUN of
- * the same sim produces a newer `at` and counts as unread again. */
-
-export const RUNS_SEEN_KEY = "mc-seen-runs";
-
-function seenRuns(): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(RUNS_SEEN_KEY) ?? "{}") as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-/** LiveRun stamps this on the run screen — opening the run IS seeing it */
-export function markRunSeen(simId: string, at?: string | null) {
-  try {
-    const seen = seenRuns();
-    const stamp = at ?? new Date().toISOString();
-    if (seen[simId] && seen[simId] >= stamp) return;
-    seen[simId] = stamp;
-    const entries = Object.entries(seen).slice(-500);
-    localStorage.setItem(RUNS_SEEN_KEY, JSON.stringify(Object.fromEntries(entries)));
-    window.dispatchEvent(new Event("mc-runs-seen"));
-  } catch { /* private mode — the badge stays session-approximate */ }
-}
-
-export function RunsBadge({ collapsed }: { collapsed: boolean }) {
-  const [unread, setUnread] = useState(0);
-
-  const refresh = useCallback(async () => {
-    try {
-      const res = await fetch("/api/simulations/finished");
-      if (!res.ok) return;
-      const { runs } = (await res.json()) as { runs: { id: string; at: string }[] };
-      const seen = seenRuns();
-      setUnread(runs.filter((r) => !(seen[r.id] && seen[r.id] >= r.at)).length);
-    } catch { /* transient — the next poll lands */ }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-    const t = setInterval(() => void refresh(), 45_000);
-    const onSeen = () => void refresh();
-    window.addEventListener("mc-runs-seen", onSeen);
-    window.addEventListener("focus", onSeen);
-    return () => { clearInterval(t); window.removeEventListener("mc-runs-seen", onSeen); window.removeEventListener("focus", onSeen); };
-  }, [refresh]);
-
-  if (unread === 0) return null;
-
-  const badge: CSSProperties = {
-    fontFamily: "var(--font-mono), monospace", fontSize: 9, fontWeight: 500,
-    minWidth: 16, height: 16, padding: "0 4px", borderRadius: 100, boxSizing: "border-box",
-    background: "var(--acc)", color: "var(--acc-c)",
-    display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
-  };
-  return collapsed
-    ? <span style={{ ...badge, position: "absolute", top: 4, right: 10 }}>{unread > 9 ? "9+" : unread}</span>
-    : <span style={{ ...badge, marginLeft: "auto" }}>{unread > 99 ? "99+" : unread}</span>;
-}
+/* field fix: the run-finished badge on the Simulations nav is GONE by
+ * request — the reports badge is the single "news" signal, and unread
+ * reports carry a green dot on their cards (ReportsClient). */

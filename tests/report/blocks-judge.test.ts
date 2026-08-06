@@ -63,6 +63,31 @@ describe("normalizeBlocks", () => {
     expect(big[0].rows[0].cites).toHaveLength(6);
     expect(normalizeBlocks([{ kind: "ranked_list", title: "t", columns: [], rows: [{ label: "", cells: ["x"] }] }])).toHaveLength(0);
   });
+
+  // field fix: the live matrix that rendered "—" down 2 of 3 columns — a
+  // column empty across EVERY row is pruned (and its cell slot with it)
+  it("prunes columns that are empty in every row; keeps partly-filled ones", () => {
+    const out = normalizeBlocks([{
+      kind: "matrix", title: "m", columns: ["FIT", "COMPS", "ZONING"],
+      rows: [
+        { label: "site a", cells: ["strong", "", "—"] },
+        { label: "site b", cells: ["weak", "N/A", "-"] },
+      ],
+    }]);
+    expect(out[0].columns).toEqual(["FIT"]);
+    expect(out[0].rows.map((r) => r.cells)).toEqual([["strong"], ["weak"]]);
+    // a column with data in ANY row survives, holes intact
+    const partial = normalizeBlocks([{
+      kind: "matrix", title: "m", columns: ["FIT", "COMPS"],
+      rows: [{ label: "a", cells: ["strong", "two comps"] }, { label: "b", cells: ["weak", ""] }],
+    }]);
+    expect(partial[0].columns).toEqual(["FIT", "COMPS"]);
+    // all columns empty → the block itself is dropped
+    expect(normalizeBlocks([{ kind: "matrix", title: "m", columns: ["A"], rows: [{ label: "x", cells: ["—"] }] }])).toHaveLength(0);
+    // the prompt + judge carry the no-empty-cells contract
+    expect(blocksSynthSystem("- matrix")).toContain("NO EMPTY CELLS");
+    expect(judgeSystem()).toContain('ANY blank, "—", or "N/A" cell is a FAILURE');
+  });
 });
 
 describe("parseJudgeVerdict", () => {
