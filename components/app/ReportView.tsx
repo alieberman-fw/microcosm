@@ -692,16 +692,18 @@ export default function ReportView({
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   // unread-reports badge: opening a report IS reading it
   useEffect(() => { if (reportId) markReportSeen(reportId); }, [reportId]);
-  // the report's NAME — editable in place (✎), persisted to spec.name
+  // the report's NAME — click the name itself to edit (no pencil); ONE name
+  // owned by the simulation, so the rename shows on the dashboard card, the
+  // reports tab, and every version at once
   const [repName, setRepName] = useState(name);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const saveName = async () => {
     const next = nameDraft.trim().slice(0, 80);
     setEditingName(false);
-    if (!reportId || !next || next === repName) return;
+    if (!next || next === repName) return;
     setRepName(next);
-    await fetch(`/api/reports/${reportId}`, {
+    await fetch(`/api/simulations/${simId}/config`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: next }),
@@ -829,49 +831,49 @@ export default function ReportView({
         </span>
       </div>
 
-      {/* the report's name — aligned to the simulation by default, editable
-          in place; shows on the reports tab cards too */}
-      {(repName || reportId) && (
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 16 }}>
-          <span style={{ ...mono, fontSize: 9, letterSpacing: ".12em", color: "var(--t6)", flex: "none" }}>REPORT</span>
-          {editingName ? (
-            <input
-              autoFocus
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); void saveName(); }
-                if (e.key === "Escape") setEditingName(false);
-              }}
-              onBlur={() => void saveName()}
-              maxLength={80}
-              placeholder="Name this report"
-              style={{
-                flex: 1, minWidth: 0, padding: "2px 0", background: "transparent", border: "none",
-                borderBottom: "1px solid var(--acc)", outline: "none",
-                fontFamily: "var(--font-sans), sans-serif", fontSize: 17, fontWeight: 600,
-                color: "var(--t0)", caretColor: "var(--acc)",
-              }}
-            />
-          ) : (
-            <>
-              <span style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-.02em", color: "var(--t1)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {repName ?? "Untitled report"}
-              </span>
-              {reportId && (
-                <button
-                  onClick={() => { setNameDraft(repName ?? ""); setEditingName(true); }}
-                  aria-label="Rename this report"
-                  title="Rename this report"
-                  style={{ ...mono, fontSize: 11, background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 2, flex: "none" }}
-                >
-                  ✎
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      {/* the report's name — click the NAME ITSELF to edit (field fix: the
+          pencil is gone); the underline input opens in place, Enter saves,
+          Escape cancels. The name is the SIMULATION's name, so the rename
+          shows everywhere at once. */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 16 }}>
+        <span style={{ ...mono, fontSize: 9, letterSpacing: ".12em", color: "var(--t6)", flex: "none" }}>REPORT</span>
+        {editingName ? (
+          <input
+            autoFocus
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); void saveName(); }
+              if (e.key === "Escape") setEditingName(false);
+            }}
+            onBlur={() => void saveName()}
+            maxLength={80}
+            placeholder="Name this report"
+            style={{
+              flex: 1, minWidth: 0, padding: "2px 0", background: "transparent", border: "none",
+              borderBottom: "1px solid var(--acc)", outline: "none",
+              fontFamily: "var(--font-sans), sans-serif", fontSize: 17, fontWeight: 600,
+              color: "var(--t0)", caretColor: "var(--acc)",
+            }}
+          />
+        ) : (
+          <button
+            onClick={() => { setNameDraft(repName ?? ""); setEditingName(true); }}
+            title="Click to rename"
+            style={{
+              flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none",
+              borderBottom: "1px solid transparent", padding: "2px 0", cursor: "text",
+              fontFamily: "var(--font-sans), sans-serif", fontSize: 17, fontWeight: 600,
+              letterSpacing: "-.02em", color: repName ? "var(--t1)" : "var(--t6)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderBottom = "1px dashed var(--ln7)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderBottom = "1px solid transparent"; }}
+          >
+            {repName ?? "Name this report"}
+          </button>
+        )}
+      </div>
 
       {plainErr && <div style={{ ...mono, fontSize: 10, color: "var(--warn)", marginTop: 10 }}>{plainErr}</div>}
 

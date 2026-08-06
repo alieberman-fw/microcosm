@@ -42,7 +42,13 @@ function cssVar(name: string, fallback: string) {
   return v || fallback;
 }
 
-export default function CastingTheater({ label }: { label?: string }) {
+export default function CastingTheater({ label, height = 240, compact = false }: {
+  label?: string;
+  /** canvas height — the quick-run pipeline embeds a shorter stage */
+  height?: number;
+  /** compact: no outer card chrome, smaller copy, no cursor hint */
+  compact?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const startRef = useRef<number>(0);
   const [phase, setPhase] = useState("SCATTER");
@@ -69,7 +75,7 @@ export default function CastingTheater({ label }: { label?: string }) {
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const W = canvas.clientWidth;
-    const H = 240;
+    const H = height;
     canvas.width = W * dpr;
     canvas.height = H * dpr;
     ctx.scale(dpr, dpr);
@@ -269,9 +275,22 @@ export default function CastingTheater({ label }: { label?: string }) {
   const lines = STATUS_BY_PHASE[phase] ?? STATUS_BY_PHASE.SCATTER;
   const statusLine = lines[statusIdx % lines.length];
 
+  if (compact) {
+    // embedded variant (quick-run pipeline): the swarm + one status line,
+    // no card chrome — the host row already names the stage
+    return (
+      <div style={{ overflow: "hidden" }}>
+        <canvas ref={canvasRef} style={{ width: "100%", height, display: "block", cursor: "crosshair" }} />
+        <div key={statusLine} style={{ fontSize: 12, color: "var(--t5)", marginTop: 4, textAlign: "center", animation: "fadeUp .4s ease both" }}>
+          {statusLine}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ marginTop: 18, border: "1px solid var(--ln3)", borderRadius: 14, background: "var(--sf)", padding: "8px 8px 20px", overflow: "hidden" }}>
-      <canvas ref={canvasRef} style={{ width: "100%", height: 240, display: "block", cursor: "crosshair" }} />
+      <canvas ref={canvasRef} style={{ width: "100%", height, display: "block", cursor: "crosshair" }} />
       <div style={{ textAlign: "center", marginTop: 4 }}>
         <div style={{ ...mono, fontSize: 11, letterSpacing: ".1em", color: "var(--acc)", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.6s infinite" }} />
