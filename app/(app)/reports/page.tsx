@@ -25,8 +25,9 @@ export default async function ReportsPage() {
     ? await supabase!.from("simulations").select("id, brief, config").in("id", simIds)
     : { data: [] as { id: string; brief: unknown; config: unknown }[] };
   const problemOf = new Map((sims ?? []).map((s) => [s.id as string, ((s.brief as { problem?: string } | null)?.problem ?? "Untitled simulation")]));
-  // report names align to the simulation: the sim's rename, else the
-  // understanding pass's title (same resolution SimCards uses)
+  // ONE name, owned by the simulation (field fix: renaming the sim must
+  // reflect in its reports instantly): the sim's rename, else the
+  // understanding pass's title — spec.name only as a legacy fallback
   const simNameOf = new Map((sims ?? []).map((s) => {
     const cfg = s.config as { name?: string } | null;
     const contract = (s.brief as { contract?: { title?: string } } | null)?.contract;
@@ -39,7 +40,7 @@ export default async function ReportsPage() {
       id: r.id as string,
       sim_id: r.sim_id as string,
       version: r.version as number,
-      name: spec.name ?? simNameOf.get(r.sim_id as string) ?? null,
+      name: simNameOf.get(r.sim_id as string) ?? spec.name ?? null,
       created_at: (r.created_at as string) ?? spec.methodology.generated_at,
       tone: spec.verdict.tone,
       label: spec.verdict.label,

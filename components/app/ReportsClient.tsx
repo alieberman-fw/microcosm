@@ -77,20 +77,19 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
     return () => { window.removeEventListener("mc-reports-seen", read); window.removeEventListener("focus", read); };
   }, []);
 
-  // rename writes spec.name on EVERY version of the sim's report set, so
-  // grouped and flat views agree; clearing re-follows the simulation's name
+  // ONE name, owned by the simulation (field fix): renaming a report renames
+  // its sim, so the dashboard card, every report version, and the open
+  // report all agree — no per-version copies to drift
   const saveName = async (simId: string) => {
     const name = nameDraft.trim().slice(0, 80);
     setRenaming(null);
-    const ids = rows.filter((r) => r.sim_id === simId).map((r) => r.id);
-    setRows((prev) => prev.map((r) => (r.sim_id === simId ? { ...r, name: name || r.name } : r)));
-    for (const id of ids) {
-      await fetch(`/api/reports/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-    }
+    if (!name) return;
+    setRows((prev) => prev.map((r) => (r.sim_id === simId ? { ...r, name } : r)));
+    await fetch(`/api/simulations/${simId}/config`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
   };
 
   useEffect(() => {

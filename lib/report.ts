@@ -53,8 +53,8 @@ export interface ReportBlock {
 
 export interface ReportSpec {
   version: number;
-  /** user-set display name (reports tab rename / report header ✎); display
-   *  resolves spec.name → the sim's name → the contract title */
+  /** LEGACY fallback only — renames now write the SIM's config.name (one
+   *  name everywhere); display resolves sim name → contract title → this */
   name?: string;
   verdict: { label: string; tone: "go" | "conditional" | "no-go" | "split"; headline: string };
   /** the typed lead visual (3b) — absent on pre-3b reports, which render as `decision` */

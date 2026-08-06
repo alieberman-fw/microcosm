@@ -84,9 +84,9 @@ export default async function ReportPage({ params, searchParams }: {
       simId={sim.id}
       problem={(sim.brief as { problem?: string } | null)?.problem ?? ""}
       name={
-        spec.name
-        ?? (sim.config as { name?: string } | null)?.name
+        (sim.config as { name?: string } | null)?.name
         ?? (sim.brief as { contract?: { title?: string } } | null)?.contract?.title
+        ?? spec.name
         ?? null
       }
       spec={spec}

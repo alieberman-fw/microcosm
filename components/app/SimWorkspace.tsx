@@ -562,13 +562,27 @@ export default function SimWorkspace({
       )}
       </div>
 
-      {/* the bottom action while live: back into the running simulation —
-          the same destination as the RUN breadcrumb */}
+      {/* the bottom action while live (field fix: the lone centered button
+          read as an orphan) — a full-width live-run bar matching the top
+          banner's grammar, same destination as the RUN breadcrumb */}
       {sim.status === "running" && (
-        <div style={{ display: "flex", justifyContent: "center", marginTop: 26 }}>
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+            marginTop: 26, padding: "18px 24px", borderRadius: 14,
+            border: "1px solid var(--warn)", background: "var(--warn-dim)",
+          }}
+        >
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 9, flex: "none" }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite" }} />
+            <span style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: "var(--warn)" }}>RUN IN PROGRESS</span>
+          </span>
+          <span style={{ fontSize: 13.5, lineHeight: 1.5, color: "var(--t4)", flex: 1, minWidth: 220 }}>
+            The workspace is locked while the panel deliberates — every post persists, and the report synthesizes from the run screen.
+          </span>
           <button
             onClick={() => router.push(`/sim/${sim.id}/run`)}
-            style={{ background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 14.5, padding: "13px 30px", borderRadius: 100, border: "none", cursor: "pointer", fontFamily: "var(--font-sans), sans-serif" }}
+            style={{ background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 14, padding: "12px 26px", borderRadius: 100, border: "none", cursor: "pointer", fontFamily: "var(--font-sans), sans-serif", flex: "none" }}
           >
             View live run →
           </button>

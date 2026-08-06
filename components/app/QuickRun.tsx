@@ -10,19 +10,23 @@
  * ("homebuyers aged 35-45 in Beverly Hills…") — the Understanding pass
  * extracts it and casting honors it; omitted, the director decides.
  *
- * There is NO population stage: RUN estimates cost up front, then drives
- * create → files → understand (one-line UNDERSTOOD strip) → cast (theater,
- * seat dots) → crowd (dot-field fill — materialized HERE so the forum feed
- * opens clean) and drops into the live run with ?autostart=1 — LiveRun's
- * auto-materialize sees a non-zero crowd and skips straight to launch.
- * Classic remains the default; the view preference persists per user.
+ * There is NO population stage, but there IS a CHECKPOINT (field fix): RUN
+ * drives create → files → understand, then STOPS on the WHAT I UNDERSTOOD
+ * review — the mirror, the clarifier questions as tap-able chips, and a
+ * CAST & RUN button. Editing the prompt during review demands a RE-DERIVE
+ * before continuing. Then cast (the classic casting-theater swarm) → crowd
+ * (the CrowdBand dot-field, materialized HERE so the forum opens clean) →
+ * straight into the live run with ?autostart=1. Classic remains the
+ * default; the view preference persists per user.
  */
 
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ModeDiagram, { ModeKey } from "@/components/app/docs/ModeDiagram";
+import CastingTheater, { CrowdBand } from "@/components/app/CastingTheater";
 import { MAX_DOC_BYTES } from "@/lib/corpus";
 import { SIM_MODES } from "@/lib/casting";
+import { BriefContract } from "@/lib/understand";
 import { RUN_DEFAULTS, RunConfig, estimateRunCost, isFixedShape } from "@/lib/run";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -52,8 +56,12 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
   const [stages, setStages] = useState<Stage[]>([]);
   const [understood, setUnderstood] = useState<string | null>(null);
   const [castLine, setCastLine] = useState<string | null>(null);
-  const [seatCount, setSeatCount] = useState(0); // lead dots light as seats land
-  const [crowd, setCrowd] = useState<{ landed: number; sample: number } | null>(null);
+  const [crowd, setCrowd] = useState<{ landed: number; sample: number; experts: number; residents: number } | null>(null);
+  // the CHECKPOINT: the contract from the understanding pass — while set and
+  // unconfirmed, the pipeline waits on the user (clarifiers, re-derive, go)
+  const [contract, setContract] = useState<BriefContract | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const reviewedProblem = useRef(""); // the prompt text the contract was derived from
   const [error, setError] = useState<string | null>(null);
   const pickRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
@@ -91,15 +99,18 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
   const setStage = (key: string, state: Stage["state"]) =>
     setStages((prev) => prev.map((s) => (s.key === key ? { ...s, state } : s)));
 
+  // PHASE 1: create → files → understand → STOP at the checkpoint
   const run = async () => {
     if (!typing || running) return;
     setRunning(true);
     setError(null);
-    setSeatCount(0);
     setCrowd(null);
+    setContract(null);
+    setReviewing(false);
     setStages([
       { key: "create", label: files.length ? `UPLOADING ${files.length} FILE${files.length > 1 ? "S" : ""}` : "CREATING THE SIMULATION", state: "active" },
       { key: "understand", label: "UNDERSTANDING YOUR BRIEF", state: "pending" },
+      { key: "review", label: "REVIEW WHAT I UNDERSTOOD", state: "pending" },
       { key: "cast", label: "CASTING THE PANEL", state: "pending" },
       { key: "crowd", label: "MATERIALIZING THE CROWD", state: "pending" },
       { key: "launch", label: "INTO THE LIVE RUN", state: "pending" },
@@ -144,21 +155,101 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
       }
       setStage("create", "done");
 
-      // 3 · the understanding pass → the one-line UNDERSTOOD strip
+      // 3 · the understanding pass → the CHECKPOINT (field fix: the pipeline
+      // used to barrel straight into casting; now it stops for the user)
       setStage("understand", "active");
       const ures = await fetch(`/api/simulations/${id}/understand`, { method: "POST" });
       const u = await ures.json();
+      setStage("understand", "done");
       if (ures.ok && u.contract) {
-        const c = u.contract as { intent: string; sub_asks: unknown[]; poll_plan?: unknown[]; population_hints?: { described?: boolean } };
+        const c = u.contract as BriefContract;
         setUnderstood(
           `${String(c.intent).toUpperCase()} · ${c.sub_asks.length} SUB-ASK${c.sub_asks.length > 1 ? "S" : ""}` +
           ` · ${Array.isArray(c.poll_plan) ? (c.poll_plan.length ? `POLL PLAN: ${c.poll_plan.length} ANGLE${c.poll_plan.length > 1 ? "S" : ""}` : "NO CROWD POLL") : "CLASSIC POLL"}` +
           (c.population_hints?.described ? " · POPULATION FROM YOUR PROMPT" : ""),
         );
+        setContract(c);
+        reviewedProblem.current = problem.trim();
+        setStage("review", "active");
+        setReviewing(true);
+        setRunning(false);
+        return; // ← the checkpoint: castAndLaunch continues on the user's go
       }
-      // understanding is probabilistic and optional — a miss never blocks the run
-      setStage("understand", "done");
+      // understanding is probabilistic and optional — a miss never blocks the
+      // run; with nothing to review, continue straight through
+      setStage("review", "done");
+      await castAndLaunch();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Quick run failed");
+      setRunning(false);
+    }
+  };
 
+  // one-tap clarifier answers persist to the contract (same PATCH the
+  // workspace card uses); a failure keeps the old answer and says so
+  const saveContract = async (next: BriefContract) => {
+    const id = createdId.current;
+    if (!id) return;
+    const prev = contract;
+    setContract(next);
+    try {
+      const res = await fetch(`/api/simulations/${id}/understand`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contract: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Save failed");
+      setContract(data.contract as BriefContract);
+    } catch (e) {
+      setContract(prev);
+      setError(e instanceof Error ? e.message : "Save failed");
+    }
+  };
+
+  // the prompt was edited during review → the contract no longer matches
+  const dirty = reviewing && problem.trim() !== reviewedProblem.current;
+
+  // re-derive: persist the edited brief, then run the understanding pass again
+  const rederive = async () => {
+    const id = createdId.current;
+    if (!id || running) return;
+    setRunning(true);
+    setError(null);
+    setStage("understand", "active");
+    setStage("review", "pending");
+    try {
+      const bres = await fetch(`/api/simulations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ problem: problem.trim(), questions: [], template: "Custom", success: [] }),
+      });
+      if (!bres.ok) throw new Error("Could not save the edited brief");
+      const ures = await fetch(`/api/simulations/${id}/understand`, { method: "POST" });
+      const u = await ures.json();
+      if (!ures.ok || !u.contract) throw new Error((u as { error?: string }).error ?? "Re-derive failed — try again");
+      setContract(u.contract as BriefContract);
+      reviewedProblem.current = problem.trim();
+      setStage("understand", "done");
+      setStage("review", "active");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Re-derive failed");
+      setStage("understand", "done");
+      setStage("review", "active");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  // PHASE 2 (on the user's go): config → cast → crowd → launch
+  const castAndLaunch = async () => {
+    const id = createdId.current;
+    if (!id) return;
+    setRunning(true);
+    setReviewing(false);
+    setError(null);
+    setStage("review", "done");
+    try {
       // 4 · run params (mode only when the user picked one — AUTO lets the director decide)
       await fetch(`/api/simulations/${id}/config`, {
         method: "PATCH",
@@ -166,7 +257,7 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
         body: JSON.stringify({ ...(mode ? { mode } : {}), run: { rounds, tier, density } }),
       });
 
-      // 5 · cast — the theater: seats land as status lines while the panel forms
+      // 5 · cast — the classic casting-theater swarm plays while seats land
       setStage("cast", "active");
       const cres = await fetch(`/api/simulations/${id}/cast`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       if (!cres.ok || !cres.body) {
@@ -190,7 +281,6 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
           if (evt.type === "plan") setCastLine("THE DIRECTOR HAS A PLAN — SEATING THE PANEL…");
           if (evt.type === "seat") {
             seats += 1;
-            setSeatCount(seats);
             const role = (evt as { seat?: { role?: string } }).seat?.role ?? (evt as { spec?: { role?: string } }).spec?.role ?? "seat";
             setCastLine(`SEATED ${seats} · ${String(role).toUpperCase().slice(0, 44)}`);
           }
@@ -218,9 +308,9 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
             kbuf = lines.pop() ?? "";
             for (const line of lines) {
               if (!line.trim()) continue;
-              let kevt: { type?: string; sample?: number; generated?: number } = {};
+              let kevt: { type?: string; sample?: number; generated?: number; experts?: number; residents?: number } = {};
               try { kevt = JSON.parse(line); } catch { continue; }
-              if (kevt.type === "start") setCrowd({ landed: 0, sample: Number(kevt.sample) || 0 });
+              if (kevt.type === "start") setCrowd({ landed: 0, sample: Number(kevt.sample) || 0, experts: Number(kevt.experts) || 0, residents: Number(kevt.residents) || 0 });
               if (kevt.type === "members") setCrowd((c) => c ? { ...c, landed: Number(kevt.generated) || c.landed } : c);
               if (kevt.type === "done") setCrowd((c) => c ? { ...c, landed: Number(kevt.generated) || c.landed } : c);
             }
@@ -275,8 +365,9 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
         }}
       />
 
-      {/* files ride with the prompt */}
-      {!running && (
+      {/* files ride with the prompt (hidden during review — files upload in
+          phase 1; adding one here would silently miss the corpus) */}
+      {!running && !reviewing && (
         <div
           onClick={() => pickRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -385,8 +476,8 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
         </div>
       )}
 
-      {/* the pipeline — casting theater as the loading state */}
-      {running && (
+      {/* the pipeline — the classic theater plays inside the box */}
+      {(running || reviewing) && (
         <div className="card" style={{ marginTop: 22, padding: "22px 26px", animation: "fadeUp .3s ease both" }}>
           {stages.map((s) => (
             <div key={s.key} style={{ padding: "5px 0", opacity: s.state === "pending" ? 0.4 : 1 }}>
@@ -395,7 +486,10 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
                   {s.state === "done" ? "✓" : s.state === "active" ? "·" : ""}
                 </span>
                 {s.state === "active" && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />}
-                <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: s.state === "active" ? "var(--t2)" : "var(--t5)" }}>{s.label}</span>
+                <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: s.state === "active" ? "var(--t2)" : "var(--t5)" }}>
+                  {s.label}
+                  {s.key === "review" && s.state === "active" && <span style={{ color: "var(--t6)" }}> — WAITING ON YOU</span>}
+                </span>
                 {s.key === "cast" && s.state === "active" && castLine && (
                   <span style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--acc)", animation: "fadeUp .25s ease both" }} key={castLine}>— {castLine}</span>
                 )}
@@ -406,34 +500,101 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
                   <span style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--t6)" }}>— NO CROWD FOR THIS RUN</span>
                 )}
               </div>
-              {/* the panel forms as dots — leads land one by one while casting */}
-              {s.key === "cast" && s.state !== "pending" && seatCount > 0 && (
-                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "7px 0 2px 22px" }}>
-                  {Array.from({ length: Math.min(seatCount, 16) }, (_, i) => (
-                    <span key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--acc)", animation: "fadeUp .3s ease both", boxShadow: "0 0 6px var(--acc-dim)" }} />
+
+              {/* THE CHECKPOINT — review what was understood before anything casts */}
+              {s.key === "review" && s.state === "active" && contract && (
+                <div style={{ margin: "12px 0 8px 22px", padding: "16px 18px", border: "1px solid var(--ln3)", borderRadius: 12, background: "var(--sf2)", animation: "fadeUp .3s ease both" }}>
+                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: "var(--t3)", maxWidth: 760 }}>{contract.mirror}</p>
+                  {contract.population_hints.described && contract.population_hints.cohorts.length > 0 && (
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                      <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>POPULATION</span>
+                      {contract.population_hints.cohorts.map((co, i) => (
+                        <span key={i} style={{ ...mono, fontSize: 9, letterSpacing: ".05em", padding: "3px 10px", borderRadius: 100, border: "1px solid var(--acc)", color: "var(--acc)" }}>
+                          {co.desc.toUpperCase().slice(0, 48)}{co.geography ? ` · ${co.geography.toUpperCase()}` : ""}
+                        </span>
+                      ))}
+                      <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>→ CASTING HONORS THIS</span>
+                    </div>
+                  )}
+                  {contract.output_contracts.length > 0 && (
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                      <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>THE REPORT YOU&rsquo;LL GET</span>
+                      {contract.output_contracts.map((oc, i) => (
+                        <span key={i} style={{ ...mono, fontSize: 9, letterSpacing: ".05em", padding: "3px 10px", borderRadius: 100, border: `1px solid ${i === 0 ? "var(--acc)" : "var(--ln5)"}`, color: i === 0 ? "var(--acc)" : "var(--t5)" }}>
+                          {i === 0 ? "OPENS WITH · " : "+ "}{oc.type.replace("_", " ").toUpperCase()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {/* the clarifiers — the follow-up questions, one tap each */}
+                  {contract.flags.map((f) => (
+                    <div key={f.question} style={{ marginTop: 14, padding: "12px 14px", borderLeft: "2px solid var(--warn)", background: "var(--warn-dim)", borderRadius: "0 10px 10px 0" }}>
+                      <div style={{ fontSize: 13, color: "var(--t2)" }}>{f.question}</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9 }}>
+                        {f.options.map((o) => {
+                          const on = (f.answer ?? f.default) === o;
+                          return (
+                            <button
+                              key={o}
+                              onClick={() => void saveContract({ ...contract, flags: contract.flags.map((x) => (x.question === f.question ? { ...x, answer: o } : x)) })}
+                              style={{
+                                ...mono, fontSize: 9, letterSpacing: ".05em", padding: "4px 12px", borderRadius: 100, cursor: "pointer",
+                                background: on ? "var(--acc-dim)" : "transparent",
+                                border: `1px solid ${on ? "var(--acc)" : "var(--ln5)"}`, color: on ? "var(--acc)" : "var(--t5)",
+                              }}
+                            >
+                              {o.toUpperCase()}{!f.answer && o === f.default ? " · DEFAULT" : ""}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ))}
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
+                    {dirty ? (
+                      <>
+                        <button
+                          onClick={() => void rederive()}
+                          style={{ background: "var(--warn)", color: "var(--acc-c)", fontWeight: 600, fontSize: 13, padding: "10px 22px", borderRadius: 100, border: "none", cursor: "pointer", fontFamily: "var(--font-sans), sans-serif" }}
+                        >
+                          ↻ Prompt changed — re-derive
+                        </button>
+                        <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--warn)" }}>THE READING ABOVE IS FROM YOUR EARLIER PROMPT</span>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => void castAndLaunch()}
+                          style={{ background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 13, padding: "10px 22px", borderRadius: 100, border: "none", cursor: "pointer", fontFamily: "var(--font-sans), sans-serif" }}
+                        >
+                          Looks right — cast &amp; run →
+                        </button>
+                        <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t6)" }}>EDIT THE PROMPT ABOVE TO CHANGE IT, THEN RE-DERIVE</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
-              {/* the crowd fills a dot field — one dot per slice of the sample */}
-              {s.key === "crowd" && s.state !== "pending" && crowd && crowd.sample > 0 && (() => {
-                const nDots = Math.min(crowd.sample, 60);
-                const lit = Math.round((crowd.landed / crowd.sample) * nDots);
-                return (
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", margin: "7px 0 2px 22px", maxWidth: 420 }}>
-                    {Array.from({ length: nDots }, (_, i) => (
-                      <span
-                        key={i}
-                        style={{
-                          width: 5, height: 5, borderRadius: "50%",
-                          background: i < lit ? "var(--acc)" : "var(--ln4)",
-                          transition: "background .3s ease",
-                          ...(i < lit ? { animation: "fadeUp .3s ease both" } : {}),
-                        }}
-                      />
-                    ))}
-                  </div>
-                );
-              })()}
+
+              {/* the classic casting-theater swarm plays while the panel forms */}
+              {s.key === "cast" && s.state === "active" && (
+                <div style={{ margin: "10px 0 4px 22px" }}>
+                  <CastingTheater compact height={150} />
+                </div>
+              )}
+              {/* the CrowdBand dot-field lights as members land — same visual
+                  the classic composer's population stage uses */}
+              {s.key === "crowd" && s.state !== "pending" && crowd && crowd.sample > 0 && (
+                <div style={{ margin: "8px 0 2px 22px", maxWidth: 560 }}>
+                  <CrowdBand
+                    experts={crowd.experts || crowd.sample}
+                    residents={crowd.residents}
+                    litExperts={Math.round(crowd.landed * ((crowd.experts || crowd.sample) / Math.max(crowd.sample, 1)))}
+                    litResidents={Math.round(crowd.landed * (crowd.residents / Math.max(crowd.sample, 1)))}
+                    active={s.state === "active"}
+                  />
+                </div>
+              )}
             </div>
           ))}
           {understood && (
@@ -446,31 +607,34 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
 
       {error && <div style={{ ...mono, fontSize: 10.5, color: "var(--warn)", marginTop: 14 }}>{error.toUpperCase().slice(0, 120)}</div>}
 
-      {/* RUN — the estimate rides on the button (no surprise bills) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
-        <button
-          onClick={() => void run()}
-          disabled={!typing || running}
-          style={{
-            background: typing && !running ? "var(--acc)" : "var(--sf2)",
-            color: typing && !running ? "var(--acc-c)" : "var(--t6)",
-            fontWeight: 600, fontSize: 14.5, padding: "13px 30px", borderRadius: 100, border: "none",
-            cursor: typing && !running ? "pointer" : "default", fontFamily: "var(--font-sans), sans-serif",
-          }}
-        >
-          {running ? "Running…" : "Run the simulation →"}
-        </button>
-        {typing && !running && (
-          <span style={{ ...mono, fontSize: 10, letterSpacing: ".05em", color: "var(--t6)" }}>
-            EST ${est.low.toFixed(2)}–{est.high.toFixed(2)} · ~{est.posts} POSTS · AT THE DIRECTOR'S TYPICAL PANEL (10 LEADS + 50 CROWD)
-          </span>
-        )}
-        {!typing && !running && (
-          <span style={{ ...mono, fontSize: 10, letterSpacing: ".05em", color: "var(--t7)" }}>
-            START TYPING — THE MODES AND CONFIG APPEAR AS YOU GO
-          </span>
-        )}
-      </div>
+      {/* RUN — the estimate rides on the button (no surprise bills). During
+          review the CHECKPOINT card owns the primary action, so this hides. */}
+      {!reviewing && (
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
+          <button
+            onClick={() => void run()}
+            disabled={!typing || running}
+            style={{
+              background: typing && !running ? "var(--acc)" : "var(--sf2)",
+              color: typing && !running ? "var(--acc-c)" : "var(--t6)",
+              fontWeight: 600, fontSize: 14.5, padding: "13px 30px", borderRadius: 100, border: "none",
+              cursor: typing && !running ? "pointer" : "default", fontFamily: "var(--font-sans), sans-serif",
+            }}
+          >
+            {running ? "Running…" : "Run the simulation →"}
+          </button>
+          {typing && !running && (
+            <span style={{ ...mono, fontSize: 10, letterSpacing: ".05em", color: "var(--t6)" }}>
+              EST ${est.low.toFixed(2)}–{est.high.toFixed(2)} · ~{est.posts} POSTS · AT THE DIRECTOR'S TYPICAL PANEL (10 LEADS + 50 CROWD)
+            </span>
+          )}
+          {!typing && !running && (
+            <span style={{ ...mono, fontSize: 10, letterSpacing: ".05em", color: "var(--t7)" }}>
+              START TYPING — THE MODES AND CONFIG APPEAR AS YOU GO
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
