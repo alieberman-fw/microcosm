@@ -53,6 +53,9 @@ export interface ReportBlock {
 
 export interface ReportSpec {
   version: number;
+  /** user-set display name (reports tab rename / report header ✎); display
+   *  resolves spec.name → the sim's name → the contract title */
+  name?: string;
   verdict: { label: string; tone: "go" | "conditional" | "no-go" | "split"; headline: string };
   /** the typed lead visual (3b) — absent on pre-3b reports, which render as `decision` */
   lead?: ReportLead;
@@ -404,10 +407,23 @@ export function normalizeBlocks(raw: unknown): ReportBlock[] {
       }];
     });
     if (!rows.length) continue;
+    let columns = (Array.isArray(o.columns) ? o.columns : []).slice(0, 8).map((c) => clipText(String(c ?? ""), 60));
+    // field fix: never render a column of dashes — if the synthesizer left an
+    // entire column empty across every row, the column carries no information;
+    // prune it (and the matching cell slot) instead of printing "—" down the page.
+    const blank = (s: string | undefined) => !s || /^[-—–]+$/.test(s.trim()) || /^n\/?a$/i.test(s.trim());
+    const width = Math.max(columns.length, ...rows.map((r) => r.cells.length));
+    const keep: number[] = [];
+    for (let ci = 0; ci < width; ci++) if (rows.some((r) => !blank(r.cells[ci]))) keep.push(ci);
+    if (keep.length < width) {
+      columns = keep.map((ci) => columns[ci] ?? "");
+      for (const r of rows) r.cells = keep.map((ci) => r.cells[ci] ?? "");
+    }
+    if (!keep.length) continue; // a block with zero data columns isn't a block
     out.push({
       kind,
       title: clipText(String(o.title ?? kind.replace("_", " ")).trim() || kind, 120),
-      columns: (Array.isArray(o.columns) ? o.columns : []).slice(0, 8).map((c) => clipText(String(c ?? ""), 60)),
+      columns,
       rows,
     });
     if (out.length >= 4) break;
@@ -486,6 +502,8 @@ export function blocksSynthSystem(blocksSpec: string): string {
     `Block shapes: ranked_list — rows IN RANK ORDER, label "#<rank> · <item>", cells = [one committed verdict clause], note = 1-2 sentence rationale, cites = supporting post seqs; EVERY enumerated item present ("never debated — ranked on thesis fit alone" is an honest note). ` +
     `matrix — columns = the criteria; ONE row per entity; each cell a SHORT committed verdict aligned to its column ("YES — 480V in place" / "WEAK — no comps"), never a paragraph. ` +
     `comparison — columns ["PROS", "CONS", "BOTTOM LINE"], one row per option, cells aligned (compact "·"-separated clauses).\n` +
+    `NO EMPTY CELLS (non-negotiable): every row carries EXACTLY one cell per column and every cell is filled — never blank, never "—", never "N/A". ` +
+    `Where the panel produced no direct signal for an entity × criterion, the cell still commits from what IS known ("UNTESTED — panel never priced it; thesis fit says marginal"). A table with holes is a product failure.\n` +
     `Every number from the transcript or the brief; cites are real post seqs. Commit in every cell — hedges are a failure.`
   );
 }
@@ -498,7 +516,8 @@ export function judgeSystem(): string {
     `DRAFT REPORT'S ANSWERS. Judge whether the draft ANSWERS every contract line — answered means a committed verdict/number/position, ` +
     `not a mention. Checks, in order:\n` +
     `1. Every sub-ask has a section whose "answer" actually answers IT (not an adjacent question).\n` +
-    `2. Every required block exists and is COMPLETE — a ranked_list must place EVERY enumerated entity; a matrix must cover every entity × criterion.\n` +
+    `2. Every required block exists and is COMPLETE — a ranked_list must place EVERY enumerated entity; a matrix must cover every entity × criterion, ` +
+    `and ANY blank, "—", or "N/A" cell is a FAILURE (the repair fills it with a committed judgment).\n` +
     `3. Where a sub-ask's evidence standard demands named sources or citations, the answering section/block carries cites.\n` +
     `4. Every success criterion's receipt points at content that genuinely delivers it.\n` +
     `Reply with ONLY a JSON object: {"pass": true|false, "failures": [{"target": "section:<the sub-ask, shortened>|block:ranked_list|block:matrix|block:comparison|criteria", ` +

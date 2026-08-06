@@ -276,16 +276,13 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
         );
       })}
 
-      <Link
-        href="/sim/new"
-        className="card"
-        style={{ padding: "26px 28px", border: "1px dashed var(--ln6)", display: "flex", flexDirection: "column", justifyContent: "center", textAlign: "center", gap: 8 }}
-      >
-        <div style={{ ...mono, fontSize: 11, letterSpacing: ".07em", color: "var(--acc)" }}>+ NEW SIMULATION</div>
-        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: "var(--t6)" }}>
-          State the problem, attach or write the diligence, and cast the room.
+      {/* field fix: no duplicate "+ NEW SIMULATION" card — the header button
+          owns creation. Only an EMPTY dashboard gets a pointer. */}
+      {visible.length === 0 && (
+        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color: "var(--t6)", gridColumn: "1 / -1", padding: "18px 4px" }}>
+          Nothing yet — hit <Link href="/sim/new" style={{ color: "var(--acc)" }}>New simulation</Link> above to state your first hard question and cast the room.
         </p>
-      </Link>
+      )}
 
     </div>
     {pages > 1 && (

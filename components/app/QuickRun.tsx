@@ -11,10 +11,11 @@
  * extracts it and casting honors it; omitted, the director decides.
  *
  * There is NO population stage: RUN estimates cost up front, then drives
- * create → files → understand (one-line UNDERSTOOD strip) → cast (theater)
- * and drops into the live run screen with ?autostart=1 — LiveRun's proven
- * path materializes the crowd and launches. Classic remains the default;
- * the view preference persists per user.
+ * create → files → understand (one-line UNDERSTOOD strip) → cast (theater,
+ * seat dots) → crowd (dot-field fill — materialized HERE so the forum feed
+ * opens clean) and drops into the live run with ?autostart=1 — LiveRun's
+ * auto-materialize sees a non-zero crowd and skips straight to launch.
+ * Classic remains the default; the view preference persists per user.
  */
 
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
@@ -51,6 +52,8 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
   const [stages, setStages] = useState<Stage[]>([]);
   const [understood, setUnderstood] = useState<string | null>(null);
   const [castLine, setCastLine] = useState<string | null>(null);
+  const [seatCount, setSeatCount] = useState(0); // lead dots light as seats land
+  const [crowd, setCrowd] = useState<{ landed: number; sample: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pickRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
@@ -92,11 +95,14 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
     if (!typing || running) return;
     setRunning(true);
     setError(null);
+    setSeatCount(0);
+    setCrowd(null);
     setStages([
       { key: "create", label: files.length ? `UPLOADING ${files.length} FILE${files.length > 1 ? "S" : ""}` : "CREATING THE SIMULATION", state: "active" },
       { key: "understand", label: "UNDERSTANDING YOUR BRIEF", state: "pending" },
       { key: "cast", label: "CASTING THE PANEL", state: "pending" },
-      { key: "launch", label: "INTO THE LIVE RUN — CROWD MATERIALIZES THERE", state: "pending" },
+      { key: "crowd", label: "MATERIALIZING THE CROWD", state: "pending" },
+      { key: "launch", label: "INTO THE LIVE RUN", state: "pending" },
     ]);
     try {
       // 1 · create once (a retry after a failure reuses the sim)
@@ -184,6 +190,7 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
           if (evt.type === "plan") setCastLine("THE DIRECTOR HAS A PLAN — SEATING THE PANEL…");
           if (evt.type === "seat") {
             seats += 1;
+            setSeatCount(seats);
             const role = (evt as { seat?: { role?: string } }).seat?.role ?? (evt as { spec?: { role?: string } }).spec?.role ?? "seat";
             setCastLine(`SEATED ${seats} · ${String(role).toUpperCase().slice(0, 44)}`);
           }
@@ -193,7 +200,36 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
       if (seats < 2) throw new Error("Casting produced too few seats — RUN again to retry");
       setStage("cast", "done");
 
-      // 6 · straight into the live run — LiveRun materializes the crowd and launches
+      // 6 · the crowd materializes HERE, as a pipeline stage (field fix) —
+      // LiveRun's auto-materialize sees a non-zero crowd and skips. A crowd
+      // failure never blocks the run: LiveRun retries whatever's missing.
+      setStage("crowd", "active");
+      try {
+        const kres = await fetch(`/api/simulations/${id}/crowd`, { method: "POST" });
+        if (kres.ok && kres.body) {
+          const kreader = kres.body.getReader();
+          const kdec = new TextDecoder();
+          let kbuf = "";
+          for (;;) {
+            const { done, value } = await kreader.read();
+            if (done) break;
+            kbuf += kdec.decode(value, { stream: true });
+            const lines = kbuf.split("\n");
+            kbuf = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              let kevt: { type?: string; sample?: number; generated?: number } = {};
+              try { kevt = JSON.parse(line); } catch { continue; }
+              if (kevt.type === "start") setCrowd({ landed: 0, sample: Number(kevt.sample) || 0 });
+              if (kevt.type === "members") setCrowd((c) => c ? { ...c, landed: Number(kevt.generated) || c.landed } : c);
+              if (kevt.type === "done") setCrowd((c) => c ? { ...c, landed: Number(kevt.generated) || c.landed } : c);
+            }
+          }
+        }
+      } catch { /* non-fatal — the run screen picks up whatever's missing */ }
+      setStage("crowd", "done");
+
+      // 7 · straight into the live run
       setStage("launch", "active");
       router.push(`/sim/${id}/run?autostart=1`);
     } catch (e) {
@@ -310,11 +346,22 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
           {/* the picked mode's params, as pills — mode-aware */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 18, animation: "fadeUp .3s ease both" }}>
             {!(mode && isFixedShape(mode)) && (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 10, minWidth: 220 }}>
                 <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>ROUNDS</span>
-                {[2, 4, 8, 12].map((r) => (
-                  <button key={r} onClick={() => setRounds(r)} style={pill(rounds === r)}>{r}</button>
-                ))}
+                {/* field fix: a 2–20 slider, not four pills — §10 slider grammar */}
+                <input
+                  type="range"
+                  min={2}
+                  max={20}
+                  step={1}
+                  value={rounds}
+                  onChange={(e) => setRounds(Number(e.target.value))}
+                  style={{ width: 130, accentColor: "var(--acc)", height: 4, cursor: "pointer" }}
+                  aria-label="Discussion rounds (2–20)"
+                />
+                <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--acc)", background: "var(--acc-dim)", border: "1px solid var(--acc)", borderRadius: 100, padding: "3px 10px" }}>
+                  {rounds}
+                </span>
               </span>
             )}
             {mode && isFixedShape(mode) && (
@@ -342,15 +389,51 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
       {running && (
         <div className="card" style={{ marginTop: 22, padding: "22px 26px", animation: "fadeUp .3s ease both" }}>
           {stages.map((s) => (
-            <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", opacity: s.state === "pending" ? 0.4 : 1 }}>
-              <span style={{ ...mono, fontSize: 9, width: 12, color: s.state === "done" ? "var(--acc)" : "var(--t6)", flex: "none" }}>
-                {s.state === "done" ? "✓" : s.state === "active" ? "·" : ""}
-              </span>
-              {s.state === "active" && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />}
-              <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: s.state === "active" ? "var(--t2)" : "var(--t5)" }}>{s.label}</span>
-              {s.key === "cast" && s.state === "active" && castLine && (
-                <span style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--acc)", animation: "fadeUp .25s ease both" }} key={castLine}>— {castLine}</span>
+            <div key={s.key} style={{ padding: "5px 0", opacity: s.state === "pending" ? 0.4 : 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ ...mono, fontSize: 9, width: 12, color: s.state === "done" ? "var(--acc)" : "var(--t6)", flex: "none" }}>
+                  {s.state === "done" ? "✓" : s.state === "active" ? "·" : ""}
+                </span>
+                {s.state === "active" && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />}
+                <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: s.state === "active" ? "var(--t2)" : "var(--t5)" }}>{s.label}</span>
+                {s.key === "cast" && s.state === "active" && castLine && (
+                  <span style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--acc)", animation: "fadeUp .25s ease both" }} key={castLine}>— {castLine}</span>
+                )}
+                {s.key === "crowd" && s.state !== "pending" && crowd && crowd.sample > 0 && (
+                  <span style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--acc)" }}>— {crowd.landed}/{crowd.sample} MEMBERS</span>
+                )}
+                {s.key === "crowd" && s.state === "done" && crowd?.sample === 0 && (
+                  <span style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--t6)" }}>— NO CROWD FOR THIS RUN</span>
+                )}
+              </div>
+              {/* the panel forms as dots — leads land one by one while casting */}
+              {s.key === "cast" && s.state !== "pending" && seatCount > 0 && (
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "7px 0 2px 22px" }}>
+                  {Array.from({ length: Math.min(seatCount, 16) }, (_, i) => (
+                    <span key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--acc)", animation: "fadeUp .3s ease both", boxShadow: "0 0 6px var(--acc-dim)" }} />
+                  ))}
+                </div>
               )}
+              {/* the crowd fills a dot field — one dot per slice of the sample */}
+              {s.key === "crowd" && s.state !== "pending" && crowd && crowd.sample > 0 && (() => {
+                const nDots = Math.min(crowd.sample, 60);
+                const lit = Math.round((crowd.landed / crowd.sample) * nDots);
+                return (
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", margin: "7px 0 2px 22px", maxWidth: 420 }}>
+                    {Array.from({ length: nDots }, (_, i) => (
+                      <span
+                        key={i}
+                        style={{
+                          width: 5, height: 5, borderRadius: "50%",
+                          background: i < lit ? "var(--acc)" : "var(--ln4)",
+                          transition: "background .3s ease",
+                          ...(i < lit ? { animation: "fadeUp .3s ease both" } : {}),
+                        }}
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           ))}
           {understood && (

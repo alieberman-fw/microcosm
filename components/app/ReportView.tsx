@@ -671,7 +671,7 @@ function FileRail({ files }: { files: ReportFile[] }) {
 }
 
 export default function ReportView({
-  simId, problem, spec, posts, version, versions = [], reportId, mediaUrls = {}, files = [],
+  simId, problem, spec, posts, version, versions = [], reportId, name = null, mediaUrls = {}, files = [],
 }: {
   simId: string;
   problem: string;
@@ -680,6 +680,8 @@ export default function ReportView({
   version: number;
   versions?: number[];
   reportId?: string;
+  /** display name: spec.name (user rename) → the sim's name/title → null */
+  name?: string | null;
   /** PR-A — signed URLs for spec.media, keyed by storage path */
   mediaUrls?: Record<string, string>;
   /** C6 — every upload, corpus order, IMAGE-n ordinals + signed URLs */
@@ -689,6 +691,21 @@ export default function ReportView({
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   // unread-reports badge: opening a report IS reading it
   useEffect(() => { if (reportId) markReportSeen(reportId); }, [reportId]);
+  // the report's NAME — editable in place (✎), persisted to spec.name
+  const [repName, setRepName] = useState(name);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const saveName = async () => {
+    const next = nameDraft.trim().slice(0, 80);
+    setEditingName(false);
+    if (!reportId || !next || next === repName) return;
+    setRepName(next);
+    await fetch(`/api/reports/${reportId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: next }),
+    });
+  };
   // SIMPLIFY toggle (3a): a cached TRANSLATION of the frozen spec —
   // generated on first use, identical answers and numbers, jargon-free.
   // 6-PR4 (§6f): the contract's REGISTER decides which voice LEADS — an
@@ -754,8 +771,30 @@ export default function ReportView({
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "40px 40px 90px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-        <Link href={`/sim/${simId}`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>← WORKSPACE</Link>
-        <Link href={`/sim/${simId}/run`} prefetch={false} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>VIEW THE RUN →</Link>
+        {/* field fix: the ←/→ arrows read ambiguous — the report now carries
+            the SAME five-stage rail as the workspace, each stage a link, with
+            05 REPORT as the you-are-here. One navigation grammar everywhere. */}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {(["BRIEF", "CORPUS", "POPULATION", "RUN", "REPORT"] as const).map((s, i) => (
+            <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+              {i === 4 ? (
+                <span style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: "var(--acc)", background: "var(--acc-dim)", border: "1px solid var(--acc)", borderRadius: 100, padding: "3px 11px" }}>
+                  05 REPORT
+                </span>
+              ) : (
+                <Link
+                  href={i === 3 ? `/sim/${simId}/run` : `/sim/${simId}`}
+                  prefetch={false}
+                  title={i === 3 ? "Open the live run / transcript" : `Back to the workspace — ${s.toLowerCase()}`}
+                  style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: "var(--t5)" }}
+                >
+                  {String(i + 1).padStart(2, "0")} {s} ✓
+                </Link>
+              )}
+              {i < 4 && <span style={{ width: 18, height: 1, background: "var(--ln4)", display: "inline-block" }} />}
+            </span>
+          ))}
+        </span>
         {reportId && (
           <button
             onClick={() => void togglePlain()}
@@ -800,6 +839,50 @@ export default function ReportView({
           </span>
         </span>
       </div>
+
+      {/* the report's name — aligned to the simulation by default, editable
+          in place; shows on the reports tab cards too */}
+      {(repName || reportId) && (
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 16 }}>
+          <span style={{ ...mono, fontSize: 9, letterSpacing: ".12em", color: "var(--t6)", flex: "none" }}>REPORT</span>
+          {editingName ? (
+            <input
+              autoFocus
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); void saveName(); }
+                if (e.key === "Escape") setEditingName(false);
+              }}
+              onBlur={() => void saveName()}
+              maxLength={80}
+              placeholder="Name this report"
+              style={{
+                flex: 1, minWidth: 0, padding: "2px 0", background: "transparent", border: "none",
+                borderBottom: "1px solid var(--acc)", outline: "none",
+                fontFamily: "var(--font-sans), sans-serif", fontSize: 17, fontWeight: 600,
+                color: "var(--t0)", caretColor: "var(--acc)",
+              }}
+            />
+          ) : (
+            <>
+              <span style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-.02em", color: "var(--t1)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {repName ?? "Untitled report"}
+              </span>
+              {reportId && (
+                <button
+                  onClick={() => { setNameDraft(repName ?? ""); setEditingName(true); }}
+                  aria-label="Rename this report"
+                  title="Rename this report"
+                  style={{ ...mono, fontSize: 11, background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 2, flex: "none" }}
+                >
+                  ✎
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {plainErr && <div style={{ ...mono, fontSize: 10, color: "var(--warn)", marginTop: 10 }}>{plainErr}</div>}
 
