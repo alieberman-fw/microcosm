@@ -9,6 +9,7 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/Nav";
+import ReportsBadge from "@/components/app/ReportsBadge";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -123,7 +124,7 @@ export default function AppShell({
             const inner = (
               <span
                 style={{
-                  display: "flex", alignItems: "center", gap: 11,
+                  position: "relative", display: "flex", alignItems: "center", gap: 11,
                   justifyContent: collapsed ? "center" : "flex-start",
                   padding: collapsed ? "11px 0" : "10px 12px", borderRadius: 10,
                   color: active ? "var(--acc)" : item.soon ? "var(--t7)" : "var(--t4)",
@@ -136,6 +137,7 @@ export default function AppShell({
               >
                 <Icon d={item.icon} />
                 {!collapsed && item.label}
+                {item.href === "/reports" && <ReportsBadge collapsed={collapsed} />}
                 {!collapsed && item.soon && (
                   <span style={{ ...mono, marginLeft: "auto", fontSize: 8.5, letterSpacing: ".06em", color: "var(--t7)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "2px 7px" }}>
                     SOON

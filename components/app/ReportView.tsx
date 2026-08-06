@@ -13,8 +13,9 @@
  * layout with swapped strings.
  */
 
-import { CSSProperties, useState } from "react";
+import { CSSProperties, useEffect, useState } from "react";
 import Link from "next/link";
+import { markReportSeen } from "@/components/app/ReportsBadge";
 import { LEAD_KIND_LABEL, ReportBlock, ReportLead, ReportPlain, ReportSpec, VERDICT_STYLE, fmtMoney } from "@/lib/report";
 import { LivePost } from "@/components/app/LiveRun";
 import Markdown from "@/components/app/Markdown";
@@ -686,6 +687,8 @@ export default function ReportView({
 }) {
   const [flash, setFlash] = useState<number | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  // unread-reports badge: opening a report IS reading it
+  useEffect(() => { if (reportId) markReportSeen(reportId); }, [reportId]);
   // SIMPLIFY toggle (3a): a cached TRANSLATION of the frozen spec —
   // generated on first use, identical answers and numbers, jargon-free.
   // 6-PR4 (§6f): the contract's REGISTER decides which voice LEADS — an

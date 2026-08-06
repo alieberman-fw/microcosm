@@ -212,6 +212,26 @@ export default function SimWorkspace({
         })}
       </div>
 
+      {/* field fix: while a run is LIVE the whole workspace is read-only —
+          brief, files, understanding, population AND config (the server
+          already 409s run-touching changes; this makes the freeze visible
+          everywhere) — and the primary action becomes VIEW LIVE RUN */}
+      {sim.status === "running" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 14, border: "1px solid var(--warn)", background: "var(--warn-dim)", borderRadius: 12, padding: "12px 18px", marginTop: 22, flexWrap: "wrap" }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--warn)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />
+          <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--warn)", minWidth: 0, flex: 1 }}>
+            A SIMULATION IS RUNNING — THE BRIEF, FILES, POPULATION & SETTINGS ARE LOCKED UNTIL IT FINISHES (OR YOU STOP IT)
+          </span>
+          <button
+            onClick={() => router.push(`/sim/${sim.id}/run`)}
+            style={{ background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 13, padding: "9px 20px", borderRadius: 100, border: "none", cursor: "pointer", fontFamily: "var(--font-sans), sans-serif", flex: "none" }}
+          >
+            View live run →
+          </button>
+        </div>
+      )}
+
+      <div style={sim.status === "running" ? { opacity: 0.45, pointerEvents: "none", userSelect: "none" } : undefined} aria-disabled={sim.status === "running"}>
       {/* brief */}
       {editing ? (
         <div id="stage-brief" style={{ marginTop: 34, scrollMarginTop: 20 }}>
@@ -495,38 +515,38 @@ export default function SimWorkspace({
         const expertSide = initialSeats.length - residentSide;
         const scale = initialCasting?.scale ?? { experts: expertSide, residents: residentSide };
         const crowd = Math.max(scale.experts - expertSide, 0) + Math.max(scale.residents - residentSide, 0);
-        const runLive = sim.status === "running";
         return (
-          <div style={{ position: "relative" }}>
-            {/* field report 3: a LIVE run's settings are frozen — the config
-                PATCH also rejects changes server-side while the heartbeat is
-                fresh; this banner explains instead of silently failing */}
-            {runLive && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--warn)", background: "var(--warn-dim)", borderRadius: 12, padding: "12px 18px", margin: "18px 0 0" }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--warn)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />
-                <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--warn)" }}>
-                  A SIMULATION IS RUNNING — SETTINGS ARE LOCKED UNTIL IT FINISHES (OR YOU STOP IT FROM THE RUN SCREEN)
-                </span>
-              </div>
-            )}
-            <div style={runLive ? { opacity: 0.45, pointerEvents: "none", userSelect: "none" } : undefined} aria-disabled={runLive}>
-              <RunConfigStage
-                key={`${modeSel ?? "none"}-${initialSeats.length}`}
-                simId={sim.id}
-                mode={modeSel}
-                recommendedMode={initialCasting?.recommended_mode ?? (initialCasting?.user_set?.mode ? null : initialCasting?.mode ?? null)}
-                leads={initialSeats.length}
-                expertSide={expertSide}
-                residentSide={residentSide}
-                crowd={crowd}
-                initialRun={initialRun}
-                initialTools={initialTools}
-              />
-            </div>
-          </div>
+          // the whole workspace is already dimmed while a run is live (the
+          // wrapper above); the server-side 409 remains the hard gate
+          <RunConfigStage
+            key={`${modeSel ?? "none"}-${initialSeats.length}`}
+            simId={sim.id}
+            mode={modeSel}
+            recommendedMode={initialCasting?.recommended_mode ?? (initialCasting?.user_set?.mode ? null : initialCasting?.mode ?? null)}
+            leads={initialSeats.length}
+            expertSide={expertSide}
+            residentSide={residentSide}
+            crowd={crowd}
+            initialRun={initialRun}
+            initialTools={initialTools}
+          />
         );
       })()}
       </>
+      )}
+      </div>
+
+      {/* the bottom action while live: back into the running simulation —
+          the same destination as the RUN breadcrumb */}
+      {sim.status === "running" && (
+        <div style={{ display: "flex", justifyContent: "center", marginTop: 26 }}>
+          <button
+            onClick={() => router.push(`/sim/${sim.id}/run`)}
+            style={{ background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 14.5, padding: "13px 30px", borderRadius: 100, border: "none", cursor: "pointer", fontFamily: "var(--font-sans), sans-serif" }}
+          >
+            View live run →
+          </button>
+        </div>
       )}
     </div>
   );
