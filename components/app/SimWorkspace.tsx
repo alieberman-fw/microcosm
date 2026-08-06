@@ -13,6 +13,7 @@ import BriefComposer, { Brief } from "@/components/app/BriefComposer";
 import PopulationStage, { CastingInfo, WorkspaceSeat } from "@/components/app/PopulationStage";
 import RunConfigStage from "@/components/app/RunConfigStage";
 import UnderstandingCard from "@/components/app/UnderstandingCard";
+import StageRail from "@/components/app/StageRail";
 import { BriefContract } from "@/lib/understand";
 import { RunConfig } from "@/lib/run";
 import { DIRECT_CONTEXT_BUDGET, MAX_DOC_BYTES, imageOrdinalsSafe } from "@/lib/corpus";
@@ -117,6 +118,34 @@ export default function SimWorkspace({
   // (field fix: doc-less sims showed a gray CORPUS on fully-complete runs).
   const stageDone = [true, parsedDocs.length > 0 || hasRun, populationCount > 0, hasRun, hasReport];
 
+  // you-are-here (field fix): the rail highlights the SECTION currently in
+  // view — brief/corpus/population/run-config are scroll positions on this
+  // page, so the pill follows the scroll (report lives on its own page)
+  const [activeStage, setActiveStage] = useState(0);
+  useEffect(() => {
+    const ids = ["stage-brief", "stage-corpus", "stage-population", "stage-run"];
+    // classic scroll-spy: the LAST section whose top has crossed the reading
+    // line (just under the rail) is where the user is — one section active
+    // at a time, brief wins at the very top. The app scrolls inside <main>,
+    // so listen in capture (scroll doesn't bubble).
+    const pick = () => {
+      let active = 0;
+      for (let i = 0; i < ids.length; i++) {
+        const el = document.getElementById(ids[i]);
+        if (el && el.getBoundingClientRect().top <= 170) active = i;
+      }
+      setActiveStage(active);
+    };
+    pick();
+    document.addEventListener("scroll", pick, true);
+    window.addEventListener("resize", pick);
+    // belt-and-braces: sections also move without scroll events (content
+    // loading in, casting landing, collapse/expand) — a slow poll keeps the
+    // pill honest; setState with an unchanged value is a React no-op
+    const t = setInterval(pick, 600);
+    return () => { document.removeEventListener("scroll", pick, true); window.removeEventListener("resize", pick); clearInterval(t); };
+  }, []);
+
   // bulk drops: every file queues visibly at once, then uploads 3 at a time —
   // a strictly serial loop made 5-file drops look like only the first landed
   const uploadFiles = async (files: FileList | File[]) => {
@@ -185,33 +214,28 @@ export default function SimWorkspace({
 
   return (
     <div style={{ maxWidth: 1060, margin: "0 auto", padding: "40px 40px 90px" }}>
-      {/* stage rail — live stages jump to their section */}
+      {/* stage rail — live stages jump to their section; the you-are-here
+          pill follows the section in view (scroll-spy above) */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        {STAGES.map((s, i) => {
-          const target = ["stage-brief", "stage-corpus", "stage-population", "stage-run"][i];
-          const reportStage = i === 4;
-          return (
-            <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-              <button
-                onClick={() => {
-                  if (reportStage) { if (hasReport) router.push(`/sim/${sim.id}/report`); return; }
-                  if (i === 3 && hasRun) { router.push(`/sim/${sim.id}/run`); return; }
-                  if (target) document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-                style={{
-                  ...mono, fontSize: 10, letterSpacing: ".1em", background: "none", border: "none", padding: 0,
-                  cursor: (target || (reportStage && hasReport)) ? "pointer" : "default",
-                  color: stageDone[i] ? "var(--acc)" : i <= 3 ? "var(--t4)" : "var(--t7)",
-                }}
-                title={reportStage ? (hasReport ? "Open the report" : "Synthesize on the run screen after a run") : i === 3 && hasRun ? "Open the run" : target ? `Jump to ${s.toLowerCase()}` : undefined}
-              >
-                {String(i + 1).padStart(2, "0")} {s}
-                {stageDone[i] && " ✓"}
-              </button>
-              {i < STAGES.length - 1 && <span style={{ width: 18, height: 1, background: "var(--ln4)" }} />}
-            </span>
-          );
-        })}
+        <StageRail
+          stages={STAGES.map((s, i) => {
+            const target = ["stage-brief", "stage-corpus", "stage-population", "stage-run"][i];
+            const reportStage = i === 4;
+            return {
+              label: s,
+              done: stageDone[i],
+              current: !reportStage && activeStage === i,
+              onClick: () => {
+                if (reportStage) { if (hasReport) router.push(`/sim/${sim.id}/report`); return; }
+                if (i === 3 && hasRun) { router.push(`/sim/${sim.id}/run`); return; }
+                if (target) document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+              },
+              title: reportStage
+                ? (hasReport ? "Open the report" : "Synthesize on the run screen after a run")
+                : i === 3 && hasRun ? "Open the run" : target ? `Jump to ${s.toLowerCase()}` : undefined,
+            };
+          })}
+        />
       </div>
 
       {/* field fix: while a run is LIVE the whole workspace is read-only —

@@ -17,6 +17,7 @@ import Markdown from "@/components/app/Markdown";
 import { distShares } from "@/lib/dist";
 import { computeToolAttachment } from "@/lib/feed";
 import PersonaProfile from "@/components/app/PersonaProfile";
+import StageRail from "@/components/app/StageRail";
 import { createClient } from "@/lib/supabase/client";
 import type { PersonaSpec } from "@/lib/personas";
 
@@ -1013,7 +1014,20 @@ export default function LiveRun({
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", boxSizing: "border-box", padding: "22px 26px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-        <Link href={`/sim/${simId}`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>← WORKSPACE</Link>
+        {/* the five-stage rail with 04 RUN as the you-are-here (field fix:
+            same grammar as the workspace and report pages) */}
+        <StageRail
+          gap={8}
+          stages={[
+            { label: "BRIEF", done: true, href: `/sim/${simId}`, title: "Back to the workspace — brief" },
+            { label: "CORPUS", done: true, href: `/sim/${simId}`, title: "Back to the workspace — corpus" },
+            { label: "POPULATION", done: true, href: `/sim/${simId}`, title: "Back to the workspace — population" },
+            { label: "RUN", done: status === "done", current: true, title: "You're here — the live run" },
+            reportReady
+              ? { label: "REPORT", done: true, href: `/sim/${simId}/report`, title: "Open the report" }
+              : { label: "REPORT", done: false, title: "Synthesize the report after the run completes" },
+          ]}
+        />
         <span style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: status === "done" ? "var(--acc)" : "var(--t4)" }}>{statusLabel}</span>
         <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)", border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 100, padding: "3px 10px" }}>
           LIVE · {viewMode.toUpperCase()} · ENGINE V1
