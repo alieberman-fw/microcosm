@@ -1,10 +1,13 @@
 /**
  * 3c — runs you can walk away from (docs/next-level-plan.md §3c).
- * Pure helpers for the server-side slice chain: the internal-route secret
- * and the heartbeat freshness rule. Exported pure for the offline tests.
+ * Helpers for the server-side slice chain: the internal-route secret, the
+ * heartbeat freshness rule, the round-close dedupe keys, and the atomic
+ * worker claim. The decision rules are pure for the offline tests; claimRun
+ * is the one thin DB call every run_state write goes through.
  */
 
 import { createHmac } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** the truth about a live run, kept in simulations.config.run_state */
 export interface RunState {
@@ -66,4 +69,52 @@ export function chainSecret(serviceKey: string, simId: string): string {
 export function heartbeatFresh(runState: RunState | null | undefined, nowMs: number, staleMs = 90_000): boolean {
   const at = runState?.heartbeat_at ? Date.parse(runState.heartbeat_at) : NaN;
   return Number.isFinite(at) && nowMs - at >= 0 && nowMs - at < staleMs;
+}
+
+/** round-close artifacts are singletons per (sim, round[, angle]) — the key
+ *  lands in events.dedupe_key under a UNIQUE index (migration 0018), so a
+ *  second engine chain re-emitting the same round's artifact is dropped by
+ *  the DATABASE, not by per-chain memory (polledRounds is per-process; the
+ *  field incident was two chains each trusting their own set). Votes events
+ *  stay unkeyed on purpose: micro-passes legitimately repeat within a round
+ *  and the vote data itself dedupes in post_votes (sim, seq, voter). */
+export function eventDedupeKey(e: { type: string; round?: unknown; angle?: unknown }): string | null {
+  const round = typeof e.round === "number" && Number.isFinite(e.round) ? e.round : null;
+  if (round === null) return null;
+  if (e.type === "sentiment") return `sentiment:${round}:${typeof e.angle === "string" ? e.angle : ""}`;
+  if (e.type === "coverage") return `coverage:${round}`;
+  if (e.type === "agenda") return `agenda:${round}`;
+  return null;
+}
+
+/** result of an atomic claim: "lost" means another entrance holds the run
+ *  (stand down / observe); "error" means the write itself failed (transient
+ *  DB error or migration 0018 not applied) — callers must NOT treat an error
+ *  as a lost race: a beating worker rides out an error, an entrance surfaces it. */
+export type ClaimResult = "ok" | "lost" | "error";
+
+/** the ONE way run_state/status is written — an atomic compare-and-swap on
+ *  run_state.worker (claim_run RPC, migration 0018). Merge semantics: pass
+ *  exactly the run_state keys you own (a heartbeat passes {worker,
+ *  heartbeat_at} and can never clobber a concurrent stop_requested); pass
+ *  runState null to clear it (finalize). */
+export async function claimRun(
+  db: SupabaseClient,
+  args: {
+    simId: string;
+    expectedWorker: string | null;                 // exact current worker (null = unclaimed)
+    runState: Partial<RunState> | null;            // keys to merge, or null to clear
+    status?: string;                               // default "running"
+    configPatch?: Record<string, unknown>;         // extra top-level config keys (poll instrument, run_result)
+  },
+): Promise<ClaimResult> {
+  const { data, error } = await db.rpc("claim_run", {
+    p_sim_id: args.simId,
+    p_expected_worker: args.expectedWorker,
+    p_run_state: args.runState,
+    p_status: args.status ?? "running",
+    p_config_patch: args.configPatch ?? {},
+  });
+  if (error) return "error";
+  return data === true ? "ok" : "lost";
 }

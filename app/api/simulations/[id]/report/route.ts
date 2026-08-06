@@ -62,8 +62,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     // own question/options/labels/angle so every display shares one referent
     return { round: p.round, polled: p.polled, dist: p.dist, ballots: p.ballots, question: p.question, options: p.options, labels: p.labels, angle: p.angle };
   });
-  // concurrent engine slices can double-poll a round (LiveRun already dedupes
-  // client-side); the report keeps the LAST event per (round, angle)
+  // concurrent engine slices once double-polled rounds (the twin-chain field
+  // incident — migration 0018's dedupe key now stops new duplicates at the
+  // DB); the report keeps the LAST event per (round, angle) so transcripts
+  // from before the migration read honestly
   const sentiments = [...new Map(sentimentsRaw.map((s) => [`${s.round}|${s.angle ?? s.question ?? ""}`, s])).values()];
   // what the crowd was actually asked — from the newest poll event that carried
   // it (constant per sim; older runs pre-date the field and show no question).

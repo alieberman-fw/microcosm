@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
-import { RunState, chainSecret, reaperAction } from "@/lib/walkaway";
+import { RunState, chainSecret, claimRun, reaperAction } from "@/lib/walkaway";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -51,15 +51,16 @@ export async function GET(request: Request) {
     if (action === "finalize-stopped") {
       const { count } = await admin.from("posts").select("seq", { count: "exact", head: true }).eq("sim_id", sim.id);
       const mode = String((config.casting as { mode?: string } | undefined)?.mode ?? "Agora");
-      const { error } = await admin.from("simulations").update({
+      // fenced CAS (migration 0018): if a worker claimed the zombie between
+      // our sweep read and this write, IT owns the run — skip, never clobber
+      const claim = await claimRun(admin, {
+        simId: sim.id as string,
+        expectedWorker: runState?.worker ?? null,
+        runState: null,
         status: "complete",
-        config: {
-          ...config,
-          run_state: null,
-          run_result: { posts: count ?? 0, converged: false, stop: "stopped", mode, at: new Date().toISOString() },
-        },
-      }).eq("id", sim.id);
-      acted.push({ id: sim.id as string, action, ok: !error });
+        configPatch: { run_result: { posts: count ?? 0, converged: false, stop: "stopped", mode, at: new Date().toISOString() } },
+      });
+      acted.push({ id: sim.id as string, action, ok: claim === "ok" });
       continue;
     }
 
