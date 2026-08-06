@@ -1112,8 +1112,9 @@ export default function ReportView({
             </div>
           )}
 
-          {/* risk register */}
-          {spec.risks.length > 0 && (
+          {/* risk register — optional-chained: specs from before this field
+              existed (or hand-inserted ones) must not crash the whole page */}
+          {(spec.risks?.length ?? 0) > 0 && (
             <div style={{ marginTop: 36 }}>
               <div style={label}>RISK REGISTER</div>
               <div style={{ overflowX: "auto", marginTop: 12 }}>
@@ -1175,8 +1176,8 @@ export default function ReportView({
             </div>
           )}
 
-          {/* tripwires */}
-          {spec.tripwires.length > 0 && (
+          {/* tripwires — same guard as risks */}
+          {(spec.tripwires?.length ?? 0) > 0 && (
             <div style={{ marginTop: 36 }}>
               <div style={label}>TRIPWIRES · WHAT WOULD CHANGE THIS ANSWER</div>
               <ul style={{ margin: "12px 0 0", padding: 0, listStyle: "none", maxWidth: 820 }}>
