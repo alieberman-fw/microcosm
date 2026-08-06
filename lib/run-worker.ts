@@ -22,7 +22,7 @@ import { BriefContract } from "@/lib/understand";
 import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
 import { CorpusDocInput, buildCorpusBlocks, normalizeQuestions } from "@/lib/corpus";
 import { EngineContext, EngineEvent, EngineLead, PostRec, RunResume, runMode } from "@/lib/engine";
-import { CHAIN_PENDING, ENGINE_CALL_TIMEOUT_MS, RunState, SLICE_BUDGET_MS, chainSecret } from "@/lib/walkaway";
+import { CHAIN_PENDING, ENGINE_CALL_TIMEOUT_MS, RunState, SLICE_BUDGET_MS, chainSecret, claimRun, eventDedupeKey } from "@/lib/walkaway";
 import { normalizeEnabledTools } from "@/lib/tools";
 
 /** best-effort window into the run — a dropped client NEVER touches the engine */
@@ -45,9 +45,27 @@ export interface SliceArgs {
 export async function executeSlice({ db, simId, orgId, userId, origin, canChain, workerNonce, bus }: SliceArgs): Promise<void> {
   const send = (obj: unknown) => { try { bus?.send(obj); } catch { /* window closed — the run does not care */ } };
   let beat: ReturnType<typeof setInterval> | null = null;
+  // set when another chain CAS-claims the run out from under us (we were
+  // frozen past staleness and a reclaim/reaper won): this worker goes SILENT —
+  // no posts, no events, no handoff, no finalize. The field incident was two
+  // chains driving one run because neither ever re-checked ownership.
+  let usurped = false;
+  let stopRequested = false;
+  /** every run_state/status write is a fenced CAS on run_state.worker
+   *  (claim_run RPC, migration 0018) — expected defaults to OUR nonce */
+  const fenced = (state: Partial<RunState> | null, status = "running", configPatch: Record<string, unknown> = {}, expected: string = workerNonce) =>
+    claimRun(db, { simId, expectedWorker: expected, runState: state, status, configPatch });
   try {
     const { data: sim } = await db.from("simulations").select("id, brief, config, status").eq("id", simId).maybeSingle();
     if (!sim || sim.status !== "running") { send({ type: "error", error: "Run is no longer active" }); return; }
+
+    // ---- ownership check FIRST: the entrance (launch/continue) CAS-claimed
+    // run_state.worker = our nonce before spawning us; this fenced beat
+    // re-verifies before anything lands. A lost CAS means a racing entrance
+    // won the run — this chain must never drive. ----
+    const confirm = await fenced({ heartbeat_at: new Date().toISOString(), worker: workerNonce });
+    if (confirm === "lost") return;
+    if (confirm === "error") throw new Error("run chain lock unavailable — is migration 0018 applied?");
     const brief = (sim.brief ?? {}) as { problem?: string; questions?: unknown; contract?: BriefContract };
     // 6-PR3 (§6c/§6d): the contract drives round agendas, the resolution
     // tracker, and the adaptive poll plan; no contract → all three off
@@ -126,7 +144,18 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
     }
 
     let evSeq = resume ? 1000 * (resume.round ?? 1) : 0; // coarse but monotonic across slices
+    // migration 0018: round-close artifacts (sentiment/coverage/agenda) carry
+    // a per-round dedupe key — a duplicate from a twin chain or a replayed
+    // round lands ON CONFLICT DO NOTHING instead of persisting twice; unkeyed
+    // events insert exactly as before (NULL keys are distinct)
+    const persistEvent = async (e: EngineEvent) => {
+      await db.from("events").upsert(
+        [{ sim_id: simId, seq: evSeq, type: e.type, payload: e, dedupe_key: eventDedupeKey(e) }],
+        { onConflict: "sim_id,dedupe_key", ignoreDuplicates: true },
+      );
+    };
     const emit = async (e: EngineEvent) => {
+      if (usurped) return; // another chain owns the run — nothing may land or stream from this one
       send(e);
       if (e.type === "post") {
         await db.from("posts").insert({
@@ -144,7 +173,7 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
           );
         }
         evSeq += 1;
-        await db.from("events").insert({ sim_id: simId, seq: evSeq, type: e.type, payload: e });
+        await persistEvent(e);
       } else if (e.type === "tool") {
         // 3d — searches land in tool_runs (the audit trail + report input)
         // AND in events (feed replay + observer tail + factbase resume)
@@ -153,11 +182,11 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
           input: { query: e.query }, output: { results: e.results },
         });
         evSeq += 1;
-        await db.from("events").insert({ sim_id: simId, seq: evSeq, type: e.type, payload: e });
+        await persistEvent(e);
       } else if (e.type !== "presence" && e.type !== "polling") {
         // presence is transient UI state — streamed, never persisted
         evSeq += 1;
-        await db.from("events").insert({ sim_id: simId, seq: evSeq, type: e.type, payload: e });
+        await persistEvent(e);
       }
     };
     const logCall = async (surface: string, model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string, detail?: Record<string, unknown>) => {
@@ -193,39 +222,46 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
       polledRounds, votedRounds,
       subAsks, pollPlan, coverage, trackedRounds,
       emit, logCall,
-      isCancelled: () => false, // client disconnects NEVER cancel a run (3c); stop is graceful, below
+      // client disconnects NEVER cancel a run (3c); stop is graceful, below.
+      // The ONE cancellation is usurpation: another chain CAS-claimed the run,
+      // so this one must stop cold at the next safe boundary
+      isCancelled: () => usurped,
     };
 
-    // ---- the truth loop: every 12s, beat the heartbeat and pick up a STOP.
-    // A stop zeroes the deadline so the engine suspends at its next safe
-    // boundary — the same proven path the serverless window uses. ----
-    let stopRequested = false;
-    const writeState = async (state: RunState) => {
-      const { data: fresh } = await db.from("simulations").select("config").eq("id", simId).maybeSingle();
-      const freshConfig = (fresh?.config as Record<string, unknown>) ?? config;
-      await db.from("simulations").update({ config: { ...freshConfig, run_state: state } }).eq("id", simId);
-      return freshConfig;
+    // ---- the truth loop: every 12s, confirm ownership, beat the heartbeat,
+    // and pick up a STOP. The beat is a fenced CAS (expected = our own nonce)
+    // with MERGE semantics — {worker, heartbeat_at} only, so it can never
+    // clobber a concurrent stop_requested. A missed CAS means a reclaim or
+    // the reaper took the run while we were frozen: STAND DOWN, don't
+    // double-drive. A stop zeroes the deadline so the engine suspends at its
+    // next safe boundary — the same proven path the serverless window uses. ----
+    const standDown = () => {
+      usurped = true;
+      ctx.deadline = 0; // the engine exits at its next safe boundary; emit is already gated
+      if (beat) { clearInterval(beat); beat = null; }
     };
-    await writeState({ ...runState, heartbeat_at: new Date().toISOString(), worker: workerNonce, stop_requested: runState.stop_requested ?? false });
     beat = setInterval(() => {
       void (async () => {
         try {
-          const { data: fresh } = await db.from("simulations").select("config").eq("id", simId).maybeSingle();
-          const rs = ((fresh?.config as Record<string, unknown>)?.run_state as RunState | undefined) ?? {};
+          const { data: fresh, error: readErr } = await db.from("simulations").select("config").eq("id", simId).maybeSingle();
+          if (readErr || !fresh) return; // a transient READ failure is a missed beat, never a lost race
+          const rs = ((fresh.config as Record<string, unknown>)?.run_state as RunState | undefined) ?? {};
+          if (rs.worker !== workerNonce) { standDown(); return; } // reclaimed or finalized — the run is no longer ours
           if (rs.stop_requested && !stopRequested) {
             stopRequested = true;
             ctx.deadline = 0; // suspend at the next safe boundary
             send({ type: "stage", value: "running", detail: "STOP REQUESTED — FINISHING THE CURRENT TURN, THEN CLOSING THE RUN" });
           }
-          await db.from("simulations").update({
-            config: { ...((fresh?.config as Record<string, unknown>) ?? {}), run_state: { ...rs, heartbeat_at: new Date().toISOString(), worker: workerNonce } },
-          }).eq("id", simId);
+          const claim = await fenced({ heartbeat_at: new Date().toISOString(), worker: workerNonce });
+          if (claim === "lost") standDown();
+          // "error" is a missed beat (transient), NOT a lost race — the next one lands
         } catch { /* a missed beat is fine — the next one lands */ }
       })();
     }, 12_000);
 
     const result = await runMode(ctx, resume);
-    clearInterval(beat); beat = null;
+    if (beat) { clearInterval(beat); beat = null; }
+    if (usurped) return; // another chain owns the run — no handoff, no finalize, no announcements
 
     if (result.suspendedAtRound && !stopRequested) {
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -234,9 +270,11 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
         // chained handoff: PRE-CLAIM for the child (fresh heartbeat + the
         // CHAIN_PENDING worker id) so a racing client resume sees "being
         // driven" and observes instead of starting a second driver; the child
-        // recognizes its own handoff and takes over. If the chain fetch never
-        // lands, the heartbeat goes stale and RESUME reopens honestly.
-        await writeState({ round: result.suspendedAtRound, heartbeat_at: new Date().toISOString(), worker: CHAIN_PENDING });
+        // CAS-claims CHAIN_PENDING and takes over. A missed CAS here means we
+        // were usurped at the boundary — the other chain drives, we go quiet.
+        // If the chain fetch never lands, the heartbeat goes stale and RESUME
+        // reopens honestly.
+        if (await fenced({ round: result.suspendedAtRound, heartbeat_at: new Date().toISOString(), worker: CHAIN_PENDING }) !== "ok") return;
         try {
           const r = await fetch(`${origin}/api/simulations/${simId}/run/continue`, {
             method: "POST",
@@ -245,43 +283,47 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
           chained = r.ok;
         } catch { chained = false; }
         if (!chained) {
-          // the chain didn't take — reopen the handoff for a client resume
-          await writeState({ round: result.suspendedAtRound, heartbeat_at: null, worker: null });
+          // the chain didn't take — reopen the handoff for a client resume.
+          // Expected is CHAIN_PENDING (we just set it); if a racing continue
+          // already claimed it, IT drives and this write correctly no-ops.
+          await fenced({ round: result.suspendedAtRound, heartbeat_at: null, worker: null }, "running", {}, CHAIN_PENDING);
         }
       } else {
         // legacy handoff (no service key): null heartbeat so the client's
         // immediate reconnect can claim without waiting out staleness
-        await writeState({ round: result.suspendedAtRound, heartbeat_at: null, worker: null });
+        if (await fenced({ round: result.suspendedAtRound, heartbeat_at: null, worker: null }) !== "ok") return;
       }
       send({ type: "continue", round: result.suspendedAtRound, posts: result.posts, chained });
     } else if (stopRequested) {
       // a user stop is a COMPLETE run with an honest reason — the transcript
-      // is preserved and the report synthesizes whatever the panel produced
+      // is preserved and the report synthesizes whatever the panel produced.
+      // Finalize is the fenced CAS FIRST: a miss means another chain owns the
+      // run and no terminal artifacts may land from this one; an "error"
+      // leaves the run running with a stale heartbeat — the reaper re-fires
+      // the chain and the resumed slice finalizes (self-healing, never clobber).
+      if (await fenced(null, "complete", { run_result: { posts: result.posts, converged: false, stop: "stopped", mode, at: new Date().toISOString() } }) !== "ok") return;
       await emit({ type: "stage", value: "done", detail: "stopped" });
-      const { data: fresh } = await db.from("simulations").select("config").eq("id", simId).maybeSingle();
-      await db.from("simulations").update({
-        status: "complete",
-        config: { ...((fresh?.config as Record<string, unknown>) ?? {}), run_state: null, run_result: { posts: result.posts, converged: false, stop: "stopped", mode, at: new Date().toISOString() } },
-      }).eq("id", simId);
       send({ type: "finished", posts: result.posts });
     } else {
       // "converged" is reserved for the stability rule actually firing —
       // fixed choreographies and exhausted rounds report themselves honestly
+      if (await fenced(null, "complete", { run_result: { posts: result.posts, converged: result.converged, stop: result.stopReason, mode, at: new Date().toISOString() } }) !== "ok") return;
       await emit({ type: "stage", value: result.stopReason === "stability" ? "converged" : "done", detail: result.stopReason });
-      const { data: fresh } = await db.from("simulations").select("config").eq("id", simId).maybeSingle();
-      await db.from("simulations").update({
-        status: "complete",
-        config: { ...((fresh?.config as Record<string, unknown>) ?? {}), run_state: null, run_result: { posts: result.posts, converged: result.converged, stop: result.stopReason, mode, at: new Date().toISOString() } },
-      }).eq("id", simId);
       send({ type: "finished", posts: result.posts });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Run failed";
-    try {
-      await db.from("events").insert({ sim_id: simId, seq: 999_999, type: "stage", payload: { type: "stage", value: "error", detail: msg } });
-      await db.from("simulations").update({ status: "draft" }).eq("id", simId);
-    } catch { /* the error event is best-effort */ }
-    send({ type: "error", error: msg });
+    if (!usurped) {
+      try {
+        await db.from("events").insert({ sim_id: simId, seq: 999_999, type: "stage", payload: { type: "stage", value: "error", detail: msg } });
+        // fenced: a usurped straggler's crash must not clobber the live chain's
+        // status. If the RPC itself is unavailable, fall back to the legacy
+        // write — better a plain draft than a run stranded at "running".
+        const drafted = await fenced(null, "draft");
+        if (drafted === "error") await db.from("simulations").update({ status: "draft" }).eq("id", simId);
+      } catch { /* the error event is best-effort */ }
+      send({ type: "error", error: msg });
+    }
   } finally {
     if (beat) clearInterval(beat);
     try { bus?.end(); } catch { /* window already closed */ }

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { executeSlice } from "@/lib/run-worker";
-import { CHAIN_PENDING, RunState, chainSecret, heartbeatFresh } from "@/lib/walkaway";
+import { CHAIN_PENDING, RunState, chainSecret, claimRun, heartbeatFresh } from "@/lib/walkaway";
 
 export const maxDuration = 800; // one slice per invocation, same window as launch
 
@@ -30,14 +30,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // another worker's heartbeat is fresh → it is driving; never double-drive.
   // The one exception is our OWN handoff: the suspending slice pre-claims
   // with CHAIN_PENDING (fresh beat, so client resumes back off) and this
-  // child takes it over. Duplicate chain fires lose here too — the first
-  // child replaces CHAIN_PENDING with its own nonce.
+  // child takes it over.
   if (heartbeatFresh(runState, Date.now(), 45_000) && runState.worker !== CHAIN_PENDING) {
     return NextResponse.json({ skipped: "already driven" }, { status: 202 });
   }
 
   const { data: creator } = await admin.from("users").select("org_id").eq("id", sim.created_by as string).maybeSingle();
   if (!creator) return NextResponse.json({ skipped: "no creator org" }, { status: 202 });
+
+  // the atomic claim (migration 0018): CAS run_state.worker from exactly what
+  // we read (CHAIN_PENDING for a handoff, a stale nonce for an orphan) to this
+  // child's nonce BEFORE any work spawns. Duplicate chain fires — the reaper
+  // racing a handoff, twin continues — collapse here: one CAS wins, the rest
+  // get 202 "already driven" instead of becoming a second engine chain.
+  const workerNonce = Math.random().toString(36).slice(2, 10);
+  const claim = await claimRun(admin, {
+    simId: id,
+    expectedWorker: runState.worker ?? null,
+    runState: { heartbeat_at: new Date().toISOString(), worker: workerNonce },
+  });
+  if (claim === "error") return NextResponse.json({ error: "run chain lock unavailable — is migration 0018 applied?" }, { status: 500 });
+  if (claim === "lost") return NextResponse.json({ skipped: "already driven" }, { status: 202 });
 
   waitUntil(executeSlice({
     db: admin,
@@ -46,7 +59,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     userId: sim.created_by as string,
     origin: process.env.ENGINE_ORIGIN || new URL(request.url).origin,
     canChain: true,
-    workerNonce: Math.random().toString(36).slice(2, 10),
+    workerNonce,
   }));
   return NextResponse.json({ ok: true }, { status: 202 });
 }

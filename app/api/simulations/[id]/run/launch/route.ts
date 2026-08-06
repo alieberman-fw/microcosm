@@ -7,7 +7,7 @@ import { FrozenSpec } from "@/lib/casting";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
 import { derivePollInstrument } from "@/lib/engine";
 import { executeSlice } from "@/lib/run-worker";
-import { RunState, heartbeatFresh } from "@/lib/walkaway";
+import { RunState, claimRun, heartbeatFresh } from "@/lib/walkaway";
 
 export const maxDuration = 800; // Vercel Pro ceiling; the slice chain covers anything longer
 
@@ -61,13 +61,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const crowdCount = (agents ?? []).length - leadCount;
   if (leadCount < 2) return NextResponse.json({ error: "Cast at least 2 leads first" }, { status: 400 });
 
-  // fresh transcript on relaunch; a CONTINUE resumes from the persisted one
-  if (!isContinue) {
-    await supabase.from("posts").delete().eq("sim_id", id);
-    await supabase.from("events").delete().eq("sim_id", id);
-    await supabase.from("post_votes").delete().eq("sim_id", id);
-  }
-
   // ---- the poll instrument: derived ONCE per simulation (persisted in config
   // so every round, resume slice, and the report ask the crowd the same thing).
   // Choose-between briefs poll the brief's actual alternatives; everything
@@ -81,6 +74,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // verdict instrument (jurors score/pick regardless of crowd polling)
   const briefContract = (sim.brief as { contract?: { poll_plan?: unknown } } | null)?.contract;
   const hasPollPlan = Array.isArray(briefContract?.poll_plan);
+  const configPatch: Record<string, unknown> = {};
   if (!config.poll_question && (castMode === "Jury" || (crowdCount > 0 && !hasPollPlan))) {
     const instrument = await derivePollInstrument(
       new Anthropic(), TIER_MODELS[cfg.tier].crowd, brief.problem!,
@@ -92,27 +86,45 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         });
       },
     );
-    config.poll_question = instrument.question;
-    if (instrument.options.length) config.poll_options = instrument.options;
+    configPatch.poll_question = instrument.question;
+    if (instrument.options.length) configPatch.poll_options = instrument.options;
     // proposition instruments carry question-matched answer labels — the
     // crowd is polled with them and every surface displays them
-    if (instrument.labels) config.poll_labels = instrument.labels;
+    if (instrument.labels) configPatch.poll_labels = instrument.labels;
   }
 
+  // ---- the atomic claim (migration 0018): one CAS on run_state.worker —
+  // expected is EXACTLY the worker we read above, so two entrants racing for
+  // the same run (a reclaim vs. the reaper's continue, two tabs, a chain
+  // child) cannot both win; the loser 409s into observing. The field incident
+  // was this exact race persisting duplicate round polls from twin chains. ----
   const workerNonce = Math.random().toString(36).slice(2, 10);
-  await supabase.from("simulations").update({
+  const claim = await claimRun(supabase, {
+    simId: id,
+    expectedWorker: runState?.worker ?? null,
+    runState: {
+      round: isContinue ? (runState?.round ?? null) : null,
+      heartbeat_at: new Date().toISOString(),
+      worker: workerNonce,
+      stop_requested: false,
+      started_at: isContinue ? (runState?.started_at ?? new Date().toISOString()) : new Date().toISOString(),
+    } satisfies RunState,
     status: "running",
-    config: {
-      ...config,
-      run_state: {
-        round: isContinue ? (runState?.round ?? null) : null,
-        heartbeat_at: new Date().toISOString(),
-        worker: workerNonce,
-        stop_requested: false,
-        started_at: isContinue ? (runState?.started_at ?? new Date().toISOString()) : new Date().toISOString(),
-      } satisfies RunState,
-    },
-  }).eq("id", id);
+    configPatch,
+  });
+  if (claim === "error") return NextResponse.json({ error: "Run chain lock unavailable — is migration 0018 applied?" }, { status: 500 });
+  if (claim === "lost") {
+    return NextResponse.json({ error: "Another entrant claimed this run in the same instant — watch it live", live: true }, { status: 409 });
+  }
+
+  // fresh transcript on relaunch — AFTER the claim, so a lost race never
+  // deletes a transcript another chain is driving; a CONTINUE resumes from
+  // the persisted one
+  if (!isContinue) {
+    await supabase.from("posts").delete().eq("sim_id", id);
+    await supabase.from("events").delete().eq("sim_id", id);
+    await supabase.from("post_votes").delete().eq("sim_id", id);
+  }
 
   // the worker gets the admin client when available (slices can then chain
   // server-side); otherwise the launcher's RLS client drives THIS slice and

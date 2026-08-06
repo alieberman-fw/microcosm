@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { ENGINE_CALL_TIMEOUT_MS, SLICE_BUDGET_MS, chainSecret, heartbeatFresh, reaperAction } from "@/lib/walkaway";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { ENGINE_CALL_TIMEOUT_MS, SLICE_BUDGET_MS, chainSecret, claimRun, eventDedupeKey, heartbeatFresh, reaperAction } from "@/lib/walkaway";
 
 describe("chainSecret", () => {
   it("is deterministic for the same key + sim", () => {
@@ -61,6 +62,51 @@ describe("slice budget — kill headroom inside the 800s serverless window", () 
     expect(SLICE_BUDGET_MS + ENGINE_CALL_TIMEOUT_MS + 10_000).toBeLessThanOrEqual(800_000);
     expect(ENGINE_CALL_TIMEOUT_MS).toBeGreaterThanOrEqual(150_000); // field-observed 137s web-search turn must SUCCEED
     expect(SLICE_BUDGET_MS).toBeGreaterThanOrEqual(600_000); // still real slices, not thrash
+  });
+});
+
+describe("eventDedupeKey — round-close artifacts are DB singletons, not per-chain memory", () => {
+  it("sentiment keys per round + angle — the field incident's exact duplicate shape", () => {
+    expect(eventDedupeKey({ type: "sentiment", round: 3 })).toBe("sentiment:3:");
+    expect(eventDedupeKey({ type: "sentiment", round: 3, angle: "cost" })).toBe("sentiment:3:cost");
+    // same round, different angle = a DIFFERENT poll (adaptive plans) — never collide
+    expect(eventDedupeKey({ type: "sentiment", round: 3, angle: "cost" }))
+      .not.toBe(eventDedupeKey({ type: "sentiment", round: 3, angle: "consent" }));
+  });
+
+  it("coverage and agenda key per round", () => {
+    expect(eventDedupeKey({ type: "coverage", round: 2 })).toBe("coverage:2");
+    expect(eventDedupeKey({ type: "agenda", round: 2 })).toBe("agenda:2");
+  });
+
+  it("votes stay UNKEYED — micro-passes legitimately repeat within a round; post_votes dedupes the data", () => {
+    expect(eventDedupeKey({ type: "votes", round: 2 })).toBeNull();
+  });
+
+  it("stage/tool/convergence and roundless events are unkeyed (NULLs are distinct in the index)", () => {
+    expect(eventDedupeKey({ type: "stage" })).toBeNull();
+    expect(eventDedupeKey({ type: "tool", round: 1 })).toBeNull();
+    expect(eventDedupeKey({ type: "convergence" })).toBeNull();
+    expect(eventDedupeKey({ type: "sentiment" })).toBeNull();          // no round = no key
+    expect(eventDedupeKey({ type: "sentiment", round: NaN })).toBeNull();
+  });
+});
+
+describe("claimRun — the tri-state contract every entrance and worker write depends on", () => {
+  const fake = (data: unknown, error: { message: string } | null) =>
+    ({ rpc: async () => ({ data, error }) }) as unknown as SupabaseClient;
+  const args = { simId: "sim-a", expectedWorker: null, runState: { worker: "n1" } };
+
+  it("a matched CAS is ok — this caller drives", async () => {
+    expect(await claimRun(fake(true, null), args)).toBe("ok");
+  });
+
+  it("a missed CAS is lost — another chain holds the run, stand down", async () => {
+    expect(await claimRun(fake(false, null), args)).toBe("lost");
+  });
+
+  it("an RPC failure is error, NEVER lost — a beating worker rides out a transient, an entrance surfaces it", async () => {
+    expect(await claimRun(fake(null, { message: "boom" }), args)).toBe("error");
   });
 });
 
