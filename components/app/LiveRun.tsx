@@ -63,21 +63,26 @@ export interface LiveSentiment {
   quotes: { name: string; stance: string; quote: string }[];
   question?: string; // what the crowd was asked (engine-derived from the brief; older runs pre-date it)
   options?: string[]; // choice instrument (PR-B): the alternatives on offer; absent = classic stance poll
+  /** question-matched answer labels for the stance buckets ("Yes — would
+   *  sell" instead of SUPPORT); absent = classic phrasing */
+  labels?: Record<string, string>;
   ballots?: { name: string; stance: string }[]; // C2: every individual answer (older runs pre-date it)
 }
 
 /** poll bar colors: classic keeps its stance semantics (support=accent,
- *  oppose=warn); choice instruments cycle a distinguishable palette */
+ *  oppose=warn); choice instruments cycle a distinguishable palette.
+ *  Poll-language fix: proposition polls DISPLAY the poll's own answer
+ *  labels when it carries them — keys and tallies stay the classic four. */
 const CLASSIC_STANCES = ["support", "conditional", "oppose", "disengaged"] as const;
 const classicColor = (i: number) => (i === 0 ? "var(--acc)" : i === 1 ? "var(--t5)" : i === 2 ? "var(--warn)" : "var(--ln5)");
 const CHOICE_PALETTE = ["var(--acc)", "var(--warn)", "var(--t5)", "var(--ln7)", "var(--ln4)"];
-function pollKeys(s: LiveSentiment): { key: string; color: string }[] {
+function pollKeys(s: LiveSentiment): { key: string; label: string; color: string }[] {
   if (s.options?.length) {
-    const keys = s.options.map((o, i) => ({ key: o, color: CHOICE_PALETTE[i % CHOICE_PALETTE.length] }));
-    if ((s.dist.undecided ?? 0) > 0) keys.push({ key: "undecided", color: "var(--ln5)" });
+    const keys = s.options.map((o, i) => ({ key: o, label: o, color: CHOICE_PALETTE[i % CHOICE_PALETTE.length] }));
+    if ((s.dist.undecided ?? 0) > 0) keys.push({ key: "undecided", label: "undecided", color: "var(--ln5)" });
     return keys;
   }
-  return CLASSIC_STANCES.map((k, i) => ({ key: k, color: classicColor(i) }));
+  return CLASSIC_STANCES.map((k, i) => ({ key: k, label: s.labels?.[k] ?? k, color: classicColor(i) }));
 }
 
 export interface LiveVote {
@@ -1243,6 +1248,7 @@ export default function LiveRun({
                 const keys = pollKeys(it.s);
                 const shares = distShares(it.s.dist, keys.map((k) => k.key)); // sums to exactly 100
                 const colorOf = Object.fromEntries(keys.map((k) => [k.key, k.color]));
+                const labelOf = Object.fromEntries(keys.map((k) => [k.key, k.label]));
                 const open = expanded.has(idx);
                 const votesOpen = ballotsOpen.has(idx);
                 return (
@@ -1259,7 +1265,7 @@ export default function LiveRun({
                     )}
                     <div style={{ display: "flex", gap: 4, height: 8, borderRadius: 100, overflow: "hidden", marginTop: 8 }}>
                       {shares.map((s2) => (
-                        <span key={s2.key} title={`${s2.key} — ${s2.count} of ${it.s.polled}`} style={{ width: `${s2.pct}%`, background: colorOf[s2.key] }} />
+                        <span key={s2.key} title={`${labelOf[s2.key] ?? s2.key} — ${s2.count} of ${it.s.polled}`} style={{ width: `${s2.pct}%`, background: colorOf[s2.key] }} />
                       ))}
                     </div>
                     {/* legend rows: swatch · label · % · raw count — replaces the cramped one-liner */}
@@ -1267,7 +1273,7 @@ export default function LiveRun({
                       {shares.map((s2) => (
                         <span key={s2.key} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                           <span style={{ width: 8, height: 8, borderRadius: 3, background: colorOf[s2.key], flex: "none" }} />
-                          <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".04em", color: "var(--t4)" }}>{s2.key.toUpperCase()}</span>
+                          <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".04em", color: "var(--t4)" }}>{(labelOf[s2.key] ?? s2.key).toUpperCase()}</span>
                           <span style={{ ...mono, fontSize: 10.5, color: "var(--t1)", fontWeight: 500 }}>{s2.pct}%</span>
                           <span style={{ ...mono, fontSize: 8.5, color: "var(--t7)" }}>({s2.count})</span>
                         </span>
@@ -1277,7 +1283,7 @@ export default function LiveRun({
                       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                         {it.s.quotes.map((qt, qi) => (
                           <div key={qi} style={{ fontSize: 12, lineHeight: 1.55, color: "var(--t4)" }}>
-                            <span style={{ ...mono, fontSize: 8.5, color: qt.stance === "oppose" ? "var(--warn)" : qt.stance === "undecided" || qt.stance === "disengaged" ? "var(--t6)" : "var(--acc)" }}>{qt.stance.toUpperCase()} · </span>
+                            <span style={{ ...mono, fontSize: 8.5, color: qt.stance === "oppose" ? "var(--warn)" : qt.stance === "undecided" || qt.stance === "disengaged" ? "var(--t6)" : "var(--acc)" }}>{(labelOf[qt.stance] ?? qt.stance).toUpperCase()} · </span>
                             “{qt.quote}” <span style={{ color: "var(--t6)" }}>— {qt.name}</span>
                           </div>
                         ))}
@@ -1295,7 +1301,7 @@ export default function LiveRun({
                                 {shares.filter((s2) => s2.count > 0).map((s2) => (
                                   <div key={s2.key}>
                                     <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: colorOf[s2.key] === "var(--ln5)" ? "var(--t6)" : colorOf[s2.key], marginBottom: 3 }}>
-                                      {s2.key.toUpperCase()} · {s2.count}
+                                      {(labelOf[s2.key] ?? s2.key).toUpperCase()} · {s2.count}
                                     </div>
                                     <div style={{ fontSize: 11, lineHeight: 1.6, color: "var(--t5)" }}>
                                       {it.s.ballots!.filter((b) => b.stance === s2.key).map((b) => b.name).join(" · ")}

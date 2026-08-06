@@ -33,6 +33,33 @@ export interface CoverageScore {
   missing: string;
 }
 
+/** question-matched ANSWER labels for the proposition buckets (poll-language
+ *  fix: "SUPPORT/OPPOSE" reads wrong against "would this push you to sell?" —
+ *  the labels say what each bucket MEANS as an answer to THAT question:
+ *  "Yes — would consider selling" / "No — holding"). Keys never change —
+ *  events, tallies, and old reports stay schema-identical. */
+export interface StanceLabels {
+  support: string;
+  conditional: string;
+  oppose: string;
+  disengaged: string;
+}
+
+const STANCE_KEYS = ["support", "conditional", "oppose", "disengaged"] as const;
+
+/** validate/clip a raw labels object — all four present and readable, or null */
+export function normalizeStanceLabels(raw: unknown): StanceLabels | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const out: Partial<StanceLabels> = {};
+  for (const k of STANCE_KEYS) {
+    const v = String(o[k] ?? "").trim();
+    if (v.length < 2) return null; // partial label sets read worse than none
+    out[k] = v.slice(0, 44);
+  }
+  return out as StanceLabels;
+}
+
 export interface PollAngle {
   /** short display name for the angle — the report's trend slider groups by it */
   angle: string;
@@ -40,6 +67,8 @@ export interface PollAngle {
   instrument: "proposition" | "choice";
   /** choice instruments poll these named alternatives */
   options?: string[];
+  /** proposition instruments carry answer labels matched to THIS question */
+  labels?: StanceLabels;
   /** early = broad gut-read · middle = per-entity choice · late = the decision-shaped closer */
   phase: "early" | "middle" | "late";
 }

@@ -37,14 +37,29 @@ const STANCES: Stance[] = [
 
 /** choice instruments (PR-B) swap the four stances for the brief's actual
  *  alternatives — "which photo leads the listing?" tallies green.png vs
- *  red.png, not support vs oppose. Undecideds show only when they exist. */
+ *  red.png, not support vs oppose. Undecideds show only when they exist.
+ *  Poll-language fix: (1) options are TRUSTED only when they actually appear
+ *  in the polls' dist keys — a choice-angle option list rendered against a
+ *  proposition poll's tallies showed 0% down every bar; (2) proposition
+ *  stances display the poll's question-matched answer labels when present. */
 const CHOICE_PALETTE = ["var(--acc)", "var(--warn)", "var(--t5)", "var(--ln7)", "var(--ln4)"];
-function instrumentOf(spec: Pick<ReportSpec, "poll_options" | "sentiment">): Stance[] {
-  if (!spec.poll_options?.length) return STANCES;
-  const rows: Stance[] = spec.poll_options.map((o, i) => ({
+function instrumentOf(spec: Pick<ReportSpec, "poll_options" | "poll_labels" | "sentiment">): Stance[] {
+  const entries = spec.sentiment ?? [];
+  const optionsMatchDist =
+    (spec.poll_options?.length ?? 0) > 0 &&
+    (entries.length === 0 || entries.some((s) => spec.poll_options!.some((o) => o in s.dist)));
+  if (!optionsMatchDist) {
+    // proposition: classic keys, question-matched display labels when present
+    const labels = spec.poll_labels;
+    return STANCES.map((st) => {
+      const l = labels?.[st.key];
+      return l ? { ...st, label: l.toUpperCase(), plain: l.toUpperCase() } : st;
+    });
+  }
+  const rows: Stance[] = spec.poll_options!.map((o, i) => ({
     key: o, label: o.toUpperCase(), plain: o, color: CHOICE_PALETTE[i % CHOICE_PALETTE.length],
   }));
-  if ((spec.sentiment ?? []).some((s) => (s.dist.undecided ?? 0) > 0)) {
+  if (entries.some((s) => (s.dist.undecided ?? 0) > 0)) {
     rows.push({ key: "undecided", label: "UNDECIDED", plain: "COULDN'T PICK ONE", color: "var(--ln6)" });
   }
   return rows;
@@ -53,7 +68,7 @@ function instrumentOf(spec: Pick<ReportSpec, "poll_options" | "sentiment">): Sta
 /** 6-PR3 — adaptive poll plans vary the question across the run: group the
  *  polls by angle (falling back to the question text) so every slider's
  *  percentages share one referent. A single-instrument run = one group. */
-function sentimentGroups(spec: Pick<ReportSpec, "poll_question" | "poll_options" | "sentiment">): { key: string; question?: string; entries: NonNullable<ReportSpec["sentiment"]>; stances: Stance[] }[] {
+function sentimentGroups(spec: Pick<ReportSpec, "poll_question" | "poll_options" | "poll_labels" | "sentiment">): { key: string; question?: string; entries: NonNullable<ReportSpec["sentiment"]>; stances: Stance[] }[] {
   const entries = spec.sentiment ?? [];
   const byKey = new Map<string, NonNullable<ReportSpec["sentiment"]>>();
   for (const s of entries) {
@@ -62,11 +77,12 @@ function sentimentGroups(spec: Pick<ReportSpec, "poll_question" | "poll_options"
   }
   return [...byKey.entries()].map(([key, group]) => {
     const options = group.find((g) => g.options?.length)?.options ?? (byKey.size === 1 ? spec.poll_options ?? undefined : undefined);
+    const labels = group.find((g) => g.labels)?.labels ?? (byKey.size === 1 ? spec.poll_labels ?? undefined : undefined);
     return {
       key,
       question: group.find((g) => g.question)?.question ?? (byKey.size === 1 ? spec.poll_question ?? undefined : undefined),
       entries: group,
-      stances: instrumentOf({ poll_options: options, sentiment: group }),
+      stances: instrumentOf({ poll_options: options, poll_labels: labels, sentiment: group }),
     };
   });
 }
@@ -507,8 +523,11 @@ function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {/* 6-PR3: the final poll answers ITS OWN question — an adaptive
-                  plan's closer, not necessarily the spec-level instrument */}
-              {(() => { const inst = instrumentOf({ poll_options: finalPoll.options ?? spec.poll_options, sentiment: [finalPoll] }); const fs = Object.fromEntries(distShares(finalPoll.dist, inst.map((x) => x.key)).map((x) => [x.key, x.pct])); return inst.map(({ key, plain: pl, color }) => {
+                  plan's closer, not necessarily the spec-level instrument.
+                  instrumentOf now also refuses options that don't match the
+                  poll's dist keys (the 0%-bars bug) and speaks the poll's
+                  question-matched answer labels. */}
+              {(() => { const inst = instrumentOf({ poll_options: finalPoll.options ?? spec.poll_options, poll_labels: finalPoll.labels ?? spec.poll_labels, sentiment: [finalPoll] }); const fs = Object.fromEntries(distShares(finalPoll.dist, inst.map((x) => x.key)).map((x) => [x.key, x.pct])); return inst.map(({ key, plain: pl, color }) => {
                 const p = fs[key] ?? 0;
                 return (
                   <div key={key}>

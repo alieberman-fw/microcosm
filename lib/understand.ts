@@ -13,7 +13,7 @@
  * as one-tap clarifiers.
  */
 
-import { PollAngle } from "@/lib/agenda";
+import { PollAngle, normalizeStanceLabels } from "@/lib/agenda";
 import { parseLooseObject } from "@/lib/llm-json";
 
 /** matches the casting plan budget discipline — mirror + ~8 sub-asks fits */
@@ -101,7 +101,7 @@ export function understandSystem(docNames: string[]): string {
     `"population_hints": {"described": true|false, "cohorts": [{"desc": "homebuyers aged 35-45", "geography": "Beverly Hills, CA"}], "composition": "experts|consumers|mixed"|null}, ` +
     `"doc_roles": [{"name": "<exact filename>", "role": "evidence|framework|question-source|reference", "note": "one short clause"}], ` +
     `"flags": [{"question": "...", "options": ["...", "..."], "default": "..."}], ` +
-    `"poll_plan": [{"angle": "2-4 word display name", "question": "the exact plain-language question the crowd is asked", "instrument": "proposition|choice", "options": ["only for choice — the named alternatives, verbatim from the brief"], "phase": "early|middle|late"}]}\n` +
+    `"poll_plan": [{"angle": "2-4 word display name", "question": "the exact plain-language question the crowd is asked", "instrument": "proposition|choice", "options": ["only for choice — the named alternatives, verbatim from the brief"], "labels": {"support": "...", "conditional": "...", "oppose": "...", "disengaged": "..."}, "phase": "early|middle|late"}]}\n` +
     `Rules:\n` +
     `- sub_asks: 1-8, each ONE answerable question. A multi-part brief decomposes fully — every distinct ask gets its own line. Never merge two asks.\n` +
     `- output_contracts: what SHAPE the answer takes. "which of these deserves pursuit" → ranked_list; "for each X tell me Y and Z" → matrix; a go/no-go → verdict; "what is it worth" → range. 1-3 entries, lead artifact first.\n` +
@@ -109,6 +109,7 @@ export function understandSystem(docNames: string[]): string {
     docRule +
     `- flags: 0-2, ONLY genuine ambiguities where the wrong guess would change the answer. Each has 2-3 tap-able options and a sensible default. No flags for things you can infer.\n` +
     `- poll_plan: 0-3 angles of this brief with a GENUINE preference/sentiment surface, ordered by phase: early = the broad gut-read (proposition), middle = the per-entity choice ("which category most deserves pursuit?" with the entities as options), late = the decision-shaped closer (proposition on the recommendation). An expert research brief with no sentiment surface gets [] — polling "support/oppose" on a research task is noise, and an empty plan is a DECISION, not an omission.\n` +
+    `- labels (proposition angles ONLY, required for each): the four answers AS A PERSON WOULD SAY THEM to that exact question, ≤5 words each — support = the yes ("Yes — would consider selling"), conditional = the yes-with-a-condition ("Only if rents keep up"), oppose = the no ("No — holding"), disengaged = untouched ("Doesn't affect me"). Generic "support/oppose" is a FAILURE when the question isn't a should-we proposition. Choice angles omit labels.\n` +
     `- audience: "executive" unless the brief reads like it was written BY a technical specialist FOR technical specialists.\n` +
     `- mirror: user-facing prose. Everything else: tight, concrete, no filler. No prose outside the JSON.`
   );
@@ -210,7 +211,14 @@ export function normalizeContract(raw: Record<string, unknown> | null, docNames:
       if (!angle || !question || !instrument || poll_plan.some((x) => x.angle === angle)) continue;
       const options = strList(o.options, 12, 80);
       if (instrument === "choice" && options.length < 2) continue; // a choice needs real alternatives
-      poll_plan.push({ angle, question, instrument, phase, ...(instrument === "choice" ? { options } : {}) });
+      // proposition angles carry question-matched answer labels; a partial or
+      // junk set drops silently (the display falls back to the classic four)
+      const labels = instrument === "proposition" ? normalizeStanceLabels(o.labels) : null;
+      poll_plan.push({
+        angle, question, instrument, phase,
+        ...(instrument === "choice" ? { options } : {}),
+        ...(labels ? { labels } : {}),
+      });
       if (poll_plan.length >= 3) break;
     }
   }
