@@ -9,7 +9,7 @@
  */
 
 import { CSSProperties, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import StageRail from "@/components/app/StageRail";
 import {
   REPLAY_AGENTS, REPLAY_BRIEF, REPLAY_DAYS, REPLAY_EVENTS, REPLAY_LEAD_KEYS, REPLAY_TOTAL_T,
   ReplayEvent,
@@ -267,7 +267,18 @@ export default function RunScreen({ simId, problem }: { simId: string; problem?:
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", boxSizing: "border-box", padding: "22px 26px" }}>
       {/* header */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-        <Link href={`/sim/${simId}`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t6)" }}>← WORKSPACE</Link>
+        {/* same five-stage rail as everywhere; the replay hasn't cast or run,
+            so earlier stages link back without claiming completion */}
+        <StageRail
+          gap={8}
+          stages={[
+            { label: "BRIEF", done: true, href: `/sim/${simId}`, title: "Back to the workspace — brief" },
+            { label: "CORPUS", done: false, href: `/sim/${simId}`, title: "Back to the workspace — corpus" },
+            { label: "POPULATION", done: false, href: `/sim/${simId}`, title: "Back to the workspace — population" },
+            { label: "RUN", done: false, current: true, title: "You're here — the replay" },
+            { label: "REPORT", done: false, title: "Synthesize after a real run" },
+          ]}
+        />
         <span style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: done ? "var(--acc)" : "var(--t4)" }}>
           {done ? "CONVERGED" : "SIMULATING"}
         </span>

@@ -16,6 +16,7 @@
 import { CSSProperties, useEffect, useState } from "react";
 import Link from "next/link";
 import { markReportSeen } from "@/components/app/ReportsBadge";
+import StageRail from "@/components/app/StageRail";
 import { LEAD_KIND_LABEL, ReportBlock, ReportLead, ReportPlain, ReportSpec, VERDICT_STYLE, fmtMoney } from "@/lib/report";
 import { LivePost } from "@/components/app/LiveRun";
 import Markdown from "@/components/app/Markdown";
@@ -771,30 +772,18 @@ export default function ReportView({
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "40px 40px 90px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-        {/* field fix: the ←/→ arrows read ambiguous — the report now carries
-            the SAME five-stage rail as the workspace, each stage a link, with
-            05 REPORT as the you-are-here. One navigation grammar everywhere. */}
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          {(["BRIEF", "CORPUS", "POPULATION", "RUN", "REPORT"] as const).map((s, i) => (
-            <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-              {i === 4 ? (
-                <span style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: "var(--acc)", background: "var(--acc-dim)", border: "1px solid var(--acc)", borderRadius: 100, padding: "3px 11px" }}>
-                  05 REPORT
-                </span>
-              ) : (
-                <Link
-                  href={i === 3 ? `/sim/${simId}/run` : `/sim/${simId}`}
-                  prefetch={false}
-                  title={i === 3 ? "Open the live run / transcript" : `Back to the workspace — ${s.toLowerCase()}`}
-                  style={{ ...mono, fontSize: 10, letterSpacing: ".1em", color: "var(--t5)" }}
-                >
-                  {String(i + 1).padStart(2, "0")} {s} ✓
-                </Link>
-              )}
-              {i < 4 && <span style={{ width: 18, height: 1, background: "var(--ln4)", display: "inline-block" }} />}
-            </span>
-          ))}
-        </span>
+        {/* field fix: the ←/→ arrows read ambiguous — the report carries the
+            SAME five-stage rail as the workspace and run screen (StageRail),
+            with 05 REPORT as the you-are-here pill. */}
+        <StageRail
+          stages={[
+            { label: "BRIEF", done: true, href: `/sim/${simId}`, title: "Back to the workspace — brief" },
+            { label: "CORPUS", done: true, href: `/sim/${simId}`, title: "Back to the workspace — corpus" },
+            { label: "POPULATION", done: true, href: `/sim/${simId}`, title: "Back to the workspace — population" },
+            { label: "RUN", done: true, href: `/sim/${simId}/run`, title: "Open the live run / transcript" },
+            { label: "REPORT", done: true, current: true, title: "You're here — the report" },
+          ]}
+        />
         {reportId && (
           <button
             onClick={() => void togglePlain()}
