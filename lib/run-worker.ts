@@ -16,7 +16,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { CoverageScore, PollAngle, SubAskLite } from "@/lib/agenda";
+import { CoverageScore, PollAngle, SubAskLite, normalizeStanceLabels } from "@/lib/agenda";
 import { FrozenSpec } from "@/lib/casting";
 import { BriefContract } from "@/lib/understand";
 import { RUN_DEFAULTS, RunConfig } from "@/lib/run";
@@ -182,6 +182,7 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
       leads, crowd, corpusBlocks,
       pollQuestion: String(config.poll_question ?? brief.problem ?? ""),
       pollOptions: Array.isArray(config.poll_options) ? (config.poll_options as unknown[]).map(String) : [],
+      pollLabels: normalizeStanceLabels(config.poll_labels),
       tools: normalizeEnabledTools(config.tools),
       pulledFacts,
       temperature: 0.7,

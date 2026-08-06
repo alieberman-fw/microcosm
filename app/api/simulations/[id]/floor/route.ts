@@ -107,6 +107,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         leads, crowd: [], corpusBlocks,
         pollQuestion: brief.problem ?? "", // floor replies never poll — placeholder only
         pollOptions: [],
+        pollLabels: null,
         // 3d — mentioned agents get the same tools the run was allowed
         tools: normalizeEnabledTools(config.tools),
         pulledFacts: [],

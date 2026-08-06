@@ -94,9 +94,9 @@ describe("derivePollInstrument", () => {
     const clock = new FakeClock();
     const { client, calls } = makeFakeAnthropic(clock);
     const inst = await derivePollInstrument(client, "claude-haiku-4-5", "Should we rezone the mall site?", async () => {});
-    expect(inst).toEqual({ question: "Should the town let the project go ahead?", options: [] });
+    expect(inst).toEqual({ question: "Should the town let the project go ahead?", options: [], labels: null });
     expect(calls[0].kind).toBe("pollq");
-    expect(calls[0].system).toContain("SUPPORT or OPPOSE");
+    expect(calls[0].system).toContain("AS A PERSON WOULD SAY THEM");
     expect(calls[0].system).toContain("CHOOSE AMONG named alternatives");
   });
 
@@ -104,7 +104,7 @@ describe("derivePollInstrument", () => {
     const clock = new FakeClock();
     const { client } = makeFakeAnthropic(clock, { failure: () => "throw" });
     const inst = await derivePollInstrument(client, "claude-haiku-4-5", "Should we rezone the mall site?", async () => {});
-    expect(inst).toEqual({ question: "Should we rezone the mall site?", options: [] });
+    expect(inst).toEqual({ question: "Should we rezone the mall site?", options: [], labels: null });
   });
 
   it("falls back to the raw problem on an empty response", async () => {
@@ -120,7 +120,7 @@ describe("parsePollInstrument (PR-B — the choice instrument)", () => {
 
   it("parses a choice instrument, preserving option order", () => {
     const out = parsePollInstrument(`{"question": "Which photo should lead the listing?", "options": ["green.png", "red.png", "blue.png"]}`, FB);
-    expect(out).toEqual({ question: "Which photo should lead the listing?", options: ["green.png", "red.png", "blue.png"] });
+    expect(out).toEqual({ question: "Which photo should lead the listing?", options: ["green.png", "red.png", "blue.png"], labels: null });
   });
 
   it("salvages prose-wrapped and fenced JSON", () => {
@@ -142,8 +142,20 @@ describe("parsePollInstrument (PR-B — the choice instrument)", () => {
   });
 
   it("garbage and out-of-bounds questions fall back to the problem", () => {
-    expect(parsePollInstrument("not json at all", FB)).toEqual({ question: FB, options: [] });
+    expect(parsePollInstrument("not json at all", FB)).toEqual({ question: FB, options: [], labels: null });
     expect(parsePollInstrument(`{"question": "short", "options": []}`, FB).question).toBe(FB);
+  });
+
+  // poll-language fix: proposition instruments carry question-matched ANSWER
+  // labels; choice instruments never do; a partial label set drops to null
+  it("parses proposition labels; choice instruments drop them; partial sets drop", () => {
+    const L = { support: "Yes — would consider selling", conditional: "Only if costs stay flat", oppose: "No — holding", disengaged: "Doesn't affect me" };
+    const prop = parsePollInstrument(JSON.stringify({ question: "Would this law push you to consider selling?", options: [], labels: L }), FB);
+    expect(prop.labels).toEqual(L);
+    const choice = parsePollInstrument(JSON.stringify({ question: "Which photo should lead the listing?", options: ["a.png", "b.png"], labels: L }), FB);
+    expect(choice.labels).toBeNull();
+    const partial = parsePollInstrument(JSON.stringify({ question: "Would this law push you to consider selling?", options: [], labels: { support: "Yes" } }), FB);
+    expect(partial.labels).toBeNull();
   });
 });
 
@@ -192,11 +204,27 @@ describe("choice-instrument polls (PR-B)", () => {
     expect(s!.dist).toEqual({ "green.png": 3, "red.png": 3, "blue.png": 2 });
   });
 
+  it("proposition polls with labels speak them to members and stamp the event", async () => {
+    const L = { support: "Yes — would sell", conditional: "Only if rents rise", oppose: "No — holding", disengaged: "Doesn't touch me" };
+    const h = makeHarness({ mode: "Agora", leads: makeLeads(3), crowd: makeCrowd(4), cfg: { rounds: 1, convergence: "fixed" }, pollLabels: L });
+    await runMode(h.ctx);
+    const poll = h.calls.find((c) => c.kind === "poll");
+    expect(poll).toBeDefined();
+    // the members are polled with the question-matched phrasings, keys intact
+    expect(poll!.system).toContain(`"support": "${L.support}"`);
+    expect(poll!.system).toContain(`"oppose": "${L.oppose}"`);
+    const s = h.events.find((e): e is Extract<typeof e, { type: "sentiment" }> => e.type === "sentiment");
+    expect((s as { labels?: unknown }).labels).toEqual(L);
+    // dist keys stay the schema-stable four regardless of display language
+    expect(Object.keys(s!.dist).sort()).toEqual(["conditional", "disengaged", "oppose", "support"]);
+  });
+
   it("classic runs stay exactly as they were — no options field on the event", async () => {
     const h = makeHarness({ mode: "Agora", leads: makeLeads(3), crowd: makeCrowd(4), cfg: { rounds: 1, convergence: "fixed" } });
     await runMode(h.ctx);
     const s = h.events.find((e): e is Extract<typeof e, { type: "sentiment" }> => e.type === "sentiment");
     expect(s!.options).toBeUndefined();
+    expect((s as { labels?: unknown }).labels).toBeUndefined();
     expect(Object.keys(s!.dist).sort()).toEqual(["conditional", "disengaged", "oppose", "support"]);
   });
 });

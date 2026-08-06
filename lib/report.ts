@@ -84,9 +84,12 @@ export interface ReportSpec {
   /** 6-PR3: each poll carries its own question/options/angle — adaptive
    *  plans vary the instrument across the run, and the trend slider groups
    *  by angle so percentages always share a referent */
-  sentiment?: { round: number; polled: number; dist: Record<string, number>; ballots?: { name: string; stance: string }[]; question?: string; options?: string[]; angle?: string }[];
-  poll_question?: string; // the one proposition every crowd poll asked (engine-derived from the brief)
-  poll_options?: string[]; // choice instrument (PR-B): the alternatives the crowd chose among; absent = classic stance poll
+  sentiment?: { round: number; polled: number; dist: Record<string, number>; ballots?: { name: string; stance: string }[]; question?: string; options?: string[]; labels?: Record<string, string>; angle?: string }[];
+  poll_question?: string; // what the LAST crowd poll asked (engine-derived from the brief or the plan's closing angle)
+  poll_options?: string[]; // choice instrument (PR-B): the alternatives the LAST poll chose among; absent = proposition
+  /** question-matched answer labels for the last poll's stance buckets
+   *  ("Yes — would consider selling" instead of SUPPORT); absent = classic */
+  poll_labels?: Record<string, string>;
   /** 3d — tool usage frozen with the report: how many calls, and the deduped
    *  web sources the panel actually used (the traceability appendix) */
   tool_calls?: number;

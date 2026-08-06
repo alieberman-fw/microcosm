@@ -56,17 +56,24 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const { data: sentimentRows } = await supabase.from("events")
     .select("payload").eq("sim_id", id).eq("type", "sentiment").order("seq", { ascending: true });
-  const sentiments = (sentimentRows ?? []).map((e) => {
-    const p = e.payload as { round: number; polled: number; dist: Record<string, number>; ballots?: { name: string; stance: string }[]; question?: string; options?: string[]; angle?: string };
+  const sentimentsRaw = (sentimentRows ?? []).map((e) => {
+    const p = e.payload as { round: number; polled: number; dist: Record<string, number>; ballots?: { name: string; stance: string }[]; question?: string; options?: string[]; labels?: Record<string, string>; angle?: string };
     // 6-PR3: adaptive plans vary the question per round — each poll keeps its
-    // own question/options/angle so the trend slider groups by referent
-    return { round: p.round, polled: p.polled, dist: p.dist, ballots: p.ballots, question: p.question, options: p.options, angle: p.angle };
+    // own question/options/labels/angle so every display shares one referent
+    return { round: p.round, polled: p.polled, dist: p.dist, ballots: p.ballots, question: p.question, options: p.options, labels: p.labels, angle: p.angle };
   });
+  // concurrent engine slices can double-poll a round (LiveRun already dedupes
+  // client-side); the report keeps the LAST event per (round, angle)
+  const sentiments = [...new Map(sentimentsRaw.map((s) => [`${s.round}|${s.angle ?? s.question ?? ""}`, s])).values()];
   // what the crowd was actually asked — from the newest poll event that carried
   // it (constant per sim; older runs pre-date the field and show no question).
-  // Choice instruments (PR-B) also carry the option list the crowd chose among.
-  const pollQuestion = (sentimentRows ?? []).map((e) => (e.payload as { question?: string }).question).filter(Boolean).pop() ?? null;
-  const pollOptions = (sentimentRows ?? []).map((e) => (e.payload as { options?: string[] }).options).filter((o) => Array.isArray(o) && o.length).pop() ?? null;
+  // poll-language fix: options/labels must come from the SAME (last) poll the
+  // question comes from — hoisting a middle choice-angle's options against a
+  // late proposition's question rendered 0% bars in the simplified report.
+  const lastPoll = sentiments.length ? sentiments[sentiments.length - 1] : null;
+  const pollQuestion = lastPoll?.question ?? null;
+  const pollOptions = lastPoll?.options?.length ? lastPoll.options : null;
+  const pollLabels = lastPoll?.labels ?? null;
 
   // 3d — the searches the panel ran: synthesis input + the WEB SOURCES appendix
   const { data: toolRows } = await supabase.from("tool_runs")
@@ -125,7 +132,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     // must meet — the completeness judge checks against exactly these lines
     (contract?.sub_asks?.length ? `THE BRIEF CONTRACT (every sub-ask below must be ANSWERED by a section — the report is judged against this):\n${contract.sub_asks.map((s) => `- [${s.id}] ${s.ask} (evidence standard: ${s.evidence})`).join("\n")}\n` : "") +
     (success.length ? `SUCCESS CRITERIA (the report is held to every one):\n${success.map((x) => `- ${x}`).join("\n")}\n` : "") +
-    (sentiments.length ? `CROWD SENTIMENT BY ROUND${pollQuestion ? ` (the crowd was asked: "${pollQuestion}")` : ""}${pollOptions ? ` (a preference poll — the crowd chose among: ${pollOptions.join(" · ")})` : ""}:\n${sentiments.map((x) => `- round ${x.round}${new Set(sentiments.map((s) => s.question).filter(Boolean)).size > 1 && x.question ? ` (asked: "${x.question}")` : ""}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
+    (sentiments.length ? `CROWD SENTIMENT BY ROUND${pollQuestion ? ` (the crowd was asked: "${pollQuestion}")` : ""}${pollOptions ? ` (a preference poll — the crowd chose among: ${pollOptions.join(" · ")})` : ""}${pollLabels ? ` (the stances MEAN, for this question: support = "${pollLabels.support}" · conditional = "${pollLabels.conditional}" · oppose = "${pollLabels.oppose}" · disengaged = "${pollLabels.disengaged}" — write about the crowd in THESE terms)` : ""}:\n${sentiments.map((x) => `- round ${x.round}${new Set(sentiments.map((s) => s.question).filter(Boolean)).size > 1 && x.question ? ` (asked: "${x.question}")` : ""}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
     (toolFindings.length ? `TOOL FINDINGS (live web searches the panel ran — citable as "source: web", URLs are real):\n${toolFindings.map((f) => `- [${f.agent}] searched "${f.query}" → ${f.results.slice(0, 3).map((x) => `${x.title} <${x.url}>`).join(" · ") || "no results"}`).join("\n")}\n` : "") +
     ((docs?.length ?? 0) > 0 ? `UPLOADED MATERIALS (exact filenames — usable in "media" when the decision turned on one):\n${docs!.map((d) => `- ${d.name} (${(d.mime ?? "").startsWith("image/") ? "image" : "document"})`).join("\n")}\n` : "") +
     voteText;
@@ -518,6 +525,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           sentiment: sentiments,
           poll_question: pollQuestion ? String(pollQuestion).slice(0, 240) : undefined,
           poll_options: pollOptions ?? undefined,
+          poll_labels: pollLabels ?? undefined,
           tool_calls: toolFindings.length || undefined,
           web_sources: webSources.length ? webSources : undefined,
           // PR-A: media picks resolve against REAL uploads only (unknown names drop)

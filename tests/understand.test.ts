@@ -197,6 +197,24 @@ describe("poll_plan normalization (6-PR3)", () => {
     expect(normalizeContract(full(), DOCS, NOW)!.poll_plan).toBeUndefined();
   });
 
+  // poll-language fix: proposition angles carry question-matched ANSWER
+  // labels; junk/partial sets drop silently; choice angles never carry them
+  it("keeps valid proposition labels, drops partial sets, strips labels off choice angles", () => {
+    const L = { support: "Yes — would sell", conditional: "Only if rents rise", oppose: "No — holding", disengaged: "Doesn't affect me" };
+    const c = normalizeContract({
+      ...full(),
+      poll_plan: [
+        { angle: "Gut read", question: "Sell or hold?", instrument: "proposition", phase: "early", labels: L },
+        { angle: "Partial", question: "Q2", instrument: "proposition", phase: "middle", labels: { support: "Yes" } },
+        { angle: "Pick", question: "Which one?", instrument: "choice", options: ["a", "b"], phase: "late", labels: L },
+      ],
+    }, DOCS, NOW)!;
+    expect(c.poll_plan![0].labels).toEqual(L);
+    expect(c.poll_plan![1].labels).toBeUndefined();
+    expect(c.poll_plan![2].labels).toBeUndefined();
+    expect(understandSystem([])).toContain("AS A PERSON WOULD SAY THEM");
+  });
+
   it("drops a choice without ≥2 options, unknown instruments, dupes; caps at 3", () => {
     const c = normalizeContract({
       ...full(),

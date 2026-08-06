@@ -94,6 +94,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     );
     config.poll_question = instrument.question;
     if (instrument.options.length) config.poll_options = instrument.options;
+    // proposition instruments carry question-matched answer labels — the
+    // crowd is polled with them and every surface displays them
+    if (instrument.labels) config.poll_labels = instrument.labels;
   }
 
   const workerNonce = Math.random().toString(36).slice(2, 10);

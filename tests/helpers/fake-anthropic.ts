@@ -264,6 +264,7 @@ export function makeHarness(args: {
   tools?: string[];
   /** PR-B — choice instrument options (empty = classic stance poll) */
   pollOptions?: string[];
+  pollLabels?: import("@/lib/agenda").StanceLabels | null;
   /** 6-PR3 — contract sub-asks (agendas + tracker); default none */
   subAsks?: EngineContext["subAsks"];
   /** 6-PR3 — poll plan (null = legacy; [] = polls off) */
@@ -286,6 +287,7 @@ export function makeHarness(args: {
     crowd: args.crowd ?? [],
     pollQuestion: "Should the builder spend the leftover budget on the pool?",
     pollOptions: args.pollOptions ?? [],
+    pollLabels: args.pollLabels ?? null,
     tools: args.tools ?? [],
     pulledFacts: [],
     corpusBlocks: [],
