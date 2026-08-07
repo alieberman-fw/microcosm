@@ -16,7 +16,7 @@ export default function ChecklistPref({ initiallyHidden }: { initiallyHidden: bo
     const next = !hidden;
     setHidden(next);
     const { data: { user } } = await supabase!.auth.getUser();
-    if (user) await supabase!.from("users").update({ prefs: { hide_onboarding: next } }).eq("id", user.id);
+    if (user) { const { mergePrefs } = await import("@/lib/prefs"); await mergePrefs({ hide_onboarding: next }); }
     setBusy(false);
   };
 
