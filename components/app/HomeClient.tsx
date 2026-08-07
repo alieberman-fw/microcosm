@@ -218,7 +218,7 @@ export default function HomeClient({
   const clearChecklist = async () => {
     setHidden(true);
     const { data: { user } } = await supabase!.auth.getUser();
-    if (user) await supabase!.from("users").update({ prefs: { hide_onboarding: true } }).eq("id", user.id);
+    if (user) { const { mergePrefs } = await import("@/lib/prefs"); await mergePrefs({ hide_onboarding: true }); }
   };
 
   const tiles: { label: string; value: string; sub: string; href: string }[] = [
