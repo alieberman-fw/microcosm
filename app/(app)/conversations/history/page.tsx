@@ -16,6 +16,7 @@ export default async function ConversationHistoryPage() {
     supabase!
       .from("conversations")
       .select("id, title, participant_keys, updated_at, conversation_messages(count)")
+      .eq("kind", "chat")
       .order("updated_at", { ascending: false })
       .limit(1000),
     supabase!.from("personas").select("id, spec").eq("org_id", userRow!.org_id),

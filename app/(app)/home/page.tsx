@@ -34,6 +34,7 @@ export default async function HomePage() {
     supabase!
       .from("conversations")
       .select("id, title, participant_keys, updated_at, conversation_messages(count)", { count: "exact" })
+      .eq("kind", "chat")
       .order("updated_at", { ascending: false })
       .limit(6),
     supabase!

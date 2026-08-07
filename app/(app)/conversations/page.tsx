@@ -17,7 +17,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
   const [{ data: convRows }, { data: customRows }, { count: libraryCount }] = await Promise.all([
     supabase!
       .from("conversations")
-      .select("id, title, participant_keys, updated_at, model_overrides, tool_overrides")
+      .select("id, title, participant_keys, updated_at, model_overrides, tool_overrides").eq("kind", "chat")
       .order("updated_at", { ascending: false })
       .limit(100),
     supabase!
