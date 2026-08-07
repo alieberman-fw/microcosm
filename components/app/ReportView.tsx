@@ -18,6 +18,7 @@ import Link from "next/link";
 import { markReportSeen } from "@/components/app/ReportsBadge";
 import StageRail from "@/components/app/StageRail";
 import { ShareLinksButton } from "@/components/app/ShareLinks";
+import AnalystDock from "@/components/app/AnalystPanel";
 import { LEAD_KIND_LABEL, ReportBlock, ReportLead, ReportPlain, ReportSpec, VERDICT_STYLE, fmtMoney } from "@/lib/report";
 import { LivePost } from "@/components/app/LiveRun";
 import Markdown from "@/components/app/Markdown";
@@ -766,7 +767,8 @@ export default function ReportView({
   };
   const v = VERDICT_STYLE[spec.verdict.tone] ?? VERDICT_STYLE.split;
   const jump = (seq: number) => {
-    setTranscriptOpen(true); // citations open the transcript, then scroll
+    setView("expert"); // the transcript lives in the expert body — a citation
+    setTranscriptOpen(true); // from the plain view flips over, then scrolls
     setTimeout(() => {
       const el = document.getElementById(`post-${seq}`);
       if (el) {
@@ -774,9 +776,11 @@ export default function ReportView({
         setFlash(seq);
         setTimeout(() => setFlash(null), 2200);
       }
-    }, 60);
+    }, 120);
   };
   const m = spec.methodology;
+  // the analyst dock splits the screen — the report hugs its edge while open
+  const [analystW, setAnalystW] = useState(0);
 
   const tiles: { label: string; value: string; sub?: string }[] = [
     { label: "POSTS", value: String(m.posts), sub: `${m.leads} LEADS · ${m.mode.toUpperCase()}` },
@@ -795,7 +799,13 @@ export default function ReportView({
   ];
 
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto", padding: "40px 40px 90px" }}>
+    <div style={{
+      maxWidth: 980, padding: "40px 40px 90px",
+      // the analyst dock splits the screen: the report hugs the panel's left
+      // edge while open (side-by-side reading), recentres when it closes
+      margin: analystW ? `0 ${analystW + 8}px 0 auto` : "0 auto",
+      transition: "margin .15s ease",
+    }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         {/* field fix: the ←/→ arrows read ambiguous — the report carries the
             SAME five-stage rail as the workspace and run screen (StageRail),
@@ -861,6 +871,11 @@ export default function ReportView({
           </span>
         </span>
       </div>
+
+      {/* the AI analyst dock — org views only, never on magic links */}
+      {!shared && reportId && (
+        <AnalystDock simId={simId} onWidthChange={setAnalystW} onCite={jump} />
+      )}
 
       {/* the report's name — click the NAME ITSELF to edit (field fix: the
           pencil is gone); the underline input opens in place, Enter saves,
