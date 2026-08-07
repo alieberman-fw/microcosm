@@ -11,6 +11,10 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import CardMenu, { MENU_ICONS } from "@/components/app/CardMenu";
+import StarButton from "@/components/app/StarButton";
+import { mergePrefs, toggleId } from "@/lib/prefs";
+
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
 export interface SimCardRow {
@@ -34,7 +38,7 @@ export interface SimCardRow {
 
 const PAGE = 12;
 
-export default function SimCards({ initialSims }: { initialSims: SimCardRow[] }) {
+export default function SimCards({ initialSims, initialStarred = [] }: { initialSims: SimCardRow[]; initialStarred?: string[] }) {
   const router = useRouter();
   const [sims, setSims] = useState(initialSims);
   const [q, setQ] = useState("");
@@ -45,6 +49,18 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
   const [deleting, setDeleting] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set()); // FULL BRIEF open per card
   const [renaming, setRenaming] = useState<string | null>(null);
+  // favorites + view + sort (1b)
+  const [starred, setStarred] = useState<Set<string>>(new Set(initialStarred));
+  const [favOnly, setFavOnly] = useState(false);
+  const [view, setView] = useState<"cards" | "list">("cards");
+  const [sort, setSort] = useState<"newest" | "name">("newest");
+  const toggleStar = (id: string) => {
+    setStarred((prev) => {
+      const next = toggleId([...prev], id);
+      void mergePrefs({ starred_sims: next });
+      return new Set(next);
+    });
+  };
   const [nameDraft, setNameDraft] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -83,12 +99,17 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
   };
 
   const visible = sims.filter((s) => {
+    if (favOnly && !starred.has(s.id)) return false;
     if (q.trim() && !`${s.name ?? ""} ${s.problem}`.toLowerCase().includes(q.trim().toLowerCase())) return false;
     if (filter === "ran") return !!s.runPosts;
     if (filter === "draft") return !s.runPosts;
     if (filter === "reported") return (s.reportCount ?? 0) > 0;
     return true;
-  });
+  }).sort((a, b) =>
+    (Number(starred.has(b.id)) - Number(starred.has(a.id)))
+    || (sort === "name"
+      ? (a.name ?? a.problem).localeCompare(b.name ?? b.problem)
+      : +new Date(b.created_at) - +new Date(a.created_at)));
   const pages = Math.max(1, Math.ceil(visible.length / PAGE));
   const pageRows = visible.slice(page * PAGE, (page + 1) * PAGE);
   const pill = (on: boolean): CSSProperties => ({
@@ -111,8 +132,62 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
           {l} {k === "all" ? sims.length : sims.filter((x) => (k === "ran" ? !!x.runPosts : k === "draft" ? !x.runPosts : (x.reportCount ?? 0) > 0)).length}
         </button>
       ))}
+      <button onClick={() => { setFavOnly((v) => !v); setPage(0); }} title="Show only starred simulations" style={pill(favOnly)}>
+        ★ FAVORITES{favOnly ? ` ${starred.size}` : ""}
+      </button>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+        <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>SORT</span>
+        {([["newest", "NEWEST"], ["name", "NAME"]] as const).map(([k, l]) => (
+          <button key={k} onClick={() => setSort(k)} style={pill(sort === k)}>{l}</button>
+        ))}
+        {([["cards", "▦ CARDS"], ["list", "☰ LIST"]] as const).map(([k, l]) => (
+          <button key={k} onClick={() => { setView(k); setPage(0); }} title={k === "cards" ? "Card grid" : "Compact rows"} style={pill(view === k)}>{l}</button>
+        ))}
+      </span>
     </div>
-    <div className="grid3" style={{ marginTop: 22 }}>
+    {/* ☰ LIST (1b): compact rows, same data — favorites float first */}
+    {view === "list" && (
+      <div style={{ marginTop: 22, border: "1px solid var(--ln3)", borderRadius: 14, background: "var(--sf)", overflow: "hidden" }}>
+        {pageRows.map((s, i) => (
+          <Link
+            key={s.id}
+            href={`/sim/${s.id}`}
+            className="rowGo"
+            style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", borderTop: i === 0 ? "none" : "1px solid var(--ln1)" }}
+          >
+            {s.status === "running" ? (
+              <span title="Run in progress" style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />
+            ) : (
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: s.status === "complete" ? "var(--acc)" : "var(--ln5)", flex: "none" }} />
+            )}
+            <StarButton alwaysVisible on={starred.has(s.id)} onToggle={() => toggleStar(s.id)} style={{ flex: "none", width: 20, height: 20 }} />
+            <span style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {s.name ?? s.problem}
+            </span>
+            {s.runPosts ? (
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--acc)", border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 100, padding: "2px 9px", flex: "none" }}>
+                RAN · {(s.mode ?? "AGORA").toUpperCase()} · {s.runPosts} POSTS
+              </span>
+            ) : (
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t6)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "2px 9px", flex: "none" }}>
+                NOT RUN
+              </span>
+            )}
+            {(s.reportCount ?? 0) > 0 && (
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t4)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "2px 9px", flex: "none" }}>
+                {s.reportCount} REPORT{(s.reportCount ?? 0) > 1 ? "S" : ""}
+              </span>
+            )}
+            <span style={{ ...mono, fontSize: 8.5, color: "var(--t7)", flex: "none" }}>{new Date(s.created_at).toLocaleDateString()}</span>
+          </Link>
+        ))}
+        {pageRows.length === 0 && (
+          <p style={{ margin: 0, fontSize: 13, color: "var(--t6)", padding: "16px 18px" }}>Nothing matches these filters.</p>
+        )}
+      </div>
+    )}
+
+    <div className="grid3" style={{ marginTop: 22, display: view === "cards" ? undefined : "none" }}>
       {pageRows.map((s) => {
         const meta = [
           s.questionCount ? `${s.questionCount} QUESTIONS` : null,
@@ -210,6 +285,11 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
               )}
             </Link>
 
+            <StarButton
+              on={starred.has(s.id)}
+              onToggle={() => toggleStar(s.id)}
+              style={{ position: "absolute", top: 14, right: 42 }}
+            />
             {/* hover ⋮ */}
             <button
               className="rowActions"
@@ -226,53 +306,22 @@ export default function SimCards({ initialSims }: { initialSims: SimCardRow[] })
             </button>
 
             {menuOpen && (
-              <div
-                ref={menuRef}
-                style={{
-                  position: "absolute", top: 42, right: 12, zIndex: 40, width: 180,
-                  background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 12, padding: 6,
-                  boxShadow: "0 10px 28px rgba(0,0,0,.35)", animation: "fadeUp .15s ease both",
-                }}
-              >
-                <button
-                  onClick={() => { setRenaming(s.id); setNameDraft(s.name ?? ""); setMenuFor(null); }}
-                  style={{ width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12.5, background: "none", border: "none", borderRadius: 8, cursor: "pointer", color: "var(--t2)", fontFamily: "var(--font-sans), sans-serif" }}
-                >
-                  Rename
-                </button>
-                <Link
-                  href={`/sim/${s.id}`}
-                  style={{ display: "block", padding: "9px 12px", fontSize: 12.5, color: "var(--t2)", borderRadius: 8 }}
-                >
-                  Edit brief & setup
-                </Link>
-                {s.runPosts ? (
-                  <Link
-                    href={`/sim/${s.id}/run`}
-                    style={{ display: "block", padding: "9px 12px", fontSize: 12.5, color: "var(--t2)", borderRadius: 8 }}
-                  >
-                    Open the run
-                  </Link>
-                ) : null}
-                {(s.reportCount ?? 0) > 0 && (
-                  <Link
-                    href={`/sim/${s.id}/report`}
-                    style={{ display: "block", padding: "9px 12px", fontSize: 12.5, color: "var(--t2)", borderRadius: 8 }}
-                  >
-                    View report{(s.reportCount ?? 0) > 1 ? "s" : ""}
-                  </Link>
-                )}
-                <button
-                  onClick={() => (confirmFor === s.id ? void remove(s.id) : setConfirmFor(s.id))}
-                  style={{
-                    width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12.5,
-                    background: "none", border: "none", borderRadius: 8, cursor: "pointer",
-                    color: "var(--warn)", fontFamily: "var(--font-sans), sans-serif",
-                    fontWeight: confirmFor === s.id ? 600 : 400,
-                  }}
-                >
-                  {confirmFor === s.id ? "Really delete? This removes everything" : "Delete simulation"}
-                </button>
+              <div ref={menuRef} style={{ position: "absolute", top: 42, right: 12, zIndex: 40 }}>
+                <CardMenu
+                  header={`SIMULATION · ${s.status.toUpperCase()}`}
+                  entries={[
+                    { key: "edit", label: "Edit brief & setup", icon: MENU_ICONS.open, href: `/sim/${s.id}` },
+                    ...(s.runPosts ? [{ key: "run", label: "Open the run", icon: MENU_ICONS.run, href: `/sim/${s.id}/run` }] : []),
+                    ...((s.reportCount ?? 0) > 0 ? [{ key: "report", label: `View report${(s.reportCount ?? 0) > 1 ? "s" : ""}`, icon: MENU_ICONS.open, href: `/sim/${s.id}/report` }] : []),
+                    { key: "star", label: starred.has(s.id) ? "Remove from favorites" : "Add to favorites", icon: MENU_ICONS.star, onClick: () => { toggleStar(s.id); setMenuFor(null); } },
+                    { key: "rename", label: "Rename", icon: MENU_ICONS.rename, onClick: () => { setRenaming(s.id); setNameDraft(s.name ?? ""); setMenuFor(null); } },
+                    {
+                      key: "del", danger: true, icon: MENU_ICONS.trash, emphasized: confirmFor === s.id,
+                      label: confirmFor === s.id ? "Really delete? This removes everything" : "Delete simulation",
+                      onClick: () => (confirmFor === s.id ? void remove(s.id) : setConfirmFor(s.id)),
+                    },
+                  ]}
+                />
               </div>
             )}
           </div>

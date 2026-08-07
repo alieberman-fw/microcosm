@@ -54,6 +54,13 @@ export default async function ReportsPage() {
     };
   });
 
+  // favorites (1b): starred report sets (keyed by sim) float first
+  const { data: { user: authUser } } = await supabase!.auth.getUser();
+  const { data: prefRow } = authUser
+    ? await supabase!.from("users").select("prefs").eq("id", authUser.id).single()
+    : { data: null };
+  const starredReports = (((prefRow?.prefs ?? {}) as { starred_reports?: string[] }).starred_reports) ?? [];
+
   const mono = { fontFamily: "var(--font-mono), monospace" } as const;
 
   return (
@@ -66,7 +73,7 @@ export default async function ReportsPage() {
         Every completed run synthesizes into an interactive report — verdict, scores, cited findings,
         preserved dissents. Reports stay linked to their transcript forever.
       </p>
-      <ReportsClient initialRows={rows} />
+      <ReportsClient initialRows={rows} initialStarred={starredReports} />
     </div>
   );
 }
