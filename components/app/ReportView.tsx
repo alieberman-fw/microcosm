@@ -17,6 +17,7 @@ import { CSSProperties, useEffect, useState } from "react";
 import Link from "next/link";
 import { markReportSeen } from "@/components/app/ReportsBadge";
 import StageRail from "@/components/app/StageRail";
+import { ShareLinksButton } from "@/components/app/ShareLinks";
 import { LEAD_KIND_LABEL, ReportBlock, ReportLead, ReportPlain, ReportSpec, VERDICT_STYLE, fmtMoney } from "@/lib/report";
 import { LivePost } from "@/components/app/LiveRun";
 import Markdown from "@/components/app/Markdown";
@@ -691,7 +692,7 @@ function FileRail({ files }: { files: ReportFile[] }) {
 }
 
 export default function ReportView({
-  simId, problem, spec, posts, version, versions = [], reportId, name = null, mediaUrls = {}, files = [],
+  simId, problem, spec, posts, version, versions = [], reportId, name = null, mediaUrls = {}, files = [], shared = false,
 }: {
   simId: string;
   problem: string;
@@ -702,6 +703,9 @@ export default function ReportView({
   reportId?: string;
   /** display name: spec.name (user rename) → the sim's name/title → null */
   name?: string | null;
+  /** magic-link view (/r/<token>): read-only — no app links, no rename,
+   *  no version pills, no file rail; SIMPLIFY only when already cached */
+  shared?: boolean;
   /** PR-A — signed URLs for spec.media, keyed by storage path */
   mediaUrls?: Record<string, string>;
   /** C6 — every upload, corpus order, IMAGE-n ordinals + signed URLs */
@@ -710,7 +714,7 @@ export default function ReportView({
   const [flash, setFlash] = useState<number | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   // unread-reports badge: opening a report IS reading it
-  useEffect(() => { if (reportId) markReportSeen(reportId); }, [reportId]);
+  useEffect(() => { if (reportId && !shared) markReportSeen(reportId); }, [reportId, shared]);
   // the report's NAME — click the name itself to edit (no pencil); ONE name
   // owned by the simulation, so the rename shows on the dashboard card, the
   // reports tab, and every version at once
@@ -795,17 +799,25 @@ export default function ReportView({
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         {/* field fix: the ←/→ arrows read ambiguous — the report carries the
             SAME five-stage rail as the workspace and run screen (StageRail),
-            with 05 REPORT as the you-are-here pill. */}
-        <StageRail
-          stages={[
-            { label: "BRIEF", done: true, href: `/sim/${simId}`, title: "Back to the workspace — brief" },
-            { label: "CORPUS", done: true, href: `/sim/${simId}`, title: "Back to the workspace — corpus" },
-            { label: "POPULATION", done: true, href: `/sim/${simId}`, title: "Back to the workspace — population" },
-            { label: "RUN", done: true, href: `/sim/${simId}/run`, title: "Open the live run / transcript" },
-            { label: "REPORT", done: true, current: true, title: "You're here — the report" },
-          ]}
-        />
-        {reportId && (
+            with 05 REPORT as the you-are-here pill. Shared (magic-link)
+            views get a VIEW ONLY chip instead — no app links leak out. */}
+        {shared ? (
+          <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".1em", padding: "4px 13px", borderRadius: 100, border: "1px solid var(--ln5)", color: "var(--t5)" }}>
+            SHARED REPORT · VIEW ONLY
+          </span>
+        ) : (
+          <StageRail
+            stages={[
+              { label: "BRIEF", done: true, href: `/sim/${simId}`, title: "Back to the workspace — brief" },
+              { label: "CORPUS", done: true, href: `/sim/${simId}`, title: "Back to the workspace — corpus" },
+              { label: "POPULATION", done: true, href: `/sim/${simId}`, title: "Back to the workspace — population" },
+              { label: "RUN", done: true, href: `/sim/${simId}/run`, title: "Open the live run / transcript" },
+              { label: "REPORT", done: true, current: true, title: "You're here — the report" },
+            ]}
+          />
+        )}
+        {!shared && reportId && <ShareLinksButton simId={simId} />}
+        {(shared ? Boolean(spec.plain) : Boolean(reportId)) && (
           <button
             onClick={() => void togglePlain()}
             disabled={plainBusy}
@@ -823,7 +835,7 @@ export default function ReportView({
           </button>
         )}
         <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
-          {versions.length > 1 && versions.length <= 6 && versions.map((vn) => (
+          {!shared && versions.length > 1 && versions.length <= 6 && versions.map((vn) => (
             <Link key={vn} href={`/sim/${simId}/report?v=${vn}`} style={{
               ...mono, fontSize: 8.5, letterSpacing: ".05em", padding: "3px 10px", borderRadius: 100,
               border: `1px solid ${vn === version ? "var(--acc)" : "var(--ln4)"}`,
@@ -833,7 +845,7 @@ export default function ReportView({
               V{vn}
             </Link>
           ))}
-          {versions.length > 6 && (
+          {!shared && versions.length > 6 && (
             /* twenty versions would mean twenty pills — past six, a picker */
             <select
               value={version}
@@ -856,7 +868,11 @@ export default function ReportView({
           shows everywhere at once. */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 16 }}>
         <span style={{ ...mono, fontSize: 9, letterSpacing: ".12em", color: "var(--t6)", flex: "none" }}>REPORT</span>
-        {editingName ? (
+        {shared ? (
+          <span style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-.02em", color: "var(--t1)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {repName ?? "Shared report"}
+          </span>
+        ) : editingName ? (
           <input
             autoFocus
             value={nameDraft}
@@ -896,7 +912,7 @@ export default function ReportView({
 
       {plainErr && <div style={{ ...mono, fontSize: 10, color: "var(--warn)", marginTop: 10 }}>{plainErr}</div>}
 
-      <FileRail files={files} />
+      {!shared && <FileRail files={files} />}
 
       {/* C4: while the translation pass runs, the page becomes a shimmer
           skeleton of the simplified layout — never the OS busy cursor alone */}

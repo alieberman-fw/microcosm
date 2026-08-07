@@ -14,6 +14,7 @@ import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { seenReports } from "@/components/app/ReportsBadge";
+import { ShareLinksPanel } from "@/components/app/ShareLinks";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 const PAGE = 12;
@@ -65,6 +66,7 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
   const [renaming, setRenaming] = useState<string | null>(null); // sim_id being renamed
   const [nameDraft, setNameDraft] = useState("");
   const [seen, setSeen] = useState<Set<string> | null>(null); // unread dots (client-only)
+  const [linksFor, setLinksFor] = useState<string | null>(null); // magic-links panel (sim_id)
   const menuRef = useRef<HTMLDivElement>(null);
 
   // "seen" lives in localStorage — read after mount (no hydration mismatch),
@@ -382,6 +384,11 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
                 </div>
               )}
 
+              {linksFor === r.sim_id && (
+                <div style={{ position: "absolute", top: 42, right: 12, zIndex: 45 }}>
+                  <ShareLinksPanel simId={r.sim_id} onClose={() => setLinksFor(null)} />
+                </div>
+              )}
               <button
                 className="rowActions"
                 onClick={(e) => { e.preventDefault(); setMenuFor(menuOpen ? null : r.id); setConfirmFor(null); }}
@@ -411,6 +418,16 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
                   <Link href={`/sim/${r.sim_id}/run`} prefetch={false} style={{ display: "block", padding: "9px 12px", fontSize: 12.5, color: "var(--t2)", borderRadius: 8 }}>
                     View the run
                   </Link>
+                  <button
+                    onClick={() => { setLinksFor(r.sim_id); setMenuFor(null); }}
+                    style={{
+                      width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12.5,
+                      background: "none", border: "none", borderRadius: 8, cursor: "pointer",
+                      color: "var(--t2)", fontFamily: "var(--font-sans), sans-serif",
+                    }}
+                  >
+                    Share links…
+                  </button>
                   <button
                     onClick={() => { setNameDraft(r.name ?? ""); setRenaming(r.sim_id); setMenuFor(null); }}
                     style={{
