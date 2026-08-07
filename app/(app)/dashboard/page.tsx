@@ -46,6 +46,13 @@ export default async function Dashboard() {
     reportCount: s.reports?.[0]?.count ?? 0,
   }));
 
+  // favorites (1b): the user's starred sims float first and power ★ FAVORITES
+  const { data: { user: authUser } } = await supabase!.auth.getUser();
+  const { data: prefRow } = authUser
+    ? await supabase!.from("users").select("prefs").eq("id", authUser.id).single()
+    : { data: null };
+  const starredSims = (((prefRow?.prefs ?? {}) as { starred_sims?: string[] }).starred_sims) ?? [];
+
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "44px 40px 80px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 20, flexWrap: "wrap" }}>
@@ -68,7 +75,7 @@ export default async function Dashboard() {
           NO RUNS YET — START WITH THE BRIEF COMPOSER
         </p>
       )}
-      <SimCards initialSims={sims} />
+      <SimCards initialSims={sims} initialStarred={starredSims} />
     </div>
   );
 }

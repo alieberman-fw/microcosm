@@ -15,6 +15,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { seenReports } from "@/components/app/ReportsBadge";
 import { ShareLinksPanel } from "@/components/app/ShareLinks";
+import CardMenu, { MENU_ICONS } from "@/components/app/CardMenu";
+import StarButton from "@/components/app/StarButton";
+import { mergePrefs, toggleId } from "@/lib/prefs";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 const PAGE = 12;
@@ -52,7 +55,7 @@ const toneColor = (t: string) => (t === "go" ? "var(--acc)" : t === "split" ? "v
 /** exclusive buckets: a range/odds/finding report lives in INSIGHT, never in a tone */
 const bucketOf = (r: ReportRow) => (r.leadKind && r.leadKind !== "decision" ? "insight" : r.tone);
 
-export default function ReportsClient({ initialRows }: { initialRows: ReportRow[] }) {
+export default function ReportsClient({ initialRows, initialStarred = [] }: { initialRows: ReportRow[]; initialStarred?: string[] }) {
   const router = useRouter();
   const [rows, setRows] = useState<ReportRow[]>(initialRows);
   const [q, setQ] = useState("");
@@ -67,6 +70,16 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
   const [nameDraft, setNameDraft] = useState("");
   const [seen, setSeen] = useState<Set<string> | null>(null); // unread dots (client-only)
   const [linksFor, setLinksFor] = useState<string | null>(null); // magic-links panel (sim_id)
+  // favorites (1b): stars key by sim_id — a report set shares one star
+  const [starred, setStarred] = useState<Set<string>>(new Set(initialStarred));
+  const [favOnly, setFavOnly] = useState(false);
+  const toggleStar = (simId: string) => {
+    setStarred((prev) => {
+      const next = toggleId([...prev], simId);
+      void mergePrefs({ starred_reports: next });
+      return new Set(next);
+    });
+  };
   const menuRef = useRef<HTMLDivElement>(null);
 
   // "seen" lives in localStorage — read after mount (no hydration mismatch),
@@ -112,21 +125,25 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
     }
     return [...bySim.values()]
       .map((list) => ({ latest: [...list].sort((a, b) => b.version - a.version)[0], versions: list.length, all: list }))
-      .sort((a, b) => +new Date(b.latest.created_at) - +new Date(a.latest.created_at));
-  }, [rows]);
+      .sort((a, b) =>
+        // favorites float first, newest within each band
+        (Number(starred.has(b.latest.sim_id)) - Number(starred.has(a.latest.sim_id)))
+        || (+new Date(b.latest.created_at) - +new Date(a.latest.created_at)));
+  }, [rows, starred]);
 
   const needle = q.trim().toLowerCase();
   const matches = (r: ReportRow) => !needle || `${r.name ?? ""} ${r.problem} ${r.headline} ${r.label}`.toLowerCase().includes(needle);
   const visible = grouped.filter((g) => {
+    if (favOnly && !starred.has(g.latest.sim_id)) return false;
     if (tone !== "all" && bucketOf(g.latest) !== tone) return false;
     return matches(g.latest);
   });
   // FLAT: every version is its own row, newest first
   const flatRows = useMemo(() =>
     [...rows].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
-      .filter((r) => (tone === "all" || bucketOf(r) === tone) && matches(r)),
+      .filter((r) => (!favOnly || starred.has(r.sim_id)) && (tone === "all" || bucketOf(r) === tone) && matches(r)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rows, tone, needle]);
+    [rows, tone, needle, favOnly, starred]);
   const countFor = (t: string) => view === "flat"
     ? (t === "all" ? rows.length : rows.filter((r) => bucketOf(r) === t).length)
     : (t === "all" ? grouped.length : grouped.filter((g) => bucketOf(g.latest) === t).length);
@@ -135,7 +152,7 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
   const pages = Math.max(1, Math.ceil(total / perPage));
   const pageRows = visible.slice(page * PAGE, page * PAGE + PAGE);
   const pageFlat = flatRows.slice(page * perPage, page * perPage + perPage);
-  useEffect(() => { setPage(0); }, [q, tone, view]);
+  useEffect(() => { setPage(0); }, [q, tone, view, favOnly]);
 
   const remove = async (report: ReportRow, wholeSet: boolean) => {
     const ids = wholeSet ? rows.filter((r) => r.sim_id === report.sim_id).map((r) => r.id) : [report.id];
@@ -196,6 +213,19 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
             );
           })}
         </div>
+        <button
+          onClick={() => setFavOnly((v) => !v)}
+          title="Show only starred reports"
+          style={{
+            ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "5px 12px", borderRadius: 100,
+            cursor: "pointer", transition: "all .15s",
+            background: favOnly ? "var(--acc-dim)" : "transparent",
+            border: `1px solid ${favOnly ? "var(--acc)" : "var(--ln4)"}`,
+            color: favOnly ? "var(--acc)" : "var(--t6)",
+          }}
+        >
+          ★ FAVORITES{favOnly ? ` · ${starred.size}` : ""}
+        </button>
         {/* GROUPED (one card per simulation) vs FLAT (every version, one row) */}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           {(["grouped", "flat"] as const).map((v) => (
@@ -239,6 +269,7 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
                   ...(seen !== null && !seen.has(r.id) ? { animation: "pulseDot 1.6s ease infinite" } : {}),
                 }}
               />
+              <StarButton alwaysVisible on={starred.has(r.sim_id)} onToggle={() => toggleStar(r.sim_id)} style={{ flex: "none", width: 20, height: 20 }} />
               <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--acc)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "3px 10px", flex: "none" }}>
                 V{r.version}
               </span>
@@ -389,6 +420,11 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
                   <ShareLinksPanel simId={r.sim_id} onClose={() => setLinksFor(null)} />
                 </div>
               )}
+              <StarButton
+                on={starred.has(r.sim_id)}
+                onToggle={() => toggleStar(r.sim_id)}
+                style={{ position: "absolute", top: 14, right: 42 }}
+              />
               <button
                 className="rowActions"
                 onClick={(e) => { e.preventDefault(); setMenuFor(menuOpen ? null : r.id); setConfirmFor(null); }}
@@ -404,64 +440,27 @@ export default function ReportsClient({ initialRows }: { initialRows: ReportRow[
               </button>
 
               {menuOpen && (
-                <div
-                  ref={menuRef}
-                  style={{
-                    position: "absolute", top: 42, right: 12, zIndex: 40, width: 210,
-                    background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 12, padding: 6,
-                    boxShadow: "0 10px 28px rgba(0,0,0,.35)", animation: "fadeUp .15s ease both",
-                  }}
-                >
-                  <Link href={`/sim/${r.sim_id}/report`} style={{ display: "block", padding: "9px 12px", fontSize: 12.5, color: "var(--t2)", borderRadius: 8 }}>
-                    Open the report
-                  </Link>
-                  <Link href={`/sim/${r.sim_id}/run`} prefetch={false} style={{ display: "block", padding: "9px 12px", fontSize: 12.5, color: "var(--t2)", borderRadius: 8 }}>
-                    View the run
-                  </Link>
-                  <button
-                    onClick={() => { setLinksFor(r.sim_id); setMenuFor(null); }}
-                    style={{
-                      width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12.5,
-                      background: "none", border: "none", borderRadius: 8, cursor: "pointer",
-                      color: "var(--t2)", fontFamily: "var(--font-sans), sans-serif",
-                    }}
-                  >
-                    Share links…
-                  </button>
-                  <button
-                    onClick={() => { setNameDraft(r.name ?? ""); setRenaming(r.sim_id); setMenuFor(null); }}
-                    style={{
-                      width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12.5,
-                      background: "none", border: "none", borderRadius: 8, cursor: "pointer",
-                      color: "var(--t2)", fontFamily: "var(--font-sans), sans-serif",
-                    }}
-                  >
-                    Rename
-                  </button>
-                  <button
-                    onClick={() => (confirmFor === r.id ? void remove(r, false) : setConfirmFor(r.id))}
-                    style={{
-                      width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12.5,
-                      background: "none", border: "none", borderRadius: 8, cursor: "pointer",
-                      color: "var(--warn)", fontFamily: "var(--font-sans), sans-serif",
-                      fontWeight: confirmFor === r.id ? 600 : 400,
-                    }}
-                  >
-                    {confirmFor === r.id ? `Really delete V${r.version}? The run stays` : `Delete V${r.version}${g.versions > 1 ? " (latest)" : ""}`}
-                  </button>
-                  {g.versions > 1 && (
-                    <button
-                      onClick={() => (confirmFor === `${r.id}-all` ? void remove(r, true) : setConfirmFor(`${r.id}-all`))}
-                      style={{
-                        width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12.5,
-                        background: "none", border: "none", borderRadius: 8, cursor: "pointer",
-                        color: "var(--warn)", fontFamily: "var(--font-sans), sans-serif",
-                        fontWeight: confirmFor === `${r.id}-all` ? 600 : 400,
-                      }}
-                    >
-                      {confirmFor === `${r.id}-all` ? `Really delete all ${g.versions}?` : `Delete all ${g.versions} versions`}
-                    </button>
-                  )}
+                <div ref={menuRef} style={{ position: "absolute", top: 42, right: 12, zIndex: 40 }}>
+                  <CardMenu
+                    header={`REPORT · V${r.version}${g.versions > 1 ? ` OF ${g.versions}` : ""}`}
+                    entries={[
+                      { key: "open", label: "Open the report", icon: MENU_ICONS.open, href: `/sim/${r.sim_id}/report` },
+                      { key: "run", label: "View the run", icon: MENU_ICONS.run, href: `/sim/${r.sim_id}/run` },
+                      { key: "star", label: starred.has(r.sim_id) ? "Remove from favorites" : "Add to favorites", icon: MENU_ICONS.star, onClick: () => { toggleStar(r.sim_id); setMenuFor(null); } },
+                      { key: "share", label: "Share links…", icon: MENU_ICONS.share, onClick: () => { setLinksFor(r.sim_id); setMenuFor(null); } },
+                      { key: "rename", label: "Rename", icon: MENU_ICONS.rename, onClick: () => { setNameDraft(r.name ?? ""); setRenaming(r.sim_id); setMenuFor(null); } },
+                      {
+                        key: "del", danger: true, icon: MENU_ICONS.trash, emphasized: confirmFor === r.id,
+                        label: confirmFor === r.id ? `Really delete V${r.version}? The run stays` : `Delete V${r.version}${g.versions > 1 ? " (latest)" : ""}`,
+                        onClick: () => (confirmFor === r.id ? void remove(r, false) : setConfirmFor(r.id)),
+                      },
+                      ...(g.versions > 1 ? [{
+                        key: "delall", danger: true, icon: MENU_ICONS.trash, emphasized: confirmFor === `${r.id}-all`,
+                        label: confirmFor === `${r.id}-all` ? `Really delete all ${g.versions}?` : `Delete all ${g.versions} versions`,
+                        onClick: () => (confirmFor === `${r.id}-all` ? void remove(r, true) : setConfirmFor(`${r.id}-all`)),
+                      }] : []),
+                    ]}
+                  />
                 </div>
               )}
             </div>
