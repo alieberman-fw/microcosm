@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { seenReports } from "@/components/app/ReportsBadge";
 import { ShareLinksPanel } from "@/components/app/ShareLinks";
+import ViewToggle from "@/components/app/ViewToggle";
 import CardMenu, { MENU_ICONS } from "@/components/app/CardMenu";
 import StarButton from "@/components/app/StarButton";
 import { mergePrefs, toggleId } from "@/lib/prefs";
@@ -179,18 +180,22 @@ export default function ReportsClient({ initialRows, initialStarred = [] }: { in
 
   return (
     <div style={{ marginTop: 26 }}>
-      {/* search + verdict filters */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search reports…"
-          style={{
-            width: 260, padding: "9px 14px", background: "var(--sf)", border: "1px solid var(--ln3)",
-            borderRadius: 100, fontFamily: "var(--font-sans), sans-serif", fontSize: 12.5,
-            color: "var(--t1)", outline: "none",
-          }}
-        />
+      {/* the toolbar (field fix): search, tone filters, favorites, and the
+          grouped/all-versions view toggle in ONE cohesive bar */}
+      <div style={{
+        display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap",
+        padding: "9px 14px", background: "var(--sf)", border: "1px solid var(--ln3)", borderRadius: 14,
+      }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flex: 1, minWidth: 190 }}>
+          <span style={{ color: "var(--t6)", fontSize: 14, flex: "none" }}>⌕</span>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search reports…"
+            style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontFamily: "var(--font-sans), sans-serif", fontSize: 13, color: "var(--t1)", padding: "6px 0" }}
+          />
+        </span>
+        <span aria-hidden style={{ width: 1, height: 20, background: "var(--ln3)", flex: "none" }} />
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {TONES.map((t) => {
             const on = tone === t.key;
@@ -213,38 +218,16 @@ export default function ReportsClient({ initialRows, initialStarred = [] }: { in
             );
           })}
         </div>
-        <button
-          onClick={() => setFavOnly((v) => !v)}
-          title="Show only starred reports"
-          style={{
-            ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "5px 12px", borderRadius: 100,
-            cursor: "pointer", transition: "all .15s",
-            background: favOnly ? "var(--acc-dim)" : "transparent",
-            border: `1px solid ${favOnly ? "var(--acc)" : "var(--ln4)"}`,
-            color: favOnly ? "var(--acc)" : "var(--t6)",
-          }}
-        >
-          ★ FAVORITES{favOnly ? ` · ${starred.size}` : ""}
-        </button>
-        {/* GROUPED (one card per simulation) vs FLAT (every version, one row) */}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          {(["grouped", "flat"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              title={v === "grouped" ? "One card per simulation — latest version leads" : "Every version as its own row"}
-              style={{
-                ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "5px 12px", borderRadius: 100,
-                cursor: "pointer", transition: "all .15s",
-                background: view === v ? "var(--acc-dim)" : "transparent",
-                border: `1px solid ${view === v ? "var(--acc)" : "var(--ln4)"}`,
-                color: view === v ? "var(--acc)" : "var(--t6)",
-              }}
-            >
-              {v === "grouped" ? "▦ GROUPED" : "☰ ALL VERSIONS"}
-            </button>
-          ))}
-        </div>
+        <StarButton alwaysVisible on={favOnly} onToggle={() => setFavOnly((v) => !v)} style={{ flex: "none" }} />
+        <span aria-hidden style={{ width: 1, height: 20, background: "var(--ln3)", flex: "none" }} />
+        <ViewToggle
+          value={view}
+          onChange={setView}
+          options={[
+            { key: "grouped" as const, icon: "▦", title: "One card per simulation — latest version leads" },
+            { key: "flat" as const, icon: "☰", title: "Every version as its own row" },
+          ]}
+        />
       </div>
 
       {view === "flat" && (
@@ -319,7 +302,19 @@ export default function ReportsClient({ initialRows, initialStarred = [] }: { in
                       </span>
                     )}
                   </span>
-                  <span style={{ flex: "none" }}>{new Date(r.created_at).toLocaleDateString()}</span>
+                  <span style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 7 }}>
+                    {starred.has(r.sim_id) && (
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleStar(r.sim_id); }}
+                        title="Starred — click to remove from favorites"
+                        aria-label="Remove from favorites"
+                        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--acc)", display: "inline-flex" }}
+                      >
+                        <svg width={12} height={12} viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+                      </button>
+                    )}
+                    {new Date(r.created_at).toLocaleDateString()}
+                  </span>
                 </div>
                 {renaming === r.sim_id ? (
                   <input
@@ -420,11 +415,6 @@ export default function ReportsClient({ initialRows, initialStarred = [] }: { in
                   <ShareLinksPanel simId={r.sim_id} onClose={() => setLinksFor(null)} />
                 </div>
               )}
-              <StarButton
-                on={starred.has(r.sim_id)}
-                onToggle={() => toggleStar(r.sim_id)}
-                style={{ position: "absolute", top: 14, right: 42 }}
-              />
               <button
                 className="rowActions"
                 onClick={(e) => { e.preventDefault(); setMenuFor(menuOpen ? null : r.id); setConfirmFor(null); }}

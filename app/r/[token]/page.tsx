@@ -3,6 +3,7 @@ import ReportView from "@/components/app/ReportView";
 import { ReportSpec } from "@/lib/report";
 import { LivePost } from "@/components/app/LiveRun";
 import { createAdminSupabase } from "@/lib/supabase/admin";
+import SharedThemeSwitch from "@/components/app/SharedThemeSwitch";
 
 /**
  * The magic-link view (pre-5a feature batch): /r/<token> renders one
@@ -20,6 +21,7 @@ const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 function DeadLink({ reason }: { reason: string }) {
   return (
     <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+      <SharedThemeSwitch />
       <div className="card" style={{ maxWidth: 460, padding: "30px 34px", textAlign: "center" }}>
         <div style={{ ...mono, fontSize: 10, letterSpacing: ".12em", color: "var(--t6)" }}>MICROCOSM · SHARED REPORT</div>
         <h1 style={{ margin: "14px 0 0", fontSize: 21, fontWeight: 600, letterSpacing: "-.02em" }}>{reason}</h1>
@@ -72,15 +74,18 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
     ?? null;
 
   return (
-    <ReportView
-      shared
-      simId={sim.id as string}
-      problem={(sim.brief as { problem?: string } | null)?.problem ?? ""}
-      name={name}
-      spec={spec}
-      posts={posts}
-      version={report.version as number}
-      mediaUrls={mediaUrls}
-    />
+    <>
+      <SharedThemeSwitch />
+      <ReportView
+        shared
+        simId={sim.id as string}
+        problem={(sim.brief as { problem?: string } | null)?.problem ?? ""}
+        name={name}
+        spec={spec}
+        posts={posts}
+        version={report.version as number}
+        mediaUrls={mediaUrls}
+      />
+    </>
   );
 }

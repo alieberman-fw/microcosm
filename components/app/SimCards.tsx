@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 
 import CardMenu, { MENU_ICONS } from "@/components/app/CardMenu";
 import StarButton from "@/components/app/StarButton";
+import ViewToggle from "@/components/app/ViewToggle";
 import { mergePrefs, toggleId } from "@/lib/prefs";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -120,30 +121,51 @@ export default function SimCards({ initialSims, initialStarred = [] }: { initial
 
   return (
     <>
-    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 26 }}>
-      <input
-        value={q}
-        onChange={(e) => { setQ(e.target.value); setPage(0); }}
-        placeholder="Search simulations…"
-        style={{ flex: 1, minWidth: 220, maxWidth: 380, padding: "10px 16px", background: "var(--sf)", border: "1px solid var(--ln3)", borderRadius: 100, fontFamily: "var(--font-sans), sans-serif", fontSize: 13, color: "var(--t1)", outline: "none" }}
-      />
+    {/* the toolbar (field fix): search, filters, favorites, sort, and the
+        view toggle in ONE cohesive bar — segmented control, icon star */}
+    <div style={{
+      display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 26,
+      padding: "9px 14px", background: "var(--sf)", border: "1px solid var(--ln3)", borderRadius: 14,
+    }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flex: 1, minWidth: 200 }}>
+        <span style={{ color: "var(--t6)", fontSize: 14, flex: "none" }}>⌕</span>
+        <input
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setPage(0); }}
+          placeholder="Search simulations…"
+          style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontFamily: "var(--font-sans), sans-serif", fontSize: 13, color: "var(--t1)", padding: "6px 0" }}
+        />
+      </span>
+      <span aria-hidden style={{ width: 1, height: 20, background: "var(--ln3)", flex: "none" }} />
       {([["all", "ALL"], ["ran", "RAN"], ["draft", "NOT RUN"], ["reported", "HAS REPORT"]] as const).map(([k, l]) => (
         <button key={k} onClick={() => { setFilter(k); setPage(0); }} style={pill(filter === k)}>
           {l} {k === "all" ? sims.length : sims.filter((x) => (k === "ran" ? !!x.runPosts : k === "draft" ? !x.runPosts : (x.reportCount ?? 0) > 0)).length}
         </button>
       ))}
-      <button onClick={() => { setFavOnly((v) => !v); setPage(0); }} title="Show only starred simulations" style={pill(favOnly)}>
-        ★ FAVORITES{favOnly ? ` ${starred.size}` : ""}
-      </button>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+      <StarButton
+        alwaysVisible
+        on={favOnly}
+        onToggle={() => { setFavOnly((v) => !v); setPage(0); }}
+        style={{ flex: "none" }}
+      />
+      <span aria-hidden style={{ width: 1, height: 20, background: "var(--ln3)", flex: "none" }} />
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, flex: "none" }}>
         <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>SORT</span>
-        {([["newest", "NEWEST"], ["name", "NAME"]] as const).map(([k, l]) => (
-          <button key={k} onClick={() => setSort(k)} style={pill(sort === k)}>{l}</button>
-        ))}
-        {([["cards", "▦ CARDS"], ["list", "☰ LIST"]] as const).map(([k, l]) => (
-          <button key={k} onClick={() => { setView(k); setPage(0); }} title={k === "cards" ? "Card grid" : "Compact rows"} style={pill(view === k)}>{l}</button>
-        ))}
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as "newest" | "name")}
+          aria-label="Sort simulations"
+          style={{ fontFamily: "var(--font-mono), monospace", fontSize: 9.5, letterSpacing: ".05em", padding: "5px 8px", borderRadius: 8, background: "var(--sf2)", border: "1px solid var(--ln4)", color: "var(--t3)", cursor: "pointer" }}
+        >
+          <option value="newest">NEWEST</option>
+          <option value="name">NAME</option>
+        </select>
       </span>
+      <ViewToggle
+        value={view}
+        onChange={(v) => { setView(v); setPage(0); }}
+        options={[{ key: "cards" as const, icon: "▦", title: "Card grid" }, { key: "list" as const, icon: "☰", title: "Compact rows" }]}
+      />
     </div>
     {/* ☰ LIST (1b): compact rows, same data — favorites float first */}
     {view === "list" && (
@@ -206,7 +228,19 @@ export default function SimCards({ initialSims, initialStarred = [] }: { initial
           <div key={s.id} className="card simCard" style={{ position: "relative", opacity: deleting === s.id ? 0.4 : 1, transition: "opacity .2s" }}>
             <Link href={`/sim/${s.id}`} style={{ display: "block", padding: "26px 28px" }}>
               <div style={{ ...mono, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10, letterSpacing: ".07em", color: "var(--t6)", paddingRight: 22 }}>
-                <span>{new Date(s.created_at).toLocaleDateString()}</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                  {starred.has(s.id) && (
+                    <button
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleStar(s.id); }}
+                      title="Starred — click to remove from favorites"
+                      aria-label="Remove from favorites"
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--acc)", display: "inline-flex" }}
+                    >
+                      <svg width={12} height={12} viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+                    </button>
+                  )}
+                  {new Date(s.created_at).toLocaleDateString()}
+                </span>
                 {s.status === "running" ? (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 7, color: "var(--acc)" }}>
                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite" }} />
@@ -285,11 +319,6 @@ export default function SimCards({ initialSims, initialStarred = [] }: { initial
               )}
             </Link>
 
-            <StarButton
-              on={starred.has(s.id)}
-              onToggle={() => toggleStar(s.id)}
-              style={{ position: "absolute", top: 14, right: 42 }}
-            />
             {/* hover ⋮ */}
             <button
               className="rowActions"
