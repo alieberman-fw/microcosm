@@ -28,6 +28,7 @@ import { MAX_DOC_BYTES } from "@/lib/corpus";
 import { SIM_MODES } from "@/lib/casting";
 import { BriefContract } from "@/lib/understand";
 import { RUN_DEFAULTS, RunConfig, estimateRunCost, isFixedShape } from "@/lib/run";
+import { TOOL_RACK } from "@/lib/tools";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -52,6 +53,11 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
   const [rounds, setRounds] = useState(RUN_DEFAULTS.rounds);
   const [tier, setTier] = useState<RunConfig["tier"]>(RUN_DEFAULTS.tier);
   const [density, setDensity] = useState<RunConfig["density"]>(RUN_DEFAULTS.density);
+  // agent tools (§7 rack): the allowlist for this run — ALL OFF by default,
+  // picked from a popover (same contract as the classic run config's cards)
+  const [toolSel, setToolSel] = useState<string[]>([]);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsRef = useRef<HTMLSpanElement>(null);
   const [running, setRunning] = useState(false);
   const [stages, setStages] = useState<Stage[]>([]);
   const [understood, setUnderstood] = useState<string | null>(null);
@@ -68,6 +74,16 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
   const createdId = useRef<string | null>(null); // retry-safe: never mint a second sim
 
   const typing = problem.trim().length > 20;
+
+  // the tools popover closes on any outside click
+  useEffect(() => {
+    if (!toolsOpen) return;
+    const close = (e: MouseEvent) => {
+      if (toolsRef.current && !toolsRef.current.contains(e.target as Node)) setToolsOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [toolsOpen]);
 
   const autosize = () => {
     const el = boxRef.current;
@@ -254,7 +270,7 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
       await fetch(`/api/simulations/${id}/config`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...(mode ? { mode } : {}), run: { rounds, tier, density } }),
+        body: JSON.stringify({ ...(mode ? { mode } : {}), run: { rounds, tier, density }, tools: toolSel }),
       });
 
       // 5 · cast — the classic casting-theater swarm plays while seats land
@@ -471,6 +487,104 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
               {(["focused", "lively", "bustling"] as const).map((d) => (
                 <button key={d} onClick={() => setDensity(d)} style={pill(density === d)}>{d.toUpperCase()}</button>
               ))}
+            </span>
+
+            {/* AGENT TOOLS (§7 rack) — a picker in the Claude grammar: the
+                pill states what's on; the popover lists the rack with
+                per-tool toggles + ENABLE ALL / ALL OFF. All off by default. */}
+            <span ref={toolsRef} style={{ display: "inline-flex", alignItems: "center", gap: 6, position: "relative" }}>
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>TOOLS</span>
+              <button
+                onClick={() => setToolsOpen((v) => !v)}
+                aria-expanded={toolsOpen}
+                style={pill(toolSel.length > 0)}
+              >
+                {toolSel.length === 0 ? "⚒ OFF" : `⚒ ${toolSel.length} ON`} {toolsOpen ? "▴" : "▾"}
+              </button>
+              {/* the selected tools, visible at a glance */}
+              {toolSel.map((k) => {
+                const t = TOOL_RACK.find((x) => x.key === k);
+                return t ? (
+                  <span key={k} style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", padding: "4px 11px", borderRadius: 100, border: "1px solid var(--acc)", background: "var(--acc-dim)", color: "var(--acc)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    {t.name.toUpperCase()}
+                    <button
+                      onClick={() => setToolSel((prev) => prev.filter((x) => x !== k))}
+                      aria-label={`Disable ${t.name}`}
+                      style={{ background: "none", border: "none", color: "var(--acc)", cursor: "pointer", padding: 0, fontSize: 11, lineHeight: 1 }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ) : null;
+              })}
+
+              {toolsOpen && (
+                <div
+                  style={{
+                    position: "absolute", top: "calc(100% + 8px)", left: 0, zIndex: 50, width: 340,
+                    background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 14, padding: 10,
+                    boxShadow: "0 12px 32px rgba(0,0,0,.35)", animation: "fadeUp .18s ease both",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 8px 10px", borderBottom: "1px solid var(--ln3)" }}>
+                    <span style={{ ...mono, fontSize: 9, letterSpacing: ".1em", color: "var(--t6)" }}>AGENT TOOLS — AGENTS DECIDE WHEN TO USE THEM</span>
+                  </div>
+                  {TOOL_RACK.map((t) => {
+                    const available = t.status === "available";
+                    const on = toolSel.includes(t.key);
+                    return (
+                      <button
+                        key={t.key}
+                        disabled={!available}
+                        onClick={() => setToolSel((prev) => (on ? prev.filter((x) => x !== t.key) : [...prev, t.key]))}
+                        style={{
+                          width: "100%", textAlign: "left", display: "flex", alignItems: "flex-start", gap: 10,
+                          background: "none", border: "none", borderRadius: 10, padding: "10px 8px",
+                          cursor: available ? "pointer" : "default", opacity: available ? 1 : 0.45,
+                        }}
+                      >
+                        {/* the toggle dot — checked = accent-filled */}
+                        <span style={{
+                          width: 14, height: 14, borderRadius: 5, flex: "none", marginTop: 1, boxSizing: "border-box",
+                          border: `1px solid ${on ? "var(--acc)" : "var(--ln6)"}`,
+                          background: on ? "var(--acc)" : "transparent",
+                          color: "var(--acc-c)", fontSize: 10, lineHeight: "12px", textAlign: "center",
+                        }}>
+                          {on ? "✓" : ""}
+                        </span>
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--t2)", fontFamily: "var(--font-sans), sans-serif" }}>{t.name}</span>
+                            {!available && (
+                              <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".06em", color: "var(--t7)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "1px 7px" }}>SOON</span>
+                            )}
+                          </span>
+                          <span style={{ ...mono, display: "block", fontSize: 8, letterSpacing: ".06em", color: "var(--t6)", marginTop: 3 }}>
+                            {t.tagline} · {t.costNote.toUpperCase()}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <div style={{ display: "flex", gap: 6, padding: "10px 8px 4px", borderTop: "1px solid var(--ln3)" }}>
+                    <button
+                      onClick={() => setToolSel(TOOL_RACK.filter((t) => t.status === "available").map((t) => t.key))}
+                      style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "5px 12px", borderRadius: 100, border: "1px solid var(--acc)", background: "var(--acc-dim)", color: "var(--acc)", cursor: "pointer" }}
+                    >
+                      ENABLE ALL
+                    </button>
+                    <button
+                      onClick={() => setToolSel([])}
+                      style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "5px 12px", borderRadius: 100, border: "1px solid var(--ln5)", background: "transparent", color: "var(--t5)", cursor: "pointer" }}
+                    >
+                      ALL OFF
+                    </button>
+                    <span style={{ ...mono, marginLeft: "auto", fontSize: 8, letterSpacing: ".05em", color: "var(--t7)", alignSelf: "center" }}>
+                      OFF BY DEFAULT
+                    </span>
+                  </div>
+                </div>
+              )}
             </span>
           </div>
         </div>
