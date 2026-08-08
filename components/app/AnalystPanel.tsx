@@ -20,7 +20,9 @@ const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
 interface CastEntry { key: string; name: string; role: string; tier: "lead" | "crowd" }
 interface ThreadMeta { id: string; title: string; updated_at: string }
-interface Msg { role: "user" | "agent"; key?: string; name?: string; agentRole?: string; content: string }
+interface ArtifactMeta { id: string; name: string; created_at?: string; updated_at?: string }
+interface ArtifactRef { id: string; name: string; action: "created" | "updated" | "deleted" }
+interface Msg { role: "user" | "agent"; key?: string; name?: string; agentRole?: string; content: string; artifacts?: ArtifactRef[] }
 
 const MIN_W = 340;
 const DEFAULT_W = 460;
@@ -52,6 +54,15 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
   const [model, setModel] = useState<string>("claude-sonnet-5");
   const [modelOpen, setModelOpen] = useState(false);
   const [webSearch, setWebSearch] = useState(false);
+  // artifacts — the analyst's generated documents (report-only section)
+  const [artifacts, setArtifacts] = useState<ArtifactMeta[]>([]);
+  const [docsOpen, setDocsOpen] = useState(false);
+  const [viewing, setViewing] = useState<ArtifactMeta | null>(null);
+  const [viewDoc, setViewDoc] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameVal, setRenameVal] = useState("");
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const pendingRefs = useRef<ArtifactRef[]>([]);
   // @mention typeahead
   const [mentionQ, setMentionQ] = useState<string | null>(null);
   const mentionKeys = useRef<Set<string>>(new Set());
@@ -66,7 +77,7 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
       try {
         const res = await fetch(`/api/simulations/${simId}/analyst`);
         const data = await res.json();
-        if (res.ok) { setThreads(data.threads); setCast(data.cast); }
+        if (res.ok) { setThreads(data.threads); setCast(data.cast); setArtifacts(data.artifacts ?? []); }
       } catch { /* the panel still works — threads just start empty */ }
     })();
   }, [open, simId]);
@@ -99,14 +110,61 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
       const res = await fetch(`/api/analyst/${id}`);
       const data = await res.json();
       if (res.ok) {
-        setMsgs((data.messages as { role: string; agent_key?: string; agent_name?: string; content: string }[]).map((m) => ({
+        setMsgs((data.messages as { role: string; agent_key?: string; agent_name?: string; content: string; attachments?: (ArtifactRef & { kind?: string })[] }[]).map((m) => ({
           role: m.role === "user" ? "user" : "agent",
           key: m.agent_key ?? undefined,
           name: m.agent_name ?? "Analyst",
           content: m.content,
+          artifacts: (m.attachments ?? []).filter((a) => a.kind === "artifact"),
         })));
       }
     } catch { setError("Could not load the thread"); }
+  }, []);
+
+  // ---- artifact actions (the documents section) ----
+  // documents render through our own /html route (Storage serves text/html
+  // as text/plain by design) — fetched here, then srcdoc'd into a fully
+  // sandboxed iframe: script-dead, and a deleted document gets a clean
+  // error instead of raw JSON in the frame
+  const openArtifact = useCallback(async (a: { id: string; name: string }) => {
+    setDocsOpen(true);
+    setViewing({ id: a.id, name: a.name });
+    setViewDoc(null);
+    try {
+      const res = await fetch(`/api/artifacts/${a.id}/html`);
+      if (!res.ok) {
+        setViewing(null);
+        setArtifacts((prev) => prev.filter((x) => x.id !== a.id));
+        setError(res.status === 404 ? "That document was deleted" : "Could not open the document");
+        return;
+      }
+      setViewDoc(await res.text());
+    } catch {
+      setViewing(null);
+      setError("Could not open the document");
+    }
+  }, []);
+
+  const openArtifactTab = useCallback((a: { id: string }) => {
+    window.open(`/api/artifacts/${a.id}/html`, "_blank", "noopener");
+  }, []);
+
+  const renameArtifact = useCallback(async (id: string, name: string) => {
+    const trimmed = name.trim();
+    setRenamingId(null);
+    if (!trimmed) return;
+    setArtifacts((prev) => prev.map((x) => (x.id === id ? { ...x, name: trimmed } : x)));
+    setViewing((v) => (v && v.id === id ? { ...v, name: trimmed } : v));
+    await fetch(`/api/artifacts/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: trimmed }),
+    });
+  }, []);
+
+  const deleteArtifact = useCallback(async (id: string) => {
+    setConfirmDel(null);
+    setArtifacts((prev) => prev.filter((x) => x.id !== id));
+    setViewing((v) => (v && v.id === id ? null : v));
+    await fetch(`/api/artifacts/${id}`, { method: "DELETE" });
   }, []);
 
   const freshThread = () => { setThreadId(null); setMsgs([]); setError(null); mentionKeys.current.clear(); };
@@ -145,16 +203,27 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
         buf = lines.pop() ?? "";
         for (const line of lines) {
           if (!line.trim()) continue;
-          let evt: { type?: string; id?: string; key?: string; name?: string; role?: string; content?: string; error?: string } = {};
+          let evt: { type?: string; id?: string; key?: string; name?: string; role?: string; content?: string; error?: string; action?: string; artifact?: ArtifactMeta } = {};
           try { evt = JSON.parse(line); } catch { continue; }
           if (evt.type === "thread" && evt.id) {
             setThreadId(evt.id);
             setThreads((prev) => (prev.some((t) => t.id === evt.id) ? prev : [{ id: evt.id!, title: content.slice(0, 64), updated_at: new Date().toISOString() }, ...prev]));
           }
           if (evt.type === "typing") setTyping(evt.name ?? "Analyst");
+          if (evt.type === "artifact" && evt.artifact) {
+            const a = evt.artifact;
+            const action = (evt.action ?? "created") as ArtifactRef["action"];
+            pendingRefs.current.push({ id: a.id, name: a.name, action });
+            setArtifacts((prev) => {
+              if (action === "deleted") return prev.filter((x) => x.id !== a.id);
+              if (action === "created") return [a, ...prev.filter((x) => x.id !== a.id)];
+              return prev.map((x) => (x.id === a.id ? { ...x, ...a } : x));
+            });
+          }
           if (evt.type === "message") {
             setTyping(null);
-            setMsgs((prev) => [...prev, { role: "agent", key: evt.key, name: evt.name ?? "Analyst", agentRole: evt.role, content: evt.content ?? "" }]);
+            const refs = pendingRefs.current.splice(0);
+            setMsgs((prev) => [...prev, { role: "agent", key: evt.key, name: evt.name ?? "Analyst", agentRole: evt.role, content: evt.content ?? "", artifacts: refs }]);
           }
           if (evt.type === "error") { setTyping(null); setError(evt.error ?? "Reply failed"); }
         }
@@ -294,6 +363,13 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
           ⚒ WEB {webSearch ? "ON" : "OFF"}
         </button>
         <button
+          onClick={() => { setDocsOpen((v) => !v); setViewing(null); setViewDoc(null); }}
+          title={docsOpen ? "Back to the chat" : "Documents the analyst has generated for this report"}
+          style={{ ...mono, flex: "none", fontSize: 8.5, letterSpacing: ".05em", padding: "5px 10px", borderRadius: 100, border: `1px solid ${docsOpen ? "var(--acc)" : "var(--ln5)"}`, background: docsOpen ? "var(--acc)" : "transparent", color: docsOpen ? "var(--acc-c)" : artifacts.length ? "var(--acc)" : "var(--t6)", cursor: "pointer" }}
+        >
+          ⧉ {artifacts.length || "DOCS"}
+        </button>
+        <button
           onClick={() => setOpen(false)}
           aria-label="Close the analyst"
           style={{ flex: "none", width: 26, height: 26, borderRadius: 8, background: "none", border: "none", color: "var(--t5)", cursor: "pointer", fontSize: 15 }}
@@ -302,8 +378,127 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
         </button>
       </div>
 
+      {/* documents section — list + inline viewer (replaces the chat while open) */}
+      {docsOpen && viewing && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderBottom: "1px solid var(--ln2)", flex: "none" }}>
+            <button
+              onClick={() => { setViewing(null); setViewDoc(null); }}
+              style={{ ...mono, flex: "none", fontSize: 8.5, letterSpacing: ".05em", padding: "5px 10px", borderRadius: 100, border: "1px solid var(--ln5)", background: "transparent", color: "var(--t5)", cursor: "pointer" }}
+            >
+              ‹ ALL DOCS
+            </button>
+            {renamingId === viewing.id ? (
+              <input
+                autoFocus
+                value={renameVal}
+                onChange={(e) => setRenameVal(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void renameArtifact(viewing.id, renameVal); if (e.key === "Escape") setRenamingId(null); }}
+                onBlur={() => void renameArtifact(viewing.id, renameVal)}
+                style={{ flex: 1, minWidth: 0, background: "var(--sf2)", border: "1px solid var(--acc)", borderRadius: 8, padding: "4px 9px", fontSize: 12.5, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
+              />
+            ) : (
+              <button
+                onClick={() => { setRenamingId(viewing.id); setRenameVal(viewing.name); }}
+                title="Rename this document"
+                style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, fontSize: 12.5, fontWeight: 600, color: "var(--t1)", cursor: "text", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-sans), sans-serif" }}
+              >
+                {viewing.name}
+              </button>
+            )}
+            <button
+              onClick={() => void openArtifactTab(viewing)}
+              title="Open in a new tab"
+              style={{ ...mono, flex: "none", fontSize: 8.5, letterSpacing: ".05em", padding: "5px 10px", borderRadius: 100, border: "1px solid var(--ln5)", background: "transparent", color: "var(--t5)", cursor: "pointer" }}
+            >
+              ⤓ TAB
+            </button>
+            <button
+              onClick={() => (confirmDel === viewing.id ? void deleteArtifact(viewing.id) : setConfirmDel(viewing.id))}
+              onBlur={() => setConfirmDel(null)}
+              title="Delete this document"
+              style={{ ...mono, flex: "none", fontSize: 8.5, letterSpacing: ".05em", padding: "5px 10px", borderRadius: 100, border: `1px solid ${confirmDel === viewing.id ? "var(--warn)" : "var(--ln5)"}`, background: confirmDel === viewing.id ? "var(--warn-dim)" : "transparent", color: confirmDel === viewing.id ? "var(--warn)" : "var(--t6)", cursor: "pointer" }}
+            >
+              {confirmDel === viewing.id ? "SURE?" : "×"}
+            </button>
+          </div>
+          {viewDoc ? (
+            <iframe title={viewing.name} srcDoc={viewDoc} sandbox="" style={{ flex: 1, width: "100%", border: "none", background: "var(--bg)" }} />
+          ) : (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.2s ease infinite" }} />
+              <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>OPENING…</span>
+            </div>
+          )}
+        </div>
+      )}
+      {docsOpen && !viewing && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 16px" }}>
+          <div style={{ ...mono, fontSize: 9, letterSpacing: ".1em", color: "var(--acc)", margin: "4px 2px 12px" }}>
+            ⧉ GENERATED DOCUMENTS · {artifacts.length}
+          </div>
+          {error && <div style={{ ...mono, fontSize: 9.5, color: "var(--warn)", margin: "0 2px 12px" }}>{error.toUpperCase().slice(0, 140)}</div>}
+          {artifacts.length === 0 && (
+            <div style={{ padding: "10px 4px", fontSize: 13, lineHeight: 1.7, color: "var(--t5)" }}>
+              Nothing here yet. Ask the analyst for a document and it lands in this section —
+              <span style={{ color: "var(--t3)" }}> &ldquo;write a one-page memo on the water risk&rdquo;</span>,
+              <span style={{ color: "var(--t3)" }}> &ldquo;re-cut the report for my investment committee&rdquo;</span>.
+              Documents are styled like the report and open right here.
+            </div>
+          )}
+          {artifacts.map((a) => (
+            <div
+              key={a.id}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", marginBottom: 8, borderRadius: 12, border: "1px solid var(--ln3)", background: "var(--sf2)" }}
+            >
+              <span style={{ flex: "none", width: 30, height: 30, borderRadius: 9, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>⧉</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {renamingId === a.id ? (
+                  <input
+                    autoFocus
+                    value={renameVal}
+                    onChange={(e) => setRenameVal(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") void renameArtifact(a.id, renameVal); if (e.key === "Escape") setRenamingId(null); }}
+                    onBlur={() => void renameArtifact(a.id, renameVal)}
+                    style={{ width: "100%", boxSizing: "border-box", background: "var(--sf)", border: "1px solid var(--acc)", borderRadius: 8, padding: "3px 8px", fontSize: 12.5, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
+                  />
+                ) : (
+                  <button
+                    onClick={() => void openArtifact(a)}
+                    title="Open this document"
+                    style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: 0, fontSize: 13, fontWeight: 600, color: "var(--t1)", cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-sans), sans-serif" }}
+                  >
+                    {a.name}
+                  </button>
+                )}
+                <div style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t6)", marginTop: 3 }}>
+                  {String(a.updated_at ?? a.created_at ?? "").slice(0, 10)}
+                </div>
+              </div>
+              <button
+                onClick={() => { setRenamingId(a.id); setRenameVal(a.name); }}
+                title="Rename"
+                aria-label={`Rename ${a.name}`}
+                style={{ flex: "none", background: "none", border: "none", color: "var(--t6)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}
+              >
+                ✎
+              </button>
+              <button
+                onClick={() => (confirmDel === a.id ? void deleteArtifact(a.id) : setConfirmDel(a.id))}
+                onBlur={() => setConfirmDel(null)}
+                title="Delete"
+                aria-label={`Delete ${a.name}`}
+                style={{ ...mono, flex: "none", background: confirmDel === a.id ? "var(--warn-dim)" : "none", border: confirmDel === a.id ? "1px solid var(--warn)" : "none", borderRadius: 100, color: confirmDel === a.id ? "var(--warn)" : "var(--t6)", cursor: "pointer", fontSize: confirmDel === a.id ? 8 : 13, padding: confirmDel === a.id ? "4px 8px" : "2px 4px", letterSpacing: ".05em" }}
+              >
+                {confirmDel === a.id ? "SURE?" : "×"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* messages */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "16px 16px 8px" }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "16px 16px 8px", display: docsOpen ? "none" : undefined }}>
         {msgs.length === 0 && (
           <div style={{ padding: "18px 6px", fontSize: 13, lineHeight: 1.7, color: "var(--t5)" }}>
             <div style={{ ...mono, fontSize: 9, letterSpacing: ".1em", color: "var(--acc)", marginBottom: 10 }}>✻ THE ANALYST KNOWS THIS RUN COLD</div>
@@ -319,14 +514,41 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
                 {m.key === "analyst" ? "✻ ANALYST" : `${(m.name ?? "").toUpperCase()}${m.agentRole ? ` · ${m.agentRole.toUpperCase().slice(0, 34)}` : ""}`}
               </div>
             )}
-            <div style={{
-              maxWidth: "92%", padding: "10px 14px", borderRadius: 12, fontSize: 13.5, lineHeight: 1.6,
-              background: m.role === "user" ? "var(--acc-dim)" : "var(--sf2)",
-              border: `1px solid ${m.role === "user" ? "var(--acc)" : "var(--ln3)"}`,
-              color: "var(--t2)", overflowWrap: "anywhere",
-            }}>
-              {m.role === "user" ? m.content : <CitedText content={m.content} onCite={onCite} />}
-            </div>
+            {m.content && (
+              <div style={{
+                maxWidth: "92%", padding: "10px 14px", borderRadius: 12, fontSize: 13.5, lineHeight: 1.6,
+                background: m.role === "user" ? "var(--acc-dim)" : "var(--sf2)",
+                border: `1px solid ${m.role === "user" ? "var(--acc)" : "var(--ln3)"}`,
+                color: "var(--t2)", overflowWrap: "anywhere",
+              }}>
+                {m.role === "user" ? m.content : <CitedText content={m.content} onCite={onCite} />}
+              </div>
+            )}
+            {/* document cards — one per artifact this reply touched */}
+            {(m.artifacts ?? []).map((a, ai) => (
+              <button
+                key={ai}
+                onClick={() => a.action !== "deleted" && void openArtifact(a)}
+                disabled={a.action === "deleted"}
+                title={a.action === "deleted" ? "This document was deleted" : "Open this document"}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, maxWidth: "92%", marginTop: 8,
+                  padding: "10px 13px", borderRadius: 12, textAlign: "left",
+                  border: `1px solid ${a.action === "deleted" ? "var(--ln3)" : "var(--acc)"}`,
+                  background: a.action === "deleted" ? "var(--sf2)" : "var(--acc-dim)",
+                  cursor: a.action === "deleted" ? "default" : "pointer",
+                  opacity: a.action === "deleted" ? 0.65 : 1, fontFamily: "var(--font-sans), sans-serif",
+                }}
+              >
+                <span style={{ flex: "none", width: 28, height: 28, borderRadius: 8, background: a.action === "deleted" ? "transparent" : "var(--acc)", border: `1px solid ${a.action === "deleted" ? "var(--ln4)" : "var(--acc)"}`, color: a.action === "deleted" ? "var(--t6)" : "var(--acc-c)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>⧉</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: a.action === "deleted" ? "line-through" : "none" }}>{a.name}</span>
+                  <span style={{ ...mono, display: "block", fontSize: 7.5, letterSpacing: ".08em", color: a.action === "deleted" ? "var(--t6)" : "var(--acc)", marginTop: 2 }}>
+                    {a.action.toUpperCase()}{a.action !== "deleted" ? " · OPEN →" : ""}
+                  </span>
+                </span>
+              </button>
+            ))}
           </div>
         ))}
         {typing && (
@@ -339,7 +561,7 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
       </div>
 
       {/* composer */}
-      <div style={{ flex: "none", padding: "10px 14px 14px", borderTop: "1px solid var(--ln3)", position: "relative" }}>
+      <div style={{ flex: "none", padding: "10px 14px 14px", borderTop: "1px solid var(--ln3)", position: "relative", display: docsOpen ? "none" : undefined }}>
         {mentionHits.length > 0 && (
           <div style={{ position: "absolute", bottom: "calc(100% + 4px)", left: 14, right: 14, zIndex: 80, background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 12, padding: 6, boxShadow: "0 12px 32px rgba(0,0,0,.35)", maxHeight: 220, overflowY: "auto" }}>
             {mentionHits.map((c) => (
