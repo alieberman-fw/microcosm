@@ -14,7 +14,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ thr
   if (!conv) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
 
   const { data: messages } = await supabase.from("conversation_messages")
-    .select("id, role, agent_key, agent_name, content, created_at")
+    .select("id, role, agent_key, agent_name, content, attachments, created_at")
     .eq("conversation_id", threadId).order("id", { ascending: true }).limit(200);
 
   return NextResponse.json({ thread: conv, messages: messages ?? [] });

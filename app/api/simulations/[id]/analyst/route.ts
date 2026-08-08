@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { FrozenSpec } from "@/lib/casting";
 
-/** The analyst panel's bootstrap: this sim's analyst THREADS (newest first)
- *  and the CAST for the @mention typeahead (leads first, then crowd). */
+/** The analyst panel's bootstrap: this sim's analyst THREADS (newest first),
+ *  the CAST for the @mention typeahead (leads first, then crowd), and the
+ *  ARTIFACTS the analyst has generated (the panel's documents section). */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createServerSupabase();
@@ -11,11 +12,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  const [{ data: threads }, { data: agents }] = await Promise.all([
+  const [{ data: threads }, { data: agents }, { data: artifacts }] = await Promise.all([
     supabase.from("conversations")
       .select("id, title, updated_at").eq("kind", "analyst").eq("sim_id", id)
       .order("updated_at", { ascending: false }).limit(30),
     supabase.from("sim_agents").select("agent_key, spec_frozen").eq("sim_id", id),
+    supabase.from("report_artifacts")
+      .select("id, name, conversation_id, created_at, updated_at").eq("sim_id", id)
+      .order("updated_at", { ascending: false }).limit(50),
   ]);
 
   const cast = (agents ?? []).map((a) => {
@@ -28,5 +32,5 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     };
   }).sort((a, b) => (a.tier === b.tier ? a.name.localeCompare(b.name) : a.tier === "lead" ? -1 : 1));
 
-  return NextResponse.json({ threads: threads ?? [], cast });
+  return NextResponse.json({ threads: threads ?? [], cast, artifacts: artifacts ?? [] });
 }
