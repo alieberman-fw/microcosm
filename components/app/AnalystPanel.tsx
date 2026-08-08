@@ -25,29 +25,11 @@ interface Msg { role: "user" | "agent"; key?: string; name?: string; agentRole?:
 const MIN_W = 340;
 const DEFAULT_W = 460;
 
-/** [seq] citations in analyst prose become chips that jump the transcript */
+/** [seq] citations render as INLINE chips via the cite-aware Markdown —
+ *  splitting the text around chips at the block level broke paragraphs
+ *  (orphaned commas, chips on their own lines — field report) */
 function CitedText({ content, onCite }: { content: string; onCite: (seq: number) => void }) {
-  const parts = content.split(/(\[\d{1,4}\])/g);
-  if (parts.length === 1) return <Markdown text={content} />;
-  return (
-    <span>
-      {parts.map((p, i) => {
-        const m = p.match(/^\[(\d{1,4})\]$/);
-        if (!m) return <Fragment key={i}><Markdown text={p} /></Fragment>;
-        const seq = Number(m[1]);
-        return (
-          <button
-            key={i}
-            onClick={() => onCite(seq)}
-            title={`Jump to post ${seq} in the transcript`}
-            style={{ ...mono, fontSize: 9, letterSpacing: ".04em", padding: "1px 7px", margin: "0 2px", borderRadius: 100, border: "1px solid var(--acc)", background: "var(--acc-dim)", color: "var(--acc)", cursor: "pointer", verticalAlign: "baseline" }}
-          >
-            {seq}
-          </button>
-        );
-      })}
-    </span>
-  );
+  return <Markdown text={content} onCite={onCite} />;
 }
 
 export default function AnalystDock({ simId, onWidthChange, onCite }: {
@@ -371,7 +353,9 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
             ))}
           </div>
         )}
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+        {/* the composer (field fix): one input window with the send plane
+            INSIDE it — no detached Ask button */}
+        <div style={{ position: "relative" }}>
           <textarea
             ref={inputRef}
             value={input}
@@ -384,24 +368,34 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
             rows={2}
             placeholder="Ask the analyst — @mention a panel or crowd member to hear from them"
             style={{
-              flex: 1, minWidth: 0, resize: "none", boxSizing: "border-box",
-              background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 12,
-              padding: "10px 13px", fontSize: 13, lineHeight: 1.5, color: "var(--t1)", outline: "none",
+              width: "100%", resize: "none", boxSizing: "border-box",
+              background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 14,
+              padding: "10px 52px 10px 13px", fontSize: 13, lineHeight: 1.5, color: "var(--t1)", outline: "none",
               fontFamily: "var(--font-sans), sans-serif",
             }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln4)")}
           />
           <button
             onClick={() => void send()}
             disabled={busy || !input.trim()}
+            aria-label="Send"
+            title="Send (Enter)"
             style={{
-              flex: "none", padding: "10px 18px", borderRadius: 100, border: "none",
-              background: busy || !input.trim() ? "var(--sf2)" : "var(--acc)",
+              position: "absolute", right: 9, bottom: 12, width: 32, height: 32, borderRadius: "50%",
+              border: "none", display: "inline-flex", alignItems: "center", justifyContent: "center",
+              background: busy || !input.trim() ? "var(--ln3)" : "var(--acc)",
               color: busy || !input.trim() ? "var(--t6)" : "var(--acc-c)",
-              fontWeight: 600, fontSize: 13, cursor: busy || !input.trim() ? "default" : "pointer",
-              fontFamily: "var(--font-sans), sans-serif",
+              cursor: busy || !input.trim() ? "default" : "pointer", transition: "background .15s",
             }}
           >
-            {busy ? "…" : "Ask ➤"}
+            {busy ? (
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor", animation: "pulseDot 1s ease infinite" }} />
+            ) : (
+              <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+              </svg>
+            )}
           </button>
         </div>
       </div>

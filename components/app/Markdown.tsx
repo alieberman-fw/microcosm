@@ -17,11 +17,14 @@ function esc(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function inline(text: string, mentionPat: string | null, keyBase: string): ReactNode[] {
+function inline(text: string, mentionPat: string | null, keyBase: string, onCite?: (seq: number) => void): ReactNode[] {
   const pat = new RegExp(
     // bold may CONTAIN single asterisks (nested *italics* — the field showed
-    // `**…what do they *need* to see…**` shattering into literal stars)
-    `(\`[^\`]+\`|\\*\\*(?:[^*]|\\*(?!\\*))+\\*\\*|\\*[^*\\s][^*]*\\*${mentionPat ? `|${mentionPat}` : ""})`,
+    // `**…what do they *need* to see…**` shattering into literal stars).
+    // With onCite, [seq] post citations join the token set and render as
+    // INLINE chips — splitting the text around them at the block level put
+    // every chip on its own line with orphaned punctuation (field report).
+    `(\`[^\`]+\`|\\*\\*(?:[^*]|\\*(?!\\*))+\\*\\*|\\*[^*\\s][^*]*\\*${mentionPat ? `|${mentionPat}` : ""}${onCite ? "|\\[\\d{1,4}\\]" : ""})`,
     "g"
   );
   const out: ReactNode[] = [];
@@ -37,11 +40,23 @@ function inline(text: string, mentionPat: string | null, keyBase: string): React
     } else if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
       out.push(
         <strong key={key} style={{ fontWeight: 600, color: "var(--t0)" }}>
-          {inline(part.slice(2, -2), mentionPat, key)}
+          {inline(part.slice(2, -2), mentionPat, key, onCite)}
         </strong>
       );
     } else if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
       out.push(<em key={key}>{part.slice(1, -1)}</em>);
+    } else if (onCite && /^\[\d{1,4}\]$/.test(part)) {
+      const seq = Number(part.slice(1, -1));
+      out.push(
+        <button
+          key={key}
+          onClick={() => onCite(seq)}
+          title={`Jump to post ${seq} in the transcript`}
+          style={{ ...mono, fontSize: "0.72em", letterSpacing: ".04em", padding: "1px 7px", margin: "0 2px", borderRadius: 100, border: "1px solid var(--acc)", background: "var(--acc-dim)", color: "var(--acc)", cursor: "pointer", verticalAlign: "baseline" }}
+        >
+          {seq}
+        </button>
+      );
     } else if (mentionPat && part.startsWith("@")) {
       out.push(<span key={key} style={{ color: "var(--acc)", fontWeight: 600 }}>{part}</span>);
     } else {
@@ -53,7 +68,7 @@ function inline(text: string, mentionPat: string | null, keyBase: string): React
   return out;
 }
 
-export default function Markdown({ text, mentions = [] }: { text: string; mentions?: string[] }) {
+export default function Markdown({ text, mentions = [], onCite }: { text: string; mentions?: string[]; onCite?: (seq: number) => void }) {
   // longest-first so "Priyanka" wins over "Priya"
   const mentionPat = mentions.length
     ? `@(?:${[...new Set(mentions)].sort((a, b) => b.length - a.length).map(esc).join("|")})`
@@ -74,7 +89,7 @@ export default function Markdown({ text, mentions = [] }: { text: string; mentio
     if (!para.length) return;
     blocks.push(
       <p key={key++} style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-        {inline(para.join("\n"), mentionPat, `p${key}`)}
+        {inline(para.join("\n"), mentionPat, `p${key}`, onCite)}
       </p>
     );
     para = [];
@@ -106,7 +121,7 @@ export default function Markdown({ text, mentions = [] }: { text: string; mentio
                     borderBottom: "1px solid var(--ln4)", whiteSpace: "nowrap",
                   }}
                 >
-                  {inline(c, mentionPat, `th${ci}`)}
+                  {inline(c, mentionPat, `th${ci}`, onCite)}
                 </th>
               ))}
             </tr>
@@ -123,7 +138,7 @@ export default function Markdown({ text, mentions = [] }: { text: string; mentio
                       color: ci === 0 ? "var(--t1)" : undefined, lineHeight: 1.5,
                     }}
                   >
-                    {inline(c, mentionPat, `td${ri}.${ci}`)}
+                    {inline(c, mentionPat, `td${ri}.${ci}`, onCite)}
                   </td>
                 ))}
               </tr>
@@ -152,19 +167,19 @@ export default function Markdown({ text, mentions = [] }: { text: string; mentio
       flushPara(); flushList();
       blocks.push(
         <div key={key++} style={{ fontWeight: 600, color: "var(--t0)", fontSize: "1.02em", marginTop: blocks.length ? 4 : 0 }}>
-          {inline(h[2], mentionPat, `h${i}`)}
+          {inline(h[2], mentionPat, `h${i}`, onCite)}
         </div>
       );
     } else if (ul) {
       flushPara();
       if (!list || list.ordered) { flushList(); list = { ordered: false, items: [] }; }
-      list.items.push(<li key={i}>{inline(ul[1], mentionPat, `l${i}`)}</li>);
+      list.items.push(<li key={i}>{inline(ul[1], mentionPat, `l${i}`, onCite)}</li>);
     } else if (ol) {
       flushPara();
       if (!list || !list.ordered) { flushList(); list = { ordered: true, items: [] }; }
       // explicit value: models often blank-line between items, which splits
       // the <ol> — this keeps 1, 2, 3 instead of restarting at 1
-      list.items.push(<li key={i} value={Number(ol[1])}>{inline(ol[2], mentionPat, `l${i}`)}</li>);
+      list.items.push(<li key={i} value={Number(ol[1])}>{inline(ol[2], mentionPat, `l${i}`, onCite)}</li>);
     } else if (line.trim() === "") {
       // blank lines end paragraphs/lists but NOT an open table — models often
       // blank-line between table rows, which would shatter one table into many
