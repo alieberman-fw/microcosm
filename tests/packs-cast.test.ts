@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAST_MEMBER_CAPS, normalizePackPlan, packDraftSystem, packPlanSystem } from "@/lib/packs-cast";
+import { CAST_MEMBER_CAPS, normalizePackPlan, normalizeTopupMembers, packDraftSystem, packPlanSystem, packTopupSystem } from "@/lib/packs-cast";
 
 const member = (role: string, kind = "expert") => ({ role, kind, discipline: "CAPITAL", why: "distinct angle", query: "reit manager" });
 
@@ -45,6 +45,44 @@ describe("normalizePackPlan", () => {
   it("never emits adversarial members", () => {
     const plan = normalizePackPlan({ name: "x", members: [{ role: "Skeptic", kind: "adversarial" }] });
     expect(plan?.members[0].kind).toBe("expert");
+  });
+});
+
+describe("the count contract (asked for 10, got 9 — field report)", () => {
+  it("target comes from target_count even when the plan came up short", () => {
+    const plan = normalizePackPlan({
+      name: "Ten leads", kind: "panel", target_count: 10,
+      members: Array.from({ length: 9 }, (_, i) => member(`Investor ${i}`)),
+    });
+    expect(plan?.members).toHaveLength(9); // what the plan produced…
+    expect(plan?.target).toBe(10);         // …vs what the route must reach
+    expect(plan?.clamped).toBe(false);
+  });
+
+  it("target clamps to the kind cap and flags over-asks", () => {
+    const plan = normalizePackPlan({ name: "x", kind: "panel", target_count: 25, members: [member("A")] });
+    expect(plan?.target).toBe(CAST_MEMBER_CAPS.panel);
+    expect(plan?.requested).toBe(25);
+    expect(plan?.clamped).toBe(true);
+  });
+
+  it("junk target_count falls back to the member count", () => {
+    const plan = normalizePackPlan({ name: "x", target_count: "banana", members: [member("A"), member("B")] });
+    expect(plan?.target).toBe(2);
+  });
+
+  it("normalizeTopupMembers continues the key sequence and tolerates junk", () => {
+    const more = normalizeTopupMembers([member("Solar Farm Investor"), { role: 7 }], "panel", 9);
+    expect(more).toHaveLength(2);
+    expect(more[0].key).toBe("solar-farm-investor-10");
+    expect(more[1].role).toBe("7");
+    expect(normalizeTopupMembers("junk", "crowd", 0)).toEqual([]);
+  });
+
+  it("topup system demands the exact missing count and forbids duplicates", () => {
+    const s = packTopupSystem(["REIT analyst", "LP allocator"], 3);
+    expect(s).toContain("EXACTLY 3 ADDITIONAL");
+    expect(s).toContain("REIT analyst; LP allocator");
   });
 });
 

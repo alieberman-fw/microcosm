@@ -16,6 +16,7 @@ import { PersonaSpec } from "@/lib/personas";
 import { PACK_CAPS, PackKind, PackSummary } from "@/lib/packs";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import PersonaEditor from "@/components/app/PersonaEditor";
+import CastingTheater from "@/components/app/CastingTheater";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -112,13 +113,19 @@ function AvatarStack({ preview, count }: { preview: PackSummary["preview"]; coun
   );
 }
 
-export function PacksSection({ orgId, onCount }: { orgId: string; onCount?: (n: number) => void }) {
+export function PacksSection({ orgId, onCount, createNonce = 0 }: {
+  orgId: string;
+  onCount?: (n: number) => void;
+  /** the page header's "+ New pack" bumps this to open the create card */
+  createNonce?: number;
+}) {
   const [packs, setPacks] = useState<PackSummary[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<PackKind>("panel");
   const [open, setOpen] = useState<PackSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [kindFilter, setKindFilter] = useState<"all" | PackKind>("all");
   // describe-to-cast (the Pack Director)
   const [castPrompt, setCastPrompt] = useState("");
   const [castKind, setCastKind] = useState<PackKind | "auto">("auto");
@@ -127,6 +134,9 @@ export function PacksSection({ orgId, onCount }: { orgId: string; onCount?: (n: 
     clamped?: boolean; requested?: number;
     landed: { name: string; provenance: string }[];
   }>(null);
+
+  // the page header's "+ New pack" opens the create card
+  useEffect(() => { if (createNonce > 0) { setCreating(true); setError(null); } }, [createNonce]);
 
   const refresh = useCallback(async () => {
     try {
@@ -214,40 +224,53 @@ export function PacksSection({ orgId, onCount }: { orgId: string; onCount?: (n: 
     }
   };
 
+  const shown = (packs ?? []).filter((p) => kindFilter === "all" || p.kind === kindFilter);
+  const countOf = (k: PackKind) => (packs ?? []).filter((p) => p.kind === k).length;
+
   return (
     <div style={{ marginTop: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: "var(--t5)", maxWidth: 640 }}>
+      {/* toolbar: what packs are + the kind filter */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 18, flexWrap: "wrap" }}>
+        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: "var(--t5)", maxWidth: 560, flex: "1 1 380px" }}>
           Packs are reusable rosters. A <span style={{ color: "var(--t3)" }}>panel pack</span> drops into a simulation as lead seats or a group chat as participants;
           a <span style={{ color: "var(--t3)" }}>crowd pack</span> seeds the polled crowd. Build once — &ldquo;Phoenix data-center diligence panel&rdquo; — reuse everywhere.
         </p>
-        <span style={{ flex: 1 }} />
-        {!creating && (
-          <button onClick={() => { setCreating(true); setError(null); }} className="btnAcc" style={{ padding: "9px 18px", fontSize: 13, flex: "none" }}>
-            + New pack
-          </button>
-        )}
+        <span style={{ display: "inline-flex", gap: 6, flex: "none", paddingTop: 2 }}>
+          {([["all", `ALL · ${(packs ?? []).length}`], ["panel", `PANEL · ${countOf("panel")}`], ["crowd", `CROWD · ${countOf("crowd")}`]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setKindFilter(k)} style={{
+              ...mono, fontSize: 9, letterSpacing: ".06em", padding: "6px 13px", borderRadius: 100, cursor: "pointer",
+              border: `1px solid ${kindFilter === k ? "var(--acc)" : "var(--ln5)"}`,
+              background: kindFilter === k ? "var(--acc-dim)" : "transparent",
+              color: kindFilter === k ? "var(--acc)" : "var(--t5)",
+            }}>
+              {label}
+            </button>
+          ))}
+        </span>
       </div>
 
       {creating && !casting && (
-        <div className="card" style={{ marginTop: 18, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
-          {/* describe it — the Pack Director casts the whole roster */}
-          <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".1em", color: "var(--acc)" }}>✨ DESCRIBE THE PACK — IT CASTS ITSELF</div>
+        <div className="card" style={{ marginTop: 20, padding: "24px 26px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <div className="kicker">New pack</div>
+            <div style={{ marginTop: 8, fontSize: 14.5, fontWeight: 600, letterSpacing: "-.01em" }}>Describe it — the director casts the whole roster</div>
+          </div>
           <textarea
             autoFocus
             value={castPrompt}
             onChange={(e) => setCastPrompt(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void castPack(); } if (e.key === "Escape") setCreating(false); }}
-            rows={2}
-            placeholder="“A team of 25 investors focused on REITs, autonomous vehicles, and urban infill land” — every member distinct, matched from the library or generated fresh"
-            style={{ width: "100%", boxSizing: "border-box", resize: "none", background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 14, padding: "11px 15px", fontSize: 13.5, lineHeight: 1.5, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
+            rows={3}
+            placeholder="A team of 25 investors focused on REITs, autonomous vehicles, and urban infill land…"
+            style={{ width: "100%", boxSizing: "border-box", resize: "none", background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 14, padding: "13px 16px", fontSize: 14, lineHeight: 1.55, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
             onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
             onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln4)")}
           />
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)", flex: "none" }}>KIND</span>
             <span style={{ display: "inline-flex", gap: 4 }}>
               {(["auto", "panel", "crowd"] as const).map((k) => (
-                <button key={k} onClick={() => setCastKind(k)} title={k === "auto" ? "Let the director decide from the description" : undefined} style={{
+                <button key={k} onClick={() => setCastKind(k)} title={k === "auto" ? "Let the director decide from the description" : k === "panel" ? "Named professionals who deliberate (≤20)" : "A population polled for sentiment (≤200)"} style={{
                   ...mono, fontSize: 9, letterSpacing: ".06em", padding: "6px 13px", borderRadius: 100, cursor: "pointer",
                   border: `1px solid ${castKind === k ? "var(--acc)" : "var(--ln5)"}`,
                   background: castKind === k ? "var(--acc-dim)" : "transparent",
@@ -257,47 +280,48 @@ export function PacksSection({ orgId, onCount }: { orgId: string; onCount?: (n: 
                 </button>
               ))}
             </span>
-            <button onClick={() => void castPack()} disabled={!castPrompt.trim()} className="btnAcc" style={{ padding: "9px 20px", fontSize: 13, opacity: castPrompt.trim() ? 1 : 0.5 }}>
-              ✨ Cast the pack
-            </button>
             <span style={{ flex: 1 }} />
-            <button onClick={() => setCreating(false)} style={{ ...mono, fontSize: 9.5, background: "none", border: "none", color: "var(--t6)", cursor: "pointer" }}>
+            <button onClick={() => setCreating(false)} style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer" }}>
               CANCEL
+            </button>
+            <button onClick={() => void castPack()} disabled={!castPrompt.trim()} className="btnAcc" style={{ padding: "10px 24px", fontSize: 13.5, opacity: castPrompt.trim() ? 1 : 0.5 }}>
+              Cast the pack
             </button>
           </div>
 
-          {/* or start empty */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", paddingTop: 12, borderTop: "1px solid var(--ln2)" }}>
+          {/* the quiet path: an empty pack, filled by hand */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", paddingTop: 14, borderTop: "1px solid var(--ln2)" }}>
             <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)", flex: "none" }}>OR START EMPTY</span>
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") void create(); }}
-              placeholder="Pack name — “Phoenix DC diligence panel”…"
-              style={{ flex: 1, minWidth: 220, background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "9px 16px", fontSize: 13, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
+              placeholder="Pack name…"
+              style={{ flex: 1, minWidth: 200, background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "8px 15px", fontSize: 12.5, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
             />
             <span style={{ display: "inline-flex", gap: 4, flex: "none" }}>
               {(["panel", "crowd"] as const).map((k) => (
                 <button key={k} onClick={() => setNewKind(k)} style={{
-                  ...mono, fontSize: 9, letterSpacing: ".06em", padding: "6px 13px", borderRadius: 100, cursor: "pointer",
+                  ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "5px 11px", borderRadius: 100, cursor: "pointer",
                   border: `1px solid ${newKind === k ? "var(--acc)" : "var(--ln5)"}`,
                   background: newKind === k ? "var(--acc-dim)" : "transparent",
-                  color: newKind === k ? "var(--acc)" : "var(--t5)",
+                  color: newKind === k ? "var(--acc)" : "var(--t6)",
                 }}>
                   {k.toUpperCase()}
                 </button>
               ))}
             </span>
-            <button onClick={() => void create()} disabled={!newName.trim()} style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", padding: "8px 16px", borderRadius: 100, border: "1px solid var(--ln6)", background: "transparent", color: newName.trim() ? "var(--t3)" : "var(--t6)", cursor: newName.trim() ? "pointer" : "default", flex: "none" }}>
-              CREATE EMPTY
+            <button onClick={() => void create()} disabled={!newName.trim()} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "7px 15px", borderRadius: 100, border: "1px solid var(--ln6)", background: "transparent", color: newName.trim() ? "var(--t3)" : "var(--t6)", cursor: newName.trim() ? "pointer" : "default", flex: "none" }}>
+              CREATE
             </button>
           </div>
         </div>
       )}
 
-      {/* the casting theater — members land live as they match or generate */}
+      {/* the casting theater — the §5 node/pulse grammar plays while the
+          director works; members land as chips beneath it */}
       {casting && (
-        <div className="card" style={{ marginTop: 18, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="card" style={{ marginTop: 20, padding: "22px 26px", display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.2s ease infinite", flex: "none" }} />
             <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".1em", color: "var(--acc)" }}>{casting.status}</span>
@@ -308,10 +332,11 @@ export function PacksSection({ orgId, onCount }: { orgId: string; onCount?: (n: 
             )}
             {casting.clamped && (
               <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--warn)" }}>
-                ASKED FOR {casting.requested} — NL CASTING CAPS AT {casting.count}; ADD MORE BY SEARCH
+                ASKED FOR {casting.requested} — CASTING CAPS AT {casting.count}; ADD MORE BY SEARCH
               </span>
             )}
           </div>
+          <CastingTheater compact height={150} label="THE PACK DIRECTOR IS CASTING" />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {casting.landed.map((m, i) => (
               <span key={i} style={{
@@ -341,9 +366,14 @@ export function PacksSection({ orgId, onCount }: { orgId: string; onCount?: (n: 
           hand-pick casting on a simulation, the full cast browser, or a new conversation.
         </div>
       )}
+      {packs !== null && packs.length > 0 && shown.length === 0 && (
+        <div style={{ ...mono, marginTop: 24, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)" }}>
+          NO {kindFilter.toUpperCase()} PACKS YET
+        </div>
+      )}
 
       <div className="grid3" style={{ marginTop: 22 }}>
-        {(packs ?? []).map((p) => (
+        {shown.map((p) => (
           <div
             key={p.id}
             className="card cardHoverQuiet"
@@ -412,6 +442,7 @@ function PackModal({ pack, orgId, onClose, onChanged, onDeleted }: {
   const [searching, setSearching] = useState(false);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   // one-liner member draft + member profile/editor
+  const [addMode, setAddMode] = useState<"search" | "describe">("search");
   const [draftPrompt, setDraftPrompt] = useState("");
   const [drafting, setDrafting] = useState(false);
   const [profileM, setProfileM] = useState<PackMemberRow | null>(null);
@@ -617,6 +648,17 @@ function PackModal({ pack, orgId, onClose, onChanged, onDeleted }: {
               <div style={{ fontSize: 12.5, color: "var(--t6)", lineHeight: 1.6 }}>Empty pack — search below to add people.</div>
             )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>
+              {/* a member is being written — the pending slot shimmers */}
+              {drafting && (
+                <div style={{ display: "flex", alignItems: "center", gap: 9, border: "1px solid var(--acc)", borderRadius: 10, padding: "8px 11px", background: "var(--acc-dim)" }}>
+                  <span style={{ width: 26, height: 26, borderRadius: "50%", flex: "none", background: "linear-gradient(90deg, var(--sf2) 25%, var(--ln3) 50%, var(--sf2) 75%)", backgroundSize: "200px 100%", animation: "shim 1.1s linear infinite" }} />
+                  <span style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 5 }}>
+                    <span style={{ height: 10, width: "62%", borderRadius: 5, background: "linear-gradient(90deg, var(--sf2) 25%, var(--ln3) 50%, var(--sf2) 75%)", backgroundSize: "200px 100%", animation: "shim 1.1s linear infinite" }} />
+                    <span style={{ height: 8, width: "84%", borderRadius: 5, background: "linear-gradient(90deg, var(--sf2) 25%, var(--ln3) 50%, var(--sf2) 75%)", backgroundSize: "200px 100%", animation: "shim 1.1s linear infinite" }} />
+                  </span>
+                  <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--acc)", flex: "none" }}>WRITING…</span>
+                </div>
+              )}
               {(members ?? []).map((m) => (
                 <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 9, border: "1px solid var(--ln3)", borderRadius: 10, padding: "8px 11px", background: "var(--sf2)" }}>
                   <span style={{ ...mono, width: 26, height: 26, borderRadius: "50%", flex: "none", background: m.source === "custom" ? "var(--acc-dim)" : "var(--sf)", border: `1px solid ${m.source === "custom" ? "var(--acc)" : "var(--ln5)"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: m.source === "custom" ? "var(--acc)" : "var(--t4)" }}>
@@ -652,49 +694,67 @@ function PackModal({ pack, orgId, onClose, onChanged, onDeleted }: {
 
           {/* add people */}
           <div>
-            <div style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)", marginBottom: 10 }}>
-              ADD PEOPLE{full ? " · PACK FULL" : ""}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+              <span style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)" }}>
+                ADD PEOPLE{full ? " · PACK FULL" : ""}
+              </span>
+              {/* one control, two ways in: find someone, or write someone */}
+              <span style={{ display: "inline-flex", gap: 0, border: "1px solid var(--ln4)", borderRadius: 100, padding: 2 }}>
+                {([["search", "SEARCH THE LIBRARY"], ["describe", "DESCRIBE SOMEONE NEW"]] as const).map(([k, label]) => (
+                  <button key={k} onClick={() => setAddMode(k)} style={{
+                    ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "5px 13px", borderRadius: 100, cursor: "pointer", border: "none",
+                    background: addMode === k ? "var(--acc)" : "transparent",
+                    color: addMode === k ? "var(--acc-c)" : "var(--t5)",
+                    transition: "background .15s, color .15s",
+                  }}>
+                    {label}
+                  </button>
+                ))}
+              </span>
             </div>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search your personas and the library — “grid engineer”, “under-40 renter”…"
-              style={{ width: "100%", boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "10px 16px", fontSize: 13, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln4)")}
-            />
-            {/* one-liner draft — someone the library doesn't have */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+            {addMode === "search" ? (
               <input
-                value={draftPrompt}
-                onChange={(e) => setDraftPrompt(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") void draftMember(); }}
-                disabled={drafting || full}
-                placeholder="✨ Or describe someone NEW — “a land-use attorney who's fought three data-center CUPs”…"
-                style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "9px 16px", fontSize: 12.5, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif", opacity: full ? 0.5 : 1 }}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search your personas and the library — “grid engineer”, “under-40 renter”…"
+                style={{ width: "100%", boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "10px 16px", fontSize: 13, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
                 onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
                 onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln4)")}
               />
-              <button
-                onClick={() => void draftMember()}
-                disabled={!draftPrompt.trim() || drafting || full}
-                style={{
-                  ...mono, flex: "none", fontSize: 9, letterSpacing: ".06em", padding: "8px 15px", borderRadius: 100, cursor: draftPrompt.trim() && !drafting && !full ? "pointer" : "default",
-                  border: "1px solid var(--acc)", background: draftPrompt.trim() && !full ? "var(--acc-dim)" : "transparent",
-                  color: draftPrompt.trim() && !full ? "var(--acc)" : "var(--t6)",
-                }}
-              >
-                {drafting ? "DRAFTING…" : "✨ CREATE"}
-              </button>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8, marginTop: 12 }}>
-              {mineFiltered.slice(0, 6).map((r) => <ResultRow key={r.id} r={r} />)}
-              {libResults.map((r) => <ResultRow key={r.id} r={r} />)}
-            </div>
-            {query.trim() && !searching && libResults.length === 0 && (
-              <div style={{ marginTop: 10, fontSize: 12, color: "var(--t6)" }}>No library matches for “{query}”.</div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  value={draftPrompt}
+                  onChange={(e) => setDraftPrompt(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void draftMember(); }}
+                  disabled={drafting || full}
+                  placeholder="A land-use attorney who's fought three data-center CUPs…"
+                  style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "10px 16px", fontSize: 13, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif", opacity: full ? 0.5 : 1 }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln4)")}
+                />
+                <button
+                  onClick={() => void draftMember()}
+                  disabled={!draftPrompt.trim() || drafting || full}
+                  className="btnAcc"
+                  style={{ flex: "none", padding: "9px 20px", fontSize: 12.5, opacity: draftPrompt.trim() && !drafting && !full ? 1 : 0.5 }}
+                >
+                  {drafting ? "Writing…" : "Generate"}
+                </button>
+              </div>
             )}
-            {searching && <div style={{ ...mono, marginTop: 10, fontSize: 9, letterSpacing: ".07em", color: "var(--t6)" }}>SEARCHING…</div>}
+            {addMode === "search" && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8, marginTop: 12 }}>
+                  {mineFiltered.slice(0, 6).map((r) => <ResultRow key={r.id} r={r} />)}
+                  {libResults.map((r) => <ResultRow key={r.id} r={r} />)}
+                </div>
+                {query.trim() && !searching && libResults.length === 0 && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: "var(--t6)" }}>No library matches for “{query}”.</div>
+                )}
+                {searching && <div style={{ ...mono, marginTop: 10, fontSize: 9, letterSpacing: ".07em", color: "var(--t6)" }}>SEARCHING…</div>}
+              </>
+            )}
           </div>
         </div>
 
@@ -721,10 +781,14 @@ function PackModal({ pack, orgId, onClose, onChanged, onDeleted }: {
               if (ids.length) router.push(`/conversations?draft=${ids.join(",")}`);
             }}
             disabled={(members?.length ?? 0) === 0}
-            className="btnAcc"
-            style={{ padding: "9px 20px", fontSize: 13, opacity: (members?.length ?? 0) ? 1 : 0.5 }}
+            title={(members?.length ?? 0) > 20 ? "Rooms cap at 20 — the first 20 join" : "Open a group chat with this pack"}
+            style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", padding: "8px 16px", borderRadius: 100, cursor: (members?.length ?? 0) ? "pointer" : "default", border: "1px solid var(--ln6)", background: "transparent", color: (members?.length ?? 0) ? "var(--t3)" : "var(--t6)" }}
           >
-            {(members?.length ?? 0) > 20 ? "Chat with the first 20 →" : "Use in a chat →"}
+            USE IN A CHAT →
+          </button>
+          {/* every change already persisted — this closes with that promise */}
+          <button onClick={onClose} className="btnAcc" style={{ padding: "9px 24px", fontSize: 13 }}>
+            Save pack
           </button>
         </div>
       </div>

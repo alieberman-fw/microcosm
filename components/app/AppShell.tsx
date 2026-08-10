@@ -7,7 +7,7 @@
 
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Logo } from "@/components/Nav";
 import ReportsBadge from "@/components/app/ReportsBadge";
 
@@ -34,14 +34,22 @@ const ICONS = {
   settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z",
 };
 
-type NavItem = { href: string | null; label: string; icon: string; soon?: boolean };
+type NavSubItem = { href: string; label: string; match: (pathname: string, tab: string | null) => boolean };
+type NavItem = { href: string | null; label: string; icon: string; soon?: boolean; sub?: NavSubItem[] };
 
 // field fix: Adam's requested order — Marketplace (Soon) stays last
 const NAV: NavItem[] = [
   { href: "/home", label: "Home", icon: ICONS.home },
   { href: "/dashboard", label: "Simulations", icon: ICONS.sims },
   { href: "/reports", label: "Reports", icon: ICONS.reports },
-  { href: "/personas", label: "Agent Library", icon: ICONS.personas },
+  {
+    href: "/personas", label: "Agent Library", icon: ICONS.personas,
+    // sub-items show while inside the library — Packs deep-links its tab
+    sub: [
+      { href: "/personas", label: "Personas", match: (p, t) => p.startsWith("/personas") && t !== "packs" },
+      { href: "/personas?tab=packs", label: "Packs", match: (p, t) => p.startsWith("/personas") && t === "packs" },
+    ],
+  },
   { href: "/conversations", label: "Conversations", icon: ICONS.consult },
   { href: "/monitoring", label: "Monitoring", icon: ICONS.monitor },
   { href: "/docs", label: "Docs", icon: ICONS.docs },
@@ -58,6 +66,8 @@ export default function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const urlTab = searchParams.get("tab");
   const [collapsed, setCollapsed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "gray" | "light">("dark");
@@ -152,10 +162,29 @@ export default function AppShell({
                 )}
               </span>
             );
-            return item.href ? (
-              <Link key={item.label} href={item.href}>{inner}</Link>
-            ) : (
-              <div key={item.label}>{inner}</div>
+            const showSub = Boolean(item.sub && active && !collapsed);
+            return (
+              <div key={item.label}>
+                {item.href ? <Link href={item.href}>{inner}</Link> : inner}
+                {showSub && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 1, margin: "2px 0 4px", paddingLeft: 27, borderLeft: "1px solid var(--ln2)", marginLeft: 19 }}>
+                    {item.sub!.map((s) => {
+                      const subActive = s.match(pathname, urlTab);
+                      return (
+                        <Link key={s.label} href={s.href} style={{
+                          padding: "7px 10px", borderRadius: 8, fontSize: 12.5,
+                          color: subActive ? "var(--acc)" : "var(--t5)",
+                          background: subActive ? "var(--acc-dim)" : "transparent",
+                          fontWeight: subActive ? 600 : 500,
+                          transition: "background .15s, color .15s",
+                        }}>
+                          {s.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>

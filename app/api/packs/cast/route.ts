@@ -6,8 +6,8 @@ import {
   CASTING_MODEL, CROWD_MODEL, CastSeat, castingGenerateSystem, overlapScore, roleOverlap,
 } from "@/lib/casting";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
-import { MAX_PACKS_PER_ORG, PackKind, parsePackKind } from "@/lib/packs";
-import { MAX_PACK_PROMPT, normalizePackPlan, packPlanSystem } from "@/lib/packs-cast";
+import { MAX_PACKS_PER_ORG, parsePackKind } from "@/lib/packs";
+import { MAX_PACK_PROMPT, normalizePackPlan, normalizeTopupMembers, packPlanSystem, packTopupSystem } from "@/lib/packs-cast";
 
 export const maxDuration = 180; // plan + generation for a full roster
 
@@ -76,6 +76,29 @@ export async function POST(request: Request) {
           if (!plan && attempt === 1) throw new Error(`The pack plan came back unusable (stop: ${res.stop_reason})`);
         }
         if (!plan) throw new Error("The pack plan came back unusable");
+
+        // top-up: the user's count is a CONTRACT — if the plan came up short
+        // (or long output truncated), ask for exactly the missing descriptors
+        for (let topup = 0; topup < 2 && plan.members.length < plan.target; topup++) {
+          const missing = plan.target - plan.members.length;
+          const tt = Date.now();
+          try {
+            const res = await anthropic.messages.create({
+              model: CASTING_MODEL,
+              max_tokens: Math.min(9000, 600 * missing + 800),
+              system: packTopupSystem(plan.members.map((m) => m.role), missing),
+              messages: [{ role: "user", content: `THE PACK, AS DESCRIBED BY THE USER:\n${prompt}` }],
+            });
+            await logCall("packs.cast", CASTING_MODEL, res.usage, tt, undefined, { mode: "member-topup", missing });
+            const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+            const more = normalizeTopupMembers(parseLooseArray(text), plan.kind, plan.members.length);
+            if (!more.length) break;
+            plan.members = [...plan.members, ...more].slice(0, plan.target);
+          } catch (e) {
+            await logCall("packs.cast", CASTING_MODEL, null, tt, e instanceof Error ? e.message : "member topup failed", { mode: "member-topup", missing });
+            break; // a slightly short roster beats a dead cast
+          }
+        }
         emit({ type: "plan", name: plan.name, kind: plan.kind, count: plan.members.length, description: plan.description, clamped: plan.clamped, requested: plan.requested });
 
         // ---- 2 · match: org personas → global library (FTS + fit gate) ----
@@ -152,12 +175,20 @@ export async function POST(request: Request) {
         }
 
         // ---- 3 · generate the gaps (concurrent chunks), save to the org library ----
+        // the user's count is a contract: seats that fail a pass get ONE
+        // retry before we concede — only then does a member go missing
         let generated = 0;
-        if (gaps.length) {
-          const avoid = (customRows ?? []).map((r) => (r.spec as PersonaSpec).name).filter(Boolean).slice(0, 60);
+        const usedNames = new Set(
+          (customRows ?? []).map((r) => String((r.spec as PersonaSpec).name ?? "").toLowerCase()).filter(Boolean),
+        );
+        const avoid = [...usedNames].slice(0, 60);
+
+        const generateSeats = async (seats: CastSeat[], attempt: number): Promise<CastSeat[]> => {
+          if (!seats.length) return [];
+          const failed: CastSeat[] = [];
           const CHUNK = 4;
           const chunks: CastSeat[][] = [];
-          for (let i = 0; i < gaps.length; i += CHUNK) chunks.push(gaps.slice(i, i + CHUNK));
+          for (let i = 0; i < seats.length; i += CHUNK) chunks.push(seats.slice(i, i + CHUNK));
           const chunkSpecs = await Promise.all(chunks.map(async (chunk) => {
             const t1 = Date.now();
             try {
@@ -172,19 +203,18 @@ export async function POST(request: Request) {
                     chunk.map((s) => `- seat_key ${s.key}: ${s.role} (kind ${s.kind}, discipline ${s.discipline}) — ${s.why}`).join("\n"),
                 }],
               });
-              await logCall("packs.generate", CASTING_MODEL, res.usage, t1, undefined, { seats: chunk.length });
+              await logCall("packs.generate", CASTING_MODEL, res.usage, t1, undefined, { seats: chunk.length, attempt });
               const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
               return (parseLooseArray(text) ?? []) as (PersonaSpec & { seat_key?: string })[];
             } catch (e) {
-              await logCall("packs.generate", CASTING_MODEL, null, t1, e instanceof Error ? e.message : "generate failed", { seats: chunk.length });
+              await logCall("packs.generate", CASTING_MODEL, null, t1, e instanceof Error ? e.message : "generate failed", { seats: chunk.length, attempt });
               return [] as (PersonaSpec & { seat_key?: string })[];
             }
           }));
-          const usedNames = new Set(avoid.map((n) => n.toLowerCase()));
           for (let ci = 0; ci < chunks.length; ci++) {
             for (const seat of chunks[ci]) {
               const genSpec = chunkSpecs[ci].find((s) => s.seat_key === seat.key) ?? chunkSpecs[ci][chunks[ci].indexOf(seat)];
-              if (!genSpec?.name) { emit({ type: "member", provenance: "failed", role: seat.role }); continue; }
+              if (!genSpec?.name) { failed.push(seat); continue; }
               if (usedNames.has(String(genSpec.name).trim().toLowerCase())) {
                 const parts = String(genSpec.name).trim().split(/\s+/);
                 genSpec.name = [parts[0], `${String.fromCharCode(66 + ci)}.`, ...parts.slice(1)].join(" ");
@@ -206,13 +236,18 @@ export async function POST(request: Request) {
               const { data: inserted, error: insErr } = await supabase.from("personas")
                 .insert({ org_id: orgId, kind: spec.kind, spec, source: "auto", author_org: orgId })
                 .select("id").single();
-              if (insErr || !inserted) { emit({ type: "member", provenance: "failed", role: seat.role }); continue; }
+              if (insErr || !inserted) { failed.push(seat); continue; }
               resolvedIds.push(inserted.id as string);
               generated++;
               emit({ type: "member", provenance: "generated", member: { id: inserted.id, kind: spec.kind, spec } });
             }
           }
-        }
+          return failed;
+        };
+
+        const failedOnce = await generateSeats(gaps, 1);
+        const failedTwice = await generateSeats(failedOnce, 2);
+        for (const seat of failedTwice) emit({ type: "member", provenance: "failed", role: seat.role });
 
         if (resolvedIds.length === 0) throw new Error("No members could be cast");
 

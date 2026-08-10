@@ -1,6 +1,7 @@
 "use client";
 
 import { CSSProperties, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PersonaSpec } from "@/lib/personas";
 import PersonaProfile, { kindChip } from "@/components/app/PersonaProfile";
@@ -52,9 +53,17 @@ export default function PersonaManager({
   orgId: string; initial: CustomPersonaRow[]; library: LibraryRow[]; libraryCount: number; facets: LibraryFacets;
 }) {
   const supabase = createClient();
-  const [tab, setTab] = useState<"library" | "custom" | "packs">("library");
+  const searchParams = useSearchParams();
+  const urlTab = searchParams.get("tab");
+  const [tab, setTab] = useState<"library" | "custom" | "packs">(urlTab === "packs" ? "packs" : urlTab === "custom" ? "custom" : "library");
   const [packCount, setPackCount] = useState<number | null>(null);
+  const [packCreateNonce, setPackCreateNonce] = useState(0);
   const [custom, setCustom] = useState<CustomPersonaRow[]>(initial);
+
+  // the sidebar's Agent Library sub-items deep-link tabs (?tab=packs)
+  useEffect(() => {
+    if (urlTab === "packs" || urlTab === "custom" || urlTab === "library") setTab(urlTab);
+  }, [urlTab]);
   const [editor, setEditor] = useState<{ mode: "create" | "edit" | "remix"; source?: EditorSource | null } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // custom-card ⋮ menu + subtle bulk selection
@@ -165,9 +174,15 @@ export default function PersonaManager({
             {libraryCount.toLocaleString()} synthetic experts, consumers, residents, and stakeholders across the built world — each with a real career, real demographics, and real opinions. Search in plain language: a problem (&ldquo;looking to build a data center&rdquo;) or a person (&ldquo;under 40 homeowner&rdquo;).
           </p>
         </div>
-        <button onClick={() => { setEditor({ mode: "create" }); setErr(null); }} className="btnAcc" style={{ padding: "11px 22px", fontSize: 14 }}>
-          + New persona
-        </button>
+        {tab === "packs" ? (
+          <button onClick={() => setPackCreateNonce((n) => n + 1)} className="btnAcc" style={{ padding: "11px 22px", fontSize: 14 }}>
+            + New pack
+          </button>
+        ) : (
+          <button onClick={() => { setEditor({ mode: "create" }); setErr(null); }} className="btnAcc" style={{ padding: "11px 22px", fontSize: 14 }}>
+            + New persona
+          </button>
+        )}
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 30, alignItems: "center", flexWrap: "wrap" }}>
@@ -215,7 +230,7 @@ export default function PersonaManager({
         <FilterRail facets={facets} filters={filters} openFilter={openFilter} setOpenFilter={setOpenFilter} onFilter={setFilter} />
       )}
 
-      {tab === "packs" && <PacksSection orgId={orgId} onCount={setPackCount} />}
+      {tab === "packs" && <PacksSection orgId={orgId} onCount={setPackCount} createNonce={packCreateNonce} />}
 
       {tab === "library" && (q || anyFilter) && !searching && (
         <div style={{ ...mono, marginTop: 14, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)" }}>
