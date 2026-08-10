@@ -183,17 +183,21 @@ export default function AppShell({
               <div key={item.label}>
                 {item.href ? <Link href={item.href}>{inner}</Link> : inner}
                 {showSub && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 1, margin: "2px 0 4px", paddingLeft: 27, borderLeft: "1px solid var(--ln2)", marginLeft: 19 }}>
+                  // quiet by design (field fix: green-on-green with the parent
+                  // pill was loud) — the active sub-item is brighter text with
+                  // a small ink marker on the rail, never a second accent fill
+                  <div style={{ display: "flex", flexDirection: "column", gap: 1, margin: "2px 0 4px", paddingLeft: 15, borderLeft: "1px solid var(--ln3)", marginLeft: 19 }}>
                     {item.sub!.map((s) => {
                       const subActive = s.match(pathname, urlTab);
                       return (
                         <Link key={s.label} href={s.href} style={{
-                          padding: "7px 10px", borderRadius: 8, fontSize: 12.5,
-                          color: subActive ? "var(--acc)" : "var(--t5)",
-                          background: subActive ? "var(--acc-dim)" : "transparent",
+                          display: "flex", alignItems: "center", gap: 8,
+                          padding: "6px 10px", borderRadius: 8, fontSize: 12.5,
+                          color: subActive ? "var(--t1)" : "var(--t6)",
                           fontWeight: subActive ? 600 : 500,
-                          transition: "background .15s, color .15s",
+                          transition: "color .15s",
                         }}>
+                          <span style={{ width: 3, height: 3, borderRadius: "50%", background: subActive ? "var(--t3)" : "transparent", flex: "none" }} />
                           {s.label}
                         </Link>
                       );

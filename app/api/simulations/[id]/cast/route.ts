@@ -304,14 +304,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         // ---- 3 · generate the true gaps, save them back to the org library ----
         // gaps generate in CONCURRENT chunks of 4 — one giant serial call was
-        // the slow tail on big panels (10 gaps ≈ one 7K-token generation)
+        // the slow tail on big panels (10 gaps ≈ one 7K-token generation).
+        // COUNT CONTRACT (field report: asked-for panel sizes came up short):
+        // seats whose generation fails get ONE retry pass before the seat is
+        // conceded as failed — a "failed" seat event is now the exception.
         const generated: { seat: CastSeat; personaId: string; spec: FrozenSpec }[] = [];
-        if (gaps.length) {
-          const avoid = [...(customRows ?? []).map((r) => (r.spec as PersonaSpec).name), ...resolved.map((r) => r.spec.name)]
-            .filter(Boolean).slice(0, 60);
+        const avoid = [...(customRows ?? []).map((r) => (r.spec as PersonaSpec).name), ...resolved.map((r) => r.spec.name)]
+          .filter(Boolean).slice(0, 60);
+        const usedNames = new Set(avoid.map((n) => n.toLowerCase()));
+        const generateSeats = async (seats: CastSeat[], attempt: number): Promise<CastSeat[]> => {
+          if (!seats.length) return [];
+          const failed: CastSeat[] = [];
           const CHUNK = 4;
           const chunks: CastSeat[][] = [];
-          for (let i = 0; i < gaps.length; i += CHUNK) chunks.push(gaps.slice(i, i + CHUNK));
+          for (let i = 0; i < seats.length; i += CHUNK) chunks.push(seats.slice(i, i + CHUNK));
           const chunkSpecs = await Promise.all(chunks.map(async (chunk) => {
             const t1 = Date.now();
             try {
@@ -322,53 +328,56 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 messages: [{
                   role: "user",
                   content:
-                    `BRIEF CONTEXT:\n${briefText}\nAVOID THESE NAMES: ${avoid.join(", ") || "none"}\n\nSEATS TO CREATE:\n` +
+                    `BRIEF CONTEXT:\n${briefText}\nAVOID THESE NAMES: ${[...usedNames].slice(0, 60).join(", ") || "none"}\n\nSEATS TO CREATE:\n` +
                     chunk.map((s) => `- seat_key ${s.key}: ${s.role} (kind ${s.kind}, discipline ${s.discipline}) — ${s.why}`).join("\n"),
                 }],
               });
-              await logCall("casting.generate", CASTING_MODEL, genRes.usage, t1, undefined, { seats: chunk.length });
+              await logCall("casting.generate", CASTING_MODEL, genRes.usage, t1, undefined, { seats: chunk.length, attempt });
               const genText = genRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
               return (parseLooseArray(genText) ?? []) as (PersonaSpec & { seat_key?: string })[];
             } catch (e) {
-              await logCall("casting.generate", CASTING_MODEL, null, t1, e instanceof Error ? e.message : "generate failed", { seats: chunk.length });
+              await logCall("casting.generate", CASTING_MODEL, null, t1, e instanceof Error ? e.message : "generate failed", { seats: chunk.length, attempt });
               return [] as (PersonaSpec & { seat_key?: string })[];
             }
           }));
-          // concurrent chunks can't see each other's names — de-collide here
-          const usedNames = new Set(avoid.map((n) => n.toLowerCase()));
           for (let ci = 0; ci < chunks.length; ci++) {
-          const specsChunk = chunkSpecs[ci];
-          for (const seat of chunks[ci]) {
-            const genSpec = specsChunk.find((s) => s.seat_key === seat.key) ?? specsChunk[chunks[ci].indexOf(seat)];
-            if (!genSpec?.name) { emit({ type: "seat", key: seat.key, provenance: "failed" }); continue; }
-            if (usedNames.has(String(genSpec.name).trim().toLowerCase())) {
-              const parts = String(genSpec.name).trim().split(/\s+/);
-              genSpec.name = [parts[0], `${String.fromCharCode(66 + ci)}.`, ...parts.slice(1)].join(" ");
+            const specsChunk = chunkSpecs[ci];
+            for (const seat of chunks[ci]) {
+              const genSpec = specsChunk.find((s) => s.seat_key === seat.key) ?? specsChunk[chunks[ci].indexOf(seat)];
+              if (!genSpec?.name) { failed.push(seat); continue; }
+              // concurrent chunks can't see each other's names — de-collide here
+              if (usedNames.has(String(genSpec.name).trim().toLowerCase())) {
+                const parts = String(genSpec.name).trim().split(/\s+/);
+                genSpec.name = [parts[0], `${String.fromCharCode(66 + ci)}.`, ...parts.slice(1)].join(" ");
+              }
+              usedNames.add(String(genSpec.name).trim().toLowerCase());
+              const spec: PersonaSpec = {
+                name: String(genSpec.name).trim(),
+                initials: genSpec.initials || String(genSpec.name).split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2),
+                role: genSpec.role || seat.role,
+                tagline: genSpec.tagline,
+                discipline: seat.discipline,
+                kind: seat.kind === "adversarial" ? "adversarial" : (genSpec.kind ?? seat.kind),
+                backstory: genSpec.backstory ?? "",
+                stances: Array.isArray(genSpec.stances) ? genSpec.stances.slice(0, 4) : [],
+                skills: Array.isArray(genSpec.skills) ? genSpec.skills.slice(0, 6) : [],
+                traits: genSpec.traits,
+                demographics: genSpec.demographics,
+              };
+              const { data: inserted, error: insErr } = await supabase.from("personas")
+                .insert({ org_id: orgId, kind: spec.kind, spec, source: "auto", author_org: orgId })
+                .select("id").single();
+              if (insErr || !inserted) { failed.push(seat); continue; }
+              const frozenGen = freeze(seat, spec, "generated");
+              generated.push({ seat, personaId: inserted.id, spec: frozenGen });
+              emit({ type: "seat", key: seat.key, provenance: "generated", spec: frozenGen });
             }
-            usedNames.add(String(genSpec.name).trim().toLowerCase());
-            const spec: PersonaSpec = {
-              name: String(genSpec.name).trim(),
-              initials: genSpec.initials || String(genSpec.name).split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2),
-              role: genSpec.role || seat.role,
-              tagline: genSpec.tagline,
-              discipline: seat.discipline,
-              kind: seat.kind === "adversarial" ? "adversarial" : (genSpec.kind ?? seat.kind),
-              backstory: genSpec.backstory ?? "",
-              stances: Array.isArray(genSpec.stances) ? genSpec.stances.slice(0, 4) : [],
-              skills: Array.isArray(genSpec.skills) ? genSpec.skills.slice(0, 6) : [],
-              traits: genSpec.traits,
-              demographics: genSpec.demographics,
-            };
-            const { data: inserted, error: insErr } = await supabase.from("personas")
-              .insert({ org_id: orgId, kind: spec.kind, spec, source: "auto", author_org: orgId })
-              .select("id").single();
-            if (insErr || !inserted) { emit({ type: "seat", key: seat.key, provenance: "failed" }); continue; }
-            const frozenGen = freeze(seat, spec, "generated");
-            generated.push({ seat, personaId: inserted.id, spec: frozenGen });
-            emit({ type: "seat", key: seat.key, provenance: "generated", spec: frozenGen });
           }
-          }
-        }
+          return failed;
+        };
+        const failedOnce = await generateSeats(gaps, 1);
+        const failedTwice = await generateSeats(failedOnce, 2);
+        for (const seat of failedTwice) emit({ type: "seat", key: seat.key, provenance: "failed" });
 
         // ---- 4 · freeze the cast ----
         if (!addMode) {

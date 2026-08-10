@@ -20,7 +20,7 @@ import StageRail from "@/components/app/StageRail";
 import { ShareLinksButton } from "@/components/app/ShareLinks";
 import AnalystDock from "@/components/app/AnalystPanel";
 import Orb from "@/components/app/Orb";
-import { LEAD_KIND_LABEL, ReportBlock, ReportLead, ReportPlain, ReportSpec, VERDICT_STYLE, fmtMoney } from "@/lib/report";
+import { LEAD_KIND_LABEL, ReportBlock, ReportLead, ReportPlain, ReportSpec, VERDICT_STYLE, fmtMoney, stripCellMeta } from "@/lib/report";
 import { LivePost } from "@/components/app/LiveRun";
 import Markdown from "@/components/app/Markdown";
 import { distShares } from "@/lib/dist";
@@ -46,6 +46,7 @@ const STANCES: Stance[] = [
  *  proposition poll's tallies showed 0% down every bar; (2) proposition
  *  stances display the poll's question-matched answer labels when present. */
 const CHOICE_PALETTE = ["var(--acc)", "var(--warn)", "var(--t5)", "var(--ln7)", "var(--ln4)"];
+
 function instrumentOf(spec: Pick<ReportSpec, "poll_options" | "poll_labels" | "sentiment">): Stance[] {
   const entries = spec.sentiment ?? [];
   const optionsMatchDist =
@@ -377,7 +378,7 @@ function BlocksSection({ blocks, onJump }: { blocks: ReportBlock[]; onJump?: (se
                       <td style={{ fontSize: 12.5, fontWeight: 600, color: "var(--t1)", padding: "9px 12px 9px 0", borderBottom: "1px solid var(--ln2)", verticalAlign: "top", minWidth: 140 }}>{r.label}</td>
                       {b.columns.map((_, ci) => (
                         <td key={ci} style={{ fontSize: 11.5, lineHeight: 1.5, color: "var(--t4)", padding: "9px 12px", borderBottom: "1px solid var(--ln2)", verticalAlign: "top", minWidth: 150 }}>
-                          {r.cells[ci] ?? "—"}
+                          {stripCellMeta(r.cells[ci]) || "—"}
                         </td>
                       ))}
                     </tr>
@@ -393,7 +394,7 @@ function BlocksSection({ blocks, onJump }: { blocks: ReportBlock[]; onJump?: (se
                   {b.columns.map((c, ci) => (r.cells[ci] ? (
                     <div key={ci} style={{ marginTop: 9 }}>
                       <div style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--t6)", textTransform: "uppercase" }}>{c}</div>
-                      <div style={{ fontSize: 12, lineHeight: 1.55, color: "var(--t4)", marginTop: 3 }}>{r.cells[ci]}</div>
+                      <div style={{ fontSize: 12, lineHeight: 1.55, color: "var(--t4)", marginTop: 3 }}>{stripCellMeta(r.cells[ci])}</div>
                     </div>
                   ) : null))}
                   {onJump && r.cites && r.cites.length > 0 && <div style={{ marginTop: 8 }}><CiteChips cites={r.cites} onJump={onJump} /></div>}
@@ -406,7 +407,7 @@ function BlocksSection({ blocks, onJump }: { blocks: ReportBlock[]; onJump?: (se
                 <div key={ri} style={{ border: "1px solid var(--ln3)", borderRadius: 10, padding: "11px 14px", background: "var(--sf2)" }}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
                     <span style={{ ...mono, fontSize: 11, color: "var(--acc)", flex: "none", fontWeight: 500 }}>{r.label}</span>
-                    <span style={{ fontSize: 13, lineHeight: 1.55, color: "var(--t2)", minWidth: 0, flex: 1 }}>{r.cells[0] ?? ""}</span>
+                    <span style={{ fontSize: 13, lineHeight: 1.55, color: "var(--t2)", minWidth: 0, flex: 1 }}>{stripCellMeta(r.cells[0])}</span>
                     {onJump && r.cites && r.cites.length > 0 && <CiteChips cites={r.cites} onJump={onJump} />}
                   </div>
                   {r.note && <div style={{ fontSize: 11.5, lineHeight: 1.55, color: "var(--t5)", marginTop: 6 }}>{r.note}</div>}

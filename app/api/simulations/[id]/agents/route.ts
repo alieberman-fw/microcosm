@@ -8,6 +8,30 @@ import { FrozenSpec, MAX_SEATS, seatKey } from "@/lib/casting";
  * no model calls, no tokens. Works standalone (fully manual panel) or after
  * an auto-cast (refine by adding). RLS scopes both the sim and the personas.
  */
+
+/** GET ?tier=crowd — the crowd roster on demand (the run screen fetches it
+ *  lazily; up to 1,000 compact specs is too heavy to ship with every page) */
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const supabase = await createServerSupabase();
+  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+
+  const tier = new URL(request.url).searchParams.get("tier") ?? "crowd";
+  const { data: rows, error } = await supabase.from("sim_agents")
+    .select("agent_key, spec_frozen").eq("sim_id", id).order("agent_key");
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const members = (rows ?? [])
+    .filter((r) => {
+      const isCrowd = (r.spec_frozen as FrozenSpec).seat?.tier === "crowd";
+      return tier === "crowd" ? isCrowd : tier === "lead" ? !isCrowd : true;
+    })
+    .map((r) => ({ key: r.agent_key as string, spec: r.spec_frozen as FrozenSpec }));
+  return NextResponse.json({ members });
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createServerSupabase();

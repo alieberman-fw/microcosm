@@ -249,6 +249,39 @@ export async function POST(request: Request) {
         const failedTwice = await generateSeats(failedOnce, 2);
         for (const seat of failedTwice) emit({ type: "member", provenance: "failed", role: seat.role });
 
+        // COUNT RECONCILIATION (field report: "25 luxury home buyers" → 17):
+        // descriptor top-ups run before matching, so matching dedupe and
+        // generation failures could still leave the roster short. The user's
+        // number is a CONTRACT — mint fresh descriptors for the exact
+        // shortfall and generate them (skipping matching: every generation
+        // success is a guaranteed +1) until the count is met or the API is
+        // demonstrably dead.
+        for (let pass = 0; pass < 4 && resolvedIds.length < plan.target; pass++) {
+          const missing = plan.target - resolvedIds.length;
+          const tt = Date.now();
+          let extra: CastSeat[] = [];
+          try {
+            const res = await anthropic.messages.create({
+              model: CASTING_MODEL,
+              max_tokens: Math.min(9000, 600 * missing + 800),
+              system: packTopupSystem(plan.members.map((m) => m.role), missing),
+              messages: [{ role: "user", content: `THE PACK, AS DESCRIBED BY THE USER:\n${prompt}` }],
+            });
+            await logCall("packs.cast", CASTING_MODEL, res.usage, tt, undefined, { mode: "count-reconcile", missing, pass });
+            const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+            extra = normalizeTopupMembers(parseLooseArray(text), plan.kind, plan.members.length).slice(0, missing);
+          } catch (e) {
+            await logCall("packs.cast", CASTING_MODEL, null, tt, e instanceof Error ? e.message : "count reconcile failed", { mode: "count-reconcile", missing, pass });
+            break;
+          }
+          if (!extra.length) break;
+          plan.members = [...plan.members, ...extra];
+          const before = resolvedIds.length;
+          const leftover = await generateSeats(extra, 3 + pass);
+          await generateSeats(leftover, 30 + pass);
+          if (resolvedIds.length === before) break; // API dead — fail honest, don't spin
+        }
+
         if (resolvedIds.length === 0) throw new Error("No members could be cast");
 
         // ---- 4 · the pack row, created last so failures leave nothing behind ----
