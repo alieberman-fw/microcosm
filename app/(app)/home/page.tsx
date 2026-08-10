@@ -31,18 +31,20 @@ export default async function HomePage() {
     { data: toneRows },
     { data: modeRows },
   ] = await Promise.all([
+    // persona/conversation rows are ~half the height of a report row, so 8 of
+    // each fills the lane beside 4 reports instead of leaving dead space
     supabase!
       .from("conversations")
       .select("id, title, participant_keys, updated_at, conversation_messages(count)", { count: "exact" })
       .eq("kind", "chat")
       .order("updated_at", { ascending: false })
-      .limit(6),
+      .limit(8),
     supabase!
       .from("personas")
       .select("id, kind, spec", { count: "exact" })
       .eq("org_id", userRow!.org_id as string)
       .order("created_at", { ascending: false })
-      .limit(5),
+      .limit(8),
     supabase!.from("agent_interactions").select("id").eq("surface", "library.search").limit(1),
     supabase!.from("conversation_messages").select("id").neq("attachments", "[]").limit(1),
     supabase!
