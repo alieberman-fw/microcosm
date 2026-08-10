@@ -14,6 +14,8 @@ import { CHAT_MODELS, DEFAULT_CHAT_MODEL, chatModel } from "@/lib/chat-models";
 import { TOOL_RACK } from "@/lib/tools";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import Markdown from "@/components/app/Markdown";
+import { PackChipStrip, PackMemberRow } from "@/components/app/Packs";
+import type { PackSummary } from "@/lib/packs";
 import Link from "next/link";
 
 /** room cap — mirrored server-side in app/api/converse/route.ts */
@@ -1110,6 +1112,28 @@ export default function Conversations({
               <Link href="/conversations/new" style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--acc)" }}>
                 BROWSE ALL WITH FILTERS →
               </Link>
+            </div>
+            {/* packs — one click brings a whole roster into the room (≤20) */}
+            <div style={{ flex: "none", marginTop: 10 }}>
+              <PackChipStrip
+                label="PACKS"
+                onApply={(pack: PackSummary, members: PackMemberRow[]) => {
+                  const rows: LibraryPersona[] = members.map((m) => ({ ...m.spec, key: m.id, id: m.id, source: "library" as const }));
+                  setExtras((prev) => {
+                    const map = new Map(prev.map((p) => [p.key, p] as const));
+                    rows.forEach((r) => { if (!map.has(r.key)) map.set(r.key, r); });
+                    return [...map.values()];
+                  });
+                  setPicked((prev) => {
+                    const next = [...prev];
+                    for (const m of members) {
+                      if (next.length >= MAX_PARTICIPANTS) break;
+                      if (!next.includes(m.id)) next.push(m.id);
+                    }
+                    return next;
+                  });
+                }}
+              />
             </div>
             {/* gridAutoRows max-content: overflow-hidden grid items have a zero
                 auto-min-size, so without it the grid crushes rows instead of

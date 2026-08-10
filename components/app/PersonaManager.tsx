@@ -9,6 +9,7 @@ import {
   LibraryRow, LibraryFacets, Filters, NO_FILTERS, AGE_BANDS, PAGE_SIZE,
   FilterRail, useLibrarySearch,
 } from "@/components/app/LibraryBrowse";
+import { PacksSection } from "@/components/app/Packs";
 
 // re-exported for existing imports (personas/page.tsx)
 export type { LibraryRow, LibraryFacets } from "@/components/app/LibraryBrowse";
@@ -51,7 +52,8 @@ export default function PersonaManager({
   orgId: string; initial: CustomPersonaRow[]; library: LibraryRow[]; libraryCount: number; facets: LibraryFacets;
 }) {
   const supabase = createClient();
-  const [tab, setTab] = useState<"library" | "custom">("library");
+  const [tab, setTab] = useState<"library" | "custom" | "packs">("library");
+  const [packCount, setPackCount] = useState<number | null>(null);
   const [custom, setCustom] = useState<CustomPersonaRow[]>(initial);
   const [editor, setEditor] = useState<{ mode: "create" | "edit" | "remix"; source?: EditorSource | null } | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -169,7 +171,7 @@ export default function PersonaManager({
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 30, alignItems: "center", flexWrap: "wrap" }}>
-        {(["library", "custom"] as const).map((t) => (
+        {(["library", "custom", "packs"] as const).map((t) => (
           <button
             key={t}
             onClick={() => { setTab(t); exitSelect(); setCardMenu(null); }}
@@ -180,7 +182,11 @@ export default function PersonaManager({
               color: tab === t ? "var(--acc)" : "var(--t5)",
             }}
           >
-            {t === "library" ? `LIBRARY · ${(pristine ? libraryCount : total).toLocaleString()}` : `CUSTOM · ${customFiltered.length}`}
+            {t === "library"
+              ? `LIBRARY · ${(pristine ? libraryCount : total).toLocaleString()}`
+              : t === "custom"
+                ? `CUSTOM · ${customFiltered.length}`
+                : `⛁ PACKS${packCount !== null ? ` · ${packCount}` : ""}`}
           </button>
         ))}
         {tab === "custom" && custom.length > 0 && !selectMode && (
@@ -192,18 +198,24 @@ export default function PersonaManager({
             SELECT
           </button>
         )}
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={tab === "library" ? "Try “looking to build a data center” or “under 40 homeowner”…" : "Search your personas…"}
-          style={{ flex: 1, minWidth: 260, boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "9px 18px", fontSize: 13, color: "var(--t1)", outline: "none" }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
-          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln5)")}
-        />
+        {tab !== "packs" && (
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={tab === "library" ? "Try “looking to build a data center” or “under 40 homeowner”…" : "Search your personas…"}
+            style={{ flex: 1, minWidth: 260, boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "9px 18px", fontSize: 13, color: "var(--t1)", outline: "none" }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln5)")}
+          />
+        )}
       </div>
 
       {/* filter rail — composes with the active tab and the search query */}
-      <FilterRail facets={facets} filters={filters} openFilter={openFilter} setOpenFilter={setOpenFilter} onFilter={setFilter} />
+      {tab !== "packs" && (
+        <FilterRail facets={facets} filters={filters} openFilter={openFilter} setOpenFilter={setOpenFilter} onFilter={setFilter} />
+      )}
+
+      {tab === "packs" && <PacksSection onCount={setPackCount} />}
 
       {tab === "library" && (q || anyFilter) && !searching && (
         <div style={{ ...mono, marginTop: 14, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)" }}>
@@ -243,7 +255,7 @@ export default function PersonaManager({
         </div>
       )}
 
-      <div className="grid3" style={{ marginTop: 24 }}>
+      {tab !== "packs" && <div className="grid3" style={{ marginTop: 24 }}>
         {tab === "library" && searching && libRows.length === 0 &&
           Array.from({ length: 6 }, (_, i) => <ShimCard key={i} />)}
 
@@ -347,7 +359,7 @@ export default function PersonaManager({
             </div>
             );
           })}
-      </div>
+      </div>}
 
       {tab === "library" && total > PAGE_SIZE && (
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 16, marginTop: 28, flexWrap: "wrap" }}>

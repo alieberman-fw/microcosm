@@ -70,8 +70,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     async start(controller) {
       const emit = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
       try {
-        // regenerate semantics: clear any previous crowd
-        await supabase.from("sim_agents").delete().eq("sim_id", id).like("agent_key", "crowd-%");
+        // regenerate semantics: clear the previous GENERATED crowd only —
+        // hand-picked members (crowd-N keys from the agents route / packs)
+        // survive a regenerate; remove them individually from the roster
+        await supabase.from("sim_agents").delete().eq("sim_id", id)
+          .or("agent_key.like.crowd-e-%,agent_key.like.crowd-r-%");
 
         emit({ type: "start", target, sample, experts: expertsSample, residents: residentsSample });
 
@@ -252,7 +255,9 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  const { error } = await supabase.from("sim_agents").delete().eq("sim_id", id).like("agent_key", "crowd-%");
+  // CLEAR THE CROWD clears the generated crowd; hand-picked members stay
+  const { error } = await supabase.from("sim_agents").delete().eq("sim_id", id)
+    .or("agent_key.like.crowd-e-%,agent_key.like.crowd-r-%");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const { data: sim } = await supabase.from("simulations").select("config").eq("id", id).maybeSingle();
