@@ -126,9 +126,19 @@ export function compilePersonaPrompt(spec: FrozenSpec, args: { mode: string; pro
   ].filter(Boolean).join("\n\n");
 }
 
-const clampWords = (s: string, max = 220) => {
-  const w = s.trim().split(/\s+/);
-  return w.length <= max ? s.trim() : w.slice(0, max).join(" ") + "…";
+/** word cap that lands on a sentence boundary — the old hard cut published
+ *  posts ending mid-clause ("stop flipping when the…", field report), which
+ *  read as data bugs and derailed the panel. Exported pure for tests. */
+export const clampWords = (s: string, max = 220) => {
+  const t = s.trim();
+  const w = t.split(/\s+/);
+  if (w.length <= max) return t;
+  const hard = w.slice(0, max).join(" ");
+  // rewind to the last sentence end inside the budget; only hard-cut when
+  // that would drop more than half the post (one giant run-on sentence)
+  const m = hard.match(/^[\s\S]*[.!?]["')\]]?(?=\s|$)/);
+  if (m && m[0].trim().split(/\s+/).length >= max / 2) return m[0].trim();
+  return hard + "…";
 };
 
 /** cheap token-overlap similarity (0–1) — the duplicate-post detector.
@@ -267,6 +277,27 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
     } catch { /* keep the first draft rather than kill the run */ }
   }
   text = clampWords(stripSelfPrefix(text, lead.spec.name));
+  // GHOST-POST GUARD (field report: "[REPLY] Renata O. (): ''" derailed the
+  // panel for rounds): a draft can survive the fail-loud check yet strip to
+  // nothing (name-only output, whitespace + citations). Retry once with an
+  // explicit order; if still empty, SKIP the post — a hole in the
+  // choreography beats a ghost the panel argues about.
+  if (!text) {
+    try {
+      const redo = await attempt(
+        "IMPORTANT: your last draft had no post body. Write your post NOW — plain prose, in character, " +
+        "no headers, no name prefix, 2-6 sentences minimum."
+      );
+      text = clampWords(stripSelfPrefix(redo.text, lead.spec.name));
+      cites = redo.cites;
+    } catch { /* fall through to the skip */ }
+  }
+  if (!text) {
+    await ctx.logCall("engine.turn", model, null, Date.now(), "empty post after strip — skipped",
+      { agent: lead.spec.name, mode: ctx.mode, round: opts.round, tag: opts.tag });
+    await ctx.emit({ type: "presence", agent_key: lead.key, name: lead.spec.name, state: "idle" });
+    return { seq: opts.seq, text: "" };
+  }
   // 3d — every search this turn ran becomes a shared panel fact and a feed
   // card, emitted BEFORE the post so the feed reads "searched, then argued"
   const seenQueries = new Set<string>();
@@ -288,9 +319,15 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
   return { seq: opts.seq, text };
 }
 
-/** transcript window: the last N posts as compact attributed lines */
-function windowOf(posts: { name: string; role: string; content: string; tag: string }[], n = 16): string {
-  return posts.slice(-n).map((p) => `[${p.tag}] ${p.name} (${p.role}): ${p.content}`).join("\n");
+/** transcript window: the last N posts as compact attributed lines — empty
+ *  posts (legacy ghost rows) never render, and a missing role never prints
+ *  as bare "()" (both confused live panels into meta-arguing, field report) */
+export function windowOf(posts: { name: string; role: string; content: string; tag: string }[], n = 16): string {
+  return posts
+    .filter((p) => p.content.trim())
+    .slice(-n)
+    .map((p) => `[${p.tag}] ${p.name}${p.role ? ` (${p.role})` : ""}: ${p.content}`)
+    .join("\n");
 }
 
 /** stance normalization: models answer with variants ("supportive", "against",
@@ -652,7 +689,8 @@ export function pickReplyTarget(
   const necroUsed = repliesThisRound.filter((p) => (roundOf.get(p.replyTo!) ?? round) < round).length;
   const necroAllowed = frac > 0 && necroUsed + 1 <= Math.ceil(frac * (repliesThisRound.length + 1));
   const substantive = (p: (typeof posts)[number]) =>
-    p.tag !== "TALLY" && p.tag !== "INTERJECTION" && p.agentKey !== excludeAgentKey;
+    p.tag !== "TALLY" && p.tag !== "INTERJECTION" && p.agentKey !== excludeAgentKey &&
+    p.content.trim() !== ""; // a ghost row can never be a reply target
   const cands = posts.filter((p) =>
     substantive(p) && (p.round === round || (necroAllowed && p.round < round)));
   if (cands.length === 0) return null;
@@ -697,14 +735,18 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       .filter((p) => p.agentKey === lead.key && p.round === o.round)
       .map((p) => p.content);
     const r = await speak(ctx, lead, { seq, transcript: transcript ?? windowOf(posts), dedupeAgainst, ...rest });
-    record(lead, o.tag, r.text, o.reply_to ?? null);
-    await microVotes(o.round);
+    // ghost-post guard: a skipped (empty) turn records nothing — the seq gap
+    // is harmless, an empty PostRec would poison every later transcript
+    if (r.text) {
+      record(lead, o.tag, r.text, o.reply_to ?? null);
+      await microVotes(o.round);
+    }
     return r;
   };
   const startRound = resume?.round ?? 1;
   /** quoted anchor for a reply instruction — the target may have scrolled out
    *  of the transcript window in dense rounds, so it travels with the ask */
-  const anchor = (t: PostRec) => `You are replying DIRECTLY to [${t.tag}] ${t.name} (${t.role}): "${t.content.slice(0, 260)}".`;
+  const anchor = (t: PostRec) => `You are replying DIRECTLY to [${t.tag}] ${t.name}${t.role ? ` (${t.role})` : ""}: "${t.content.slice(0, 260)}".`;
 
   /** §2a crowd interjection burst — ONE batched call turns a crowd sample into
    *  short in-character reactions threaded under this round's posts. Garnish:
@@ -1084,6 +1126,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
           })));
           for (let s = 0; s < slots.length; s++) {
             currentRound = 1;
+            if (!results[s].post || !results[s].text) continue; // ghost-post guard
             await ctx.emit(results[s].post!);
             posts.push({ name: slots[s].lead.spec.name, role: slots[s].lead.spec.seat?.role ?? slots[s].lead.spec.role, content: results[s].text, tag: "VERDICT", seq: slots[s].mySeq, agentKey: slots[s].lead.key, round: 1 });
           }
@@ -1290,6 +1333,8 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         })));
         for (let w = 0; w < wave.length; w++) {
           currentRound = round;
+          // ghost-post guard: an empty deferred turn has no post event to emit
+          if (!results[w].post || !results[w].text) continue;
           await ctx.emit(results[w].post!);
           posts.push({
             name: wave[w].lead.spec.name, role: wave[w].lead.spec.seat?.role ?? wave[w].lead.spec.role,

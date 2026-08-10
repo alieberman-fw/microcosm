@@ -13,6 +13,7 @@
  */
 
 import { CSSProperties, useEffect, useRef, useState } from "react";
+import Orb from "@/components/app/Orb";
 import { BriefContract, DOC_ROLES, DocRole, SubAsk } from "@/lib/understand";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -151,10 +152,10 @@ export default function UnderstandingCard({
         </div>
         {deriving && (
           <div style={{ marginTop: 18 }}>
-            {/* narrated progress: a pulsing dot + the current step, with a
-                stepped bar that fills as the theater advances */}
+            {/* narrated progress: the shaping orb (brief → contract is a
+                translation) + the current step, with a stepped bar below */}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />
+              <Orb state="shaping" size={20} aria-label="Reading your brief" />
               <span key={scanStep} style={{ ...mono, fontSize: 10.5, letterSpacing: ".08em", color: "var(--t3)", animation: "fadeUp .3s ease both" }}>
                 {scanLines[scanStep]}
               </span>

@@ -10,6 +10,7 @@
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BriefComposer, { Brief } from "@/components/app/BriefComposer";
+import Orb from "@/components/app/Orb";
 import PopulationStage, { CastingInfo, WorkspaceSeat } from "@/components/app/PopulationStage";
 import RunConfigStage from "@/components/app/RunConfigStage";
 import UnderstandingCard from "@/components/app/UnderstandingCard";
@@ -270,7 +271,7 @@ export default function SimWorkspace({
           leave the workspace claiming there was no report activity at all */}
       {synthesizing && sim.status !== "running" && (
         <div style={{ display: "flex", alignItems: "center", gap: 14, border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 12, padding: "12px 18px", marginTop: 22, flexWrap: "wrap" }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />
+          <Orb state="solving" size={20} aria-label="Report synthesizing" />
           <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)", minWidth: 0, flex: 1 }}>
             THE REPORT IS SYNTHESIZING — IT KEEPS GOING IF YOU LEAVE, AND THE REPORTS TAB LIGHTS UP WHEN IT LANDS
           </span>

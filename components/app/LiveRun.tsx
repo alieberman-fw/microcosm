@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MiniSwarm } from "@/components/app/CastingTheater";
 import Markdown from "@/components/app/Markdown";
+import Orb from "@/components/app/Orb";
 import { distShares } from "@/lib/dist";
 import { computeToolAttachment } from "@/lib/feed";
 import PersonaProfile from "@/components/app/PersonaProfile";
@@ -810,10 +811,14 @@ export default function LiveRun({
   const atBottomRef = useRef(true);
   const prevItemCount = useRef(items.length);
   const [newBelow, setNewBelow] = useState(0);
+  // field fix: the jump pill shows WHENEVER you're scrolled up — not only
+  // when new posts land; the · N NEW badge joins it when they do
+  const [scrolledUp, setScrolledUp] = useState(false);
   const jumpToLatest = () => {
     const el = feedEl.current;
     if (el) el.scrollTop = el.scrollHeight;
     atBottomRef.current = true;
+    setScrolledUp(false);
     setNewBelow(0);
   };
   const onFeedScroll = () => {
@@ -821,6 +826,7 @@ export default function LiveRun({
     if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
     atBottomRef.current = nearBottom;
+    setScrolledUp(!nearBottom);
     if (nearBottom) setNewBelow(0);
   };
   useEffect(() => {
@@ -1155,7 +1161,7 @@ export default function LiveRun({
         </div>
 
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, background: "var(--sf)", overflow: "hidden", position: "relative" }}>
-          {newBelow > 0 && (
+          {(scrolledUp || newBelow > 0) && (
             <button
               onClick={jumpToLatest}
               style={{
@@ -1164,9 +1170,16 @@ export default function LiveRun({
                 ...mono, fontSize: 9, letterSpacing: ".06em", padding: "7px 16px", borderRadius: 100,
                 background: "var(--acc)", color: "var(--acc-c)", border: "none", cursor: "pointer",
                 boxShadow: "0 6px 22px rgba(0,0,0,.35)", animation: "fadeUp .2s ease both",
+                display: "inline-flex", alignItems: "center", gap: 7,
               }}
             >
-              ↓ GO TO BOTTOM · {newBelow} NEW
+              ↓ GO TO BOTTOM
+              {newBelow > 0 && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--acc-c)" }} />
+                  {newBelow} NEW
+                </span>
+              )}
             </button>
           )}
           <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--ln2)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1481,8 +1494,8 @@ export default function LiveRun({
               );
             })}
             {thinking && status === "running" && (
-              <div style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t6)", marginTop: 14, display: "flex", alignItems: "center", gap: 7 }}>
-                <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.1s ease infinite" }} />
+              <div style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t6)", marginTop: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                <Orb state="composing" size={20} aria-label="Post being written" />
                 {thinking.toUpperCase()} IS COMPOSING…
               </div>
             )}
@@ -1498,7 +1511,8 @@ export default function LiveRun({
                       backgroundSize: "400px 100%", animation: "shim 1.4s linear infinite",
                     }} />
                     <div style={{ display: "flex", alignItems: "center", gap: 11, position: "relative", minWidth: 0 }}>
-                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc-c)", animation: "pulseDot 1.1s ease infinite", flex: "none" }} />
+                      {/* contrast tone: --acc-c ink on the accent strip, both inks */}
+                      <Orb state="solving" size={20} tone="contrast" aria-label="Synthesizing the report" />
                       <span style={{ fontWeight: 600, fontSize: 13.5, color: "var(--acc-c)", fontFamily: "var(--font-sans), sans-serif", flex: "none" }}>
                         Synthesizing the report
                       </span>
