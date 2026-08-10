@@ -19,6 +19,7 @@ import { markReportSeen } from "@/components/app/ReportsBadge";
 import StageRail from "@/components/app/StageRail";
 import { ShareLinksButton } from "@/components/app/ShareLinks";
 import AnalystDock from "@/components/app/AnalystPanel";
+import Orb from "@/components/app/Orb";
 import { LEAD_KIND_LABEL, ReportBlock, ReportLead, ReportPlain, ReportSpec, VERDICT_STYLE, fmtMoney } from "@/lib/report";
 import { LivePost } from "@/components/app/LiveRun";
 import Markdown from "@/components/app/Markdown";
@@ -939,7 +940,8 @@ export default function ReportView({
         return (
           <div style={{ marginTop: 26, display: "flex", flexDirection: "column", gap: 14, animation: "fadeUp .2s ease both" }}>
             <div style={{ ...mono, fontSize: 9, letterSpacing: ".1em", color: "var(--t6)", display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <span style={{ width: 6, height: 6, borderRadius: 100, background: "var(--acc)", animation: "pulseDot 1s ease infinite" }} />
+              {/* shaping = translation, the same orb the understanding pass wears */}
+              <Orb state="shaping" size={20} aria-label="Translating the report" />
               TRANSLATING FOR A NON-TECHNICAL READER — SAME ANSWERS, SAME NUMBERS…
             </div>
             <div style={{ ...shim, height: 34, width: "58%", borderRadius: 10 }} />

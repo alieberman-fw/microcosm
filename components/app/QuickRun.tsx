@@ -24,6 +24,7 @@ import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ModeDiagram, { ModeKey } from "@/components/app/docs/ModeDiagram";
 import CastingTheater, { CrowdBand } from "@/components/app/CastingTheater";
+import Orb from "@/components/app/Orb";
 import { MAX_DOC_BYTES } from "@/lib/corpus";
 import { SIM_MODES } from "@/lib/casting";
 import { BriefContract } from "@/lib/understand";
@@ -599,7 +600,11 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
                 <span style={{ ...mono, fontSize: 9, width: 12, color: s.state === "done" ? "var(--acc)" : "var(--t6)", flex: "none" }}>
                   {s.state === "done" ? "✓" : s.state === "active" ? "·" : ""}
                 </span>
-                {s.state === "active" && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />}
+                {s.state === "active" && (
+                  s.key === "understand" ? <Orb state="shaping" size={20} aria-label="Reading your brief" />
+                  : s.key === "launch" ? <Orb state="connecting" size={20} aria-label="Launching the run" />
+                  : <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />
+                )}
                 <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: s.state === "active" ? "var(--t2)" : "var(--t5)" }}>
                   {s.label}
                   {s.key === "review" && s.state === "active" && <span style={{ color: "var(--t6)" }}> — WAITING ON YOU</span>}

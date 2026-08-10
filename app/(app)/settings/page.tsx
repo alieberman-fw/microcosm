@@ -2,6 +2,7 @@ import { CSSProperties } from "react";
 import { createServerSupabase, getLocalUser } from "@/lib/supabase/server";
 import ChecklistPref from "@/components/app/ChecklistPref";
 import ThemePref from "@/components/app/ThemePref";
+import OrbInkPref from "@/components/app/OrbInkPref";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -51,9 +52,11 @@ export default async function Settings() {
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Appearance</h3>
         <p style={{ margin: "8px 0 0", fontSize: 13.5, lineHeight: 1.6, color: "var(--t5)" }}>
           Four themes, brightest to darkest: light · fog (light warm gray) · gray (warm middle) · dark.
-          The profile-menu switch cycles through all four; your choice persists on this device.
+          The profile-menu switch cycles through all four. Loading orbs — the little animations that play while
+          agents think, search, and write — can wear the theme&apos;s accent or stay monochrome. Both choices persist on this device.
         </p>
         <ThemePref />
+        <OrbInkPref />
       </div>
 
       <div className="card" style={{ marginTop: 16, padding: "24px 28px" }}>
