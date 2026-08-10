@@ -601,7 +601,16 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
                   {s.state === "done" ? "✓" : s.state === "active" ? "·" : ""}
                 </span>
                 {s.state === "active" && (
-                  s.key === "understand" ? <Orb state="shaping" size={20} aria-label="Reading your brief" />
+                  // every stage speaks orb (field request), one meaning each:
+                  // working = setup · shaping = brief→contract · breathing =
+                  // idling for YOU · weaving = seats braiding into a panel ·
+                  // composing = crowd personas being written · connecting =
+                  // the run wiring up
+                  s.key === "create" ? <Orb state="working" size={20} tone="quiet" aria-label="Creating the simulation" />
+                  : s.key === "understand" ? <Orb state="shaping" size={20} aria-label="Reading your brief" />
+                  : s.key === "review" ? <Orb state="breathing" size={20} aria-label="Waiting for your review" />
+                  : s.key === "cast" ? <Orb state="weaving" size={20} aria-label="Casting the panel" />
+                  : s.key === "crowd" ? <Orb state="composing" size={20} aria-label="Writing the crowd" />
                   : s.key === "launch" ? <Orb state="connecting" size={20} aria-label="Launching the run" />
                   : <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.4s ease infinite", flex: "none" }} />
                 )}

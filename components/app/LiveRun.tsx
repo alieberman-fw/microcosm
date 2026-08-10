@@ -22,6 +22,7 @@ import StageRail from "@/components/app/StageRail";
 import { createClient } from "@/lib/supabase/client";
 import { REPORTS_REFRESH_EVENT, ReportState, reportSynthFresh } from "@/lib/report-state";
 import type { PersonaSpec } from "@/lib/personas";
+import type { FrozenSpec } from "@/lib/casting";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -227,6 +228,23 @@ export default function LiveRun({
   const [agendas, setAgendas] = useState<Record<number, string>>(initialAgendas);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [rosterOpen, setRosterOpen] = useState(false);
+  // roster scope: leads always ride with the page; the crowd (up to 1,000
+  // members) loads lazily the first time it's asked for
+  const [rosterTab, setRosterTab] = useState<"panel" | "crowd" | "both">("panel");
+  const [crowdMembers, setCrowdMembers] = useState<{ key: string; spec: FrozenSpec }[] | null>(null);
+  const [crowdLoading, setCrowdLoading] = useState(false);
+  const [crowdQuery, setCrowdQuery] = useState("");
+  const pickRosterTab = (tab: "panel" | "crowd" | "both") => {
+    setRosterTab(tab);
+    if (tab !== "panel" && crowdMembers === null && !crowdLoading) {
+      setCrowdLoading(true);
+      fetch(`/api/simulations/${simId}/agents?tier=crowd`)
+        .then((r) => r.json())
+        .then((d) => setCrowdMembers((d.members ?? []) as { key: string; spec: FrozenSpec }[]))
+        .catch(() => setCrowdMembers([]))
+        .finally(() => setCrowdLoading(false));
+    }
+  };
   const [profileKey, setProfileKey] = useState<string | null>(null);
   const [floorText, setFloorText] = useState("");
   const [floorBusy, setFloorBusy] = useState(false);
@@ -1087,7 +1105,7 @@ export default function LiveRun({
           onClick={() => setRosterOpen((v) => !v)}
           style={{ marginLeft: "auto", ...mono, fontSize: 9, letterSpacing: ".07em", color: rosterOpen ? "var(--acc)" : "var(--t5)", background: "transparent", border: `1px solid ${rosterOpen ? "var(--acc)" : "var(--ln4)"}`, borderRadius: 100, padding: "4px 12px", cursor: "pointer" }}
         >
-          {leads.length} ON THE PANEL {rosterOpen ? "←" : "→"}
+          SEE PANEL MEMBERS {rosterOpen ? "←" : "→"}
         </button>
         <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--t6)" }}>
           {currentRound > 0 ? `ROUND ${currentRound} / ${maxR} · ` : ""}{posts} POSTS
@@ -1617,14 +1635,29 @@ export default function LiveRun({
           )}
         </div>
 
-        {/* §2c roster rail — the cast is knowable mid-run */}
+        {/* §2c roster rail — the cast is knowable mid-run: panel always,
+            crowd on demand (field request: see the crowd too, collapsed by
+            default), or both at once */}
         {rosterOpen && (
           <div style={{ width: 268, flex: "none", display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, background: "var(--sf)", overflow: "hidden" }}>
-            <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--ln2)", ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>
-              THE PANEL · {leads.length} LEADS
+            <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--ln2)", display: "flex", gap: 4 }}>
+              {([["panel", `PANEL · ${leads.length}`], ["crowd", `CROWD · ${liveCrowd}`], ["both", "BOTH"]] as const).map(([t, lbl]) => (
+                <button
+                  key={t}
+                  onClick={() => pickRosterTab(t)}
+                  style={{
+                    ...mono, flex: 1, fontSize: 8, letterSpacing: ".05em", padding: "6px 4px", borderRadius: 100, cursor: "pointer",
+                    border: `1px solid ${rosterTab === t ? "var(--acc)" : "var(--ln4)"}`,
+                    background: rosterTab === t ? "var(--acc-dim)" : "transparent",
+                    color: rosterTab === t ? "var(--acc)" : "var(--t6)",
+                  }}
+                >
+                  {lbl}
+                </button>
+              ))}
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
-              {leads.map((l) => (
+              {(rosterTab === "panel" || rosterTab === "both") && leads.map((l) => (
                 <button
                   key={l.key}
                   onClick={() => setProfileKey(l.key)}
@@ -1650,6 +1683,53 @@ export default function LiveRun({
                   )}
                 </button>
               ))}
+
+              {/* the crowd — compact rows, searchable, lazy-loaded */}
+              {rosterTab !== "panel" && (
+                <>
+                  {rosterTab === "both" && (
+                    <div style={{ ...mono, fontSize: 8, letterSpacing: ".08em", color: "var(--t6)", padding: "8px 2px 0" }}>
+                      THE CROWD · {liveCrowd} — POLLED EVERY ROUND
+                    </div>
+                  )}
+                  {crowdLoading && (
+                    <div style={{ ...mono, display: "flex", alignItems: "center", gap: 8, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t6)", padding: "6px 2px" }}>
+                      <Orb state="working" size={20} tone="quiet" aria-label="Loading the crowd" /> LOADING THE CROWD…
+                    </div>
+                  )}
+                  {crowdMembers !== null && crowdMembers.length > 12 && (
+                    <input
+                      value={crowdQuery}
+                      onChange={(e) => setCrowdQuery(e.target.value)}
+                      placeholder={`Search ${crowdMembers.length} crowd members…`}
+                      style={{ boxSizing: "border-box", width: "100%", background: "var(--sf2)", border: "1px solid var(--ln3)", borderRadius: 100, padding: "7px 13px", fontSize: 11.5, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
+                    />
+                  )}
+                  {(crowdMembers ?? [])
+                    .filter((m) => {
+                      const q = crowdQuery.trim().toLowerCase();
+                      if (!q) return true;
+                      const d = m.spec.demographics as { metro?: string; occupation?: string } | undefined;
+                      return `${m.spec.name} ${m.spec.role} ${m.spec.tagline ?? ""} ${d?.metro ?? ""} ${d?.occupation ?? ""}`.toLowerCase().includes(q);
+                    })
+                    .map((m) => (
+                      <button
+                        key={m.key}
+                        onClick={() => setProfileKey(m.key)}
+                        style={{ textAlign: "left", display: "flex", gap: 8, alignItems: "center", background: "transparent", border: "1px solid var(--ln2)", borderRadius: 10, padding: "7px 10px", cursor: "pointer" }}
+                      >
+                        <span style={{ ...mono, fontSize: 8, width: 22, height: 22, borderRadius: "50%", border: "1px solid var(--ln4)", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "var(--t5)", flex: "none" }}>{m.spec.initials}</span>
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.spec.name}</span>
+                          <span style={{ ...mono, display: "block", fontSize: 7, letterSpacing: ".05em", color: "var(--t6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(m.spec.seat?.role ?? m.spec.role ?? "").toUpperCase()}</span>
+                        </span>
+                      </button>
+                    ))}
+                  {crowdMembers !== null && crowdMembers.length === 0 && !crowdLoading && (
+                    <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t6)", padding: "6px 2px" }}>NO CROWD ON THIS RUN</div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
@@ -1657,12 +1737,26 @@ export default function LiveRun({
 
       {profileKey && (() => {
         const l = leads.find((x) => x.key === profileKey);
-        if (!l?.spec) return null;
+        if (l?.spec) {
+          return (
+            <PersonaProfile
+              kind={l.kind ?? "expert"}
+              spec={l.spec}
+              chatKey={l.key}
+              source="library"
+              showChatCta={false}
+              onClose={() => setProfileKey(null)}
+            />
+          );
+        }
+        // crowd members open the same full profile card
+        const c = crowdMembers?.find((m) => m.key === profileKey);
+        if (!c) return null;
         return (
           <PersonaProfile
-            kind={l.kind ?? "expert"}
-            spec={l.spec}
-            chatKey={l.key}
+            kind={c.spec.kind ?? "consumer"}
+            spec={c.spec}
+            chatKey={c.key}
             source="library"
             showChatCta={false}
             onClose={() => setProfileKey(null)}
