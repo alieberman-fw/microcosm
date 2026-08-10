@@ -7,7 +7,7 @@
 
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Logo } from "@/components/Nav";
 import ReportsBadge from "@/components/app/ReportsBadge";
 
@@ -34,14 +34,22 @@ const ICONS = {
   settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z",
 };
 
-type NavItem = { href: string | null; label: string; icon: string; soon?: boolean };
+type NavSubItem = { href: string; label: string; match: (pathname: string, tab: string | null) => boolean };
+type NavItem = { href: string | null; label: string; icon: string; soon?: boolean; sub?: NavSubItem[] };
 
 // field fix: Adam's requested order — Marketplace (Soon) stays last
 const NAV: NavItem[] = [
   { href: "/home", label: "Home", icon: ICONS.home },
   { href: "/dashboard", label: "Simulations", icon: ICONS.sims },
   { href: "/reports", label: "Reports", icon: ICONS.reports },
-  { href: "/personas", label: "Agent Library", icon: ICONS.personas },
+  {
+    href: "/personas", label: "Agent Library", icon: ICONS.personas,
+    // sub-items show while inside the library — Packs deep-links its tab
+    sub: [
+      { href: "/personas", label: "Personas", match: (p, t) => p.startsWith("/personas") && t !== "packs" },
+      { href: "/personas?tab=packs", label: "Packs", match: (p, t) => p.startsWith("/personas") && t === "packs" },
+    ],
+  },
   { href: "/conversations", label: "Conversations", icon: ICONS.consult },
   { href: "/monitoring", label: "Monitoring", icon: ICONS.monitor },
   { href: "/docs", label: "Docs", icon: ICONS.docs },
@@ -58,18 +66,32 @@ export default function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const urlTab = searchParams.get("tab");
   const [collapsed, setCollapsed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "gray" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "gray" | "fog" | "light">("dark");
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setCollapsed(localStorage.getItem("mc-sidebar") === "collapsed");
-    const read = () => setTheme((localStorage.getItem("mc-theme") as "dark" | "gray" | "light") || "dark");
+    // read AND re-stamp: any page in this tab may have stamped a different
+    // data-theme (shared-report views have their own switch), and bfcache
+    // restores skip the boot script — the saved choice must always win here
+    // (field report: "the mode randomly changes / isn't remembered")
+    const read = () => {
+      const t = (localStorage.getItem("mc-theme") as "dark" | "gray" | "fog" | "light") || "dark";
+      setTheme(t);
+      document.documentElement.dataset.theme = t;
+    };
     read();
-    // the 3-point slider in Settings → Appearance broadcasts changes here
+    // the Settings → Appearance slider broadcasts changes here
     window.addEventListener("mc-theme-changed", read);
-    return () => window.removeEventListener("mc-theme-changed", read);
+    window.addEventListener("pageshow", read);
+    return () => {
+      window.removeEventListener("mc-theme-changed", read);
+      window.removeEventListener("pageshow", read);
+    };
   }, []);
 
   useEffect(() => {
@@ -86,13 +108,17 @@ export default function AppShell({
     localStorage.setItem("mc-sidebar", c ? "collapsed" : "open");
   };
 
-  // quick switch: light ↔ dark (gray counts as dark-family). All three
-  // themes live on the Settings → Appearance slider.
+  // quick switch: cycle the four themes in brightness order — never
+  // clobbers a picked middle theme with light/dark (field report). The
+  // Settings → Appearance slider carries the same set.
   const toggleTheme = () => {
-    const t = theme === "light" ? "dark" : "light";
+    const ORDER = ["light", "fog", "gray", "dark"] as const;
+    const ix = ORDER.indexOf(theme as (typeof ORDER)[number]);
+    const t = ORDER[(ix + 1) % ORDER.length] ?? "dark";
     localStorage.setItem("mc-theme", t);
     document.documentElement.dataset.theme = t;
     setTheme(t);
+    window.dispatchEvent(new Event("mc-theme-changed"));
   };
 
   const initials = (email[0] ?? "?").toUpperCase() + (email.split("@")[0]?.[1] ?? "").toUpperCase();
@@ -152,10 +178,29 @@ export default function AppShell({
                 )}
               </span>
             );
-            return item.href ? (
-              <Link key={item.label} href={item.href}>{inner}</Link>
-            ) : (
-              <div key={item.label}>{inner}</div>
+            const showSub = Boolean(item.sub && active && !collapsed);
+            return (
+              <div key={item.label}>
+                {item.href ? <Link href={item.href}>{inner}</Link> : inner}
+                {showSub && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 1, margin: "2px 0 4px", paddingLeft: 27, borderLeft: "1px solid var(--ln2)", marginLeft: 19 }}>
+                    {item.sub!.map((s) => {
+                      const subActive = s.match(pathname, urlTab);
+                      return (
+                        <Link key={s.label} href={s.href} style={{
+                          padding: "7px 10px", borderRadius: 8, fontSize: 12.5,
+                          color: subActive ? "var(--acc)" : "var(--t5)",
+                          background: subActive ? "var(--acc-dim)" : "transparent",
+                          fontWeight: subActive ? 600 : 500,
+                          transition: "background .15s, color .15s",
+                        }}>
+                          {s.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
@@ -178,8 +223,8 @@ export default function AppShell({
                 </div>
               </div>
               <button onClick={toggleTheme} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", color: "var(--t3)", cursor: "pointer", padding: "10px 12px", fontSize: 13, borderRadius: 8 }}>
-                <Icon d={theme === "dark" ? "M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" : "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M1 12h2M21 12h2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M19.8 4.2l-1.4 1.4M5.6 18.4l-1.4 1.4"} size={14} />
-                {theme === "dark" ? "Light mode" : "Dark mode"}
+                <Icon d={theme === "dark" || theme === "gray" ? "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M1 12h2M21 12h2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M19.8 4.2l-1.4 1.4M5.6 18.4l-1.4 1.4" : "M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"} size={14} />
+                {`Theme: ${theme} →`}
               </button>
               <Link href="/settings" onClick={() => setMenuOpen(false)} style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--t3)", padding: "10px 12px", fontSize: 13, borderRadius: 8 }}>
                 <Icon d={ICONS.settings} size={14} />

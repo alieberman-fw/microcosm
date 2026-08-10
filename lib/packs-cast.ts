@@ -18,6 +18,8 @@ export interface PackPlan {
   name: string;
   kind: PackKind;
   description: string;
+  /** what the user asked for (post-clamp target the cast must hit exactly) */
+  target: number;
   requested: number;
   clamped: boolean;
   members: CastSeat[];
@@ -28,17 +30,27 @@ export function packPlanSystem(kindOverride?: PackKind): string {
     `You are the Pack Director for Microcosm, a real-estate simulation platform. The user describes a reusable roster ` +
     `("pack") of synthetic personas in natural language. Produce STRICT JSON only — no prose, no code fences:\n` +
     `{"name": "short pack name", "kind": "panel|crowd", "description": "one plain-English line on what this pack is for", ` +
+    `"target_count": <the exact number of members the user asked for, or the default>, ` +
     `"members": [{"role": "specific professional or person title", "kind": "expert|consumer|resident|stakeholder", ` +
     `"discipline": "SHORT UPPERCASE GROUP", "why": "one clause, <=12 words — their distinct angle", "query": "2-4 lowercase search keywords"}]}\n` +
     `Rules:\n` +
     (kindOverride
       ? `- kind MUST be "${kindOverride}" (the user chose it).\n`
       : `- kind: "panel" = named professionals who deliberate and advise (the default); "crowd" = a population polled for sentiment (renters, buyers, shoppers, guests, residents).\n`) +
-    `- member count: honor the user's number, capped at ${CAST_MEMBER_CAPS.panel} for panel and ${CAST_MEMBER_CAPS.crowd} for crowd. ` +
-    `No number given → ${DEFAULT_CAST_COUNTS.panel} for panel, ${DEFAULT_CAST_COUNTS.crowd} for crowd.\n` +
+    `- member count: the members array MUST contain EXACTLY target_count entries. Honor the user's number, capped at ${CAST_MEMBER_CAPS.panel} for panel and ${CAST_MEMBER_CAPS.crowd} for crowd. ` +
+    `No number given → ${DEFAULT_CAST_COUNTS.panel} for panel, ${DEFAULT_CAST_COUNTS.crowd} for crowd. Count the entries before you answer.\n` +
     `- Every member is DISTINCT — spread the roles across every focus the user names (specialties, asset classes, geographies, dispositions) so the roster covers the whole description, not one archetype repeated.\n` +
     `- Roles are concrete ("REIT portfolio manager, industrial", not "investor").\n` +
     `- No adversarial seats — packs are neutral rosters; opposition gets seeded at simulation time.`
+  );
+}
+
+/** continuation when the plan came up short — same member JSON, only the gap */
+export function packTopupSystem(existingRoles: string[], missing: number): string {
+  return (
+    `You are completing a Pack Director roster. Members already defined: ${existingRoles.join("; ") || "none"}. ` +
+    `Produce ONLY a JSON array of EXACTLY ${missing} ADDITIONAL members (distinct from all of the above — new specialties/angles, no duplicates): ` +
+    `[{"role": "...", "kind": "expert|consumer|resident|stakeholder", "discipline": "SHORT UPPERCASE", "why": "one clause, <=12 words", "query": "2-4 lowercase keywords"}]`
   );
 }
 
@@ -63,7 +75,10 @@ export function normalizePackPlan(
   if (!raw || !Array.isArray(raw.members) || raw.members.length === 0) return null;
   const kind: PackKind = opts.kindOverride ?? (raw.kind === "crowd" ? "crowd" : "panel");
   const cap = CAST_MEMBER_CAPS[kind];
-  const requested = raw.members.length;
+  // the count the user actually asked for — the cast must hit it exactly
+  // (the plan can come up short; the route tops up to `target`)
+  const asked = Number(raw.target_count);
+  const requested = Number.isFinite(asked) && asked > 0 ? Math.round(asked) : raw.members.length;
   const members: CastSeat[] = (raw.members as { role?: unknown; kind?: unknown; discipline?: unknown; why?: unknown; query?: unknown }[])
     .slice(0, cap)
     .map((m, i): CastSeat => ({
@@ -79,8 +94,22 @@ export function normalizePackPlan(
     name,
     kind,
     description: String(raw.description ?? "").trim().slice(0, MAX_PACK_DESC),
+    target: Math.min(requested, cap),
     requested,
     clamped: requested > cap,
     members,
   };
+}
+
+/** shape a top-up array into CastSeats continuing the key sequence */
+export function normalizeTopupMembers(raw: unknown, kind: PackKind, keyOffset: number): CastSeat[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as { role?: unknown; kind?: unknown; discipline?: unknown; why?: unknown; query?: unknown }[]).map((m, i): CastSeat => ({
+    key: seatKey(String(m.role ?? "member"), keyOffset + i + 1),
+    role: String(m.role ?? "Panelist").slice(0, 80),
+    kind: (["expert", "consumer", "resident", "stakeholder"] as const).find((k) => k === m.kind) ?? (kind === "crowd" ? "consumer" : "expert"),
+    discipline: String(m.discipline ?? (kind === "crowd" ? "CROWD" : "PANEL")).toUpperCase().slice(0, 20),
+    why: String(m.why ?? "").slice(0, 200),
+    query: String(m.query ?? m.role ?? "").slice(0, 80),
+  }));
 }

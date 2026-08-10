@@ -18,6 +18,7 @@ const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 const KEY = "mc-shared-theme";
 const MODES = [
   { id: "light", icon: "☀", label: "LIGHT" },
+  { id: "fog", icon: "◔", label: "FOG" },
   { id: "gray", icon: "◐", label: "GRAY" },
   { id: "dark", icon: "☾", label: "DARK" },
 ] as const;

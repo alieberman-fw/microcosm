@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/app/AppShell";
 import { createServerSupabase, getLocalUser } from "@/lib/supabase/server";
@@ -14,8 +15,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const orgName = (userRow as { orgs?: { name?: string } } | null)?.orgs?.name ?? "personal";
 
   return (
-    <AppShell email={user.email ?? "account"} orgName={orgName}>
-      {children}
-    </AppShell>
+    // AppShell + pages read useSearchParams (sidebar sub-nav, library tabs)
+    <Suspense>
+      <AppShell email={user.email ?? "account"} orgName={orgName}>
+        {children}
+      </AppShell>
+    </Suspense>
   );
 }
