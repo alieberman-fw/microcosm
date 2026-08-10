@@ -26,6 +26,21 @@ html[data-theme="gray"] {
   --navbg: rgba(33, 32, 29, 0.72);
   color-scheme: dark;
 }
+/* FOG — the light warm gray (4-way slider, field request): a stone-toned
+   light theme between LIGHT and the warm-dark GRAY. Same accent family as
+   light; warm paper surfaces, warm ink ramp. */
+html[data-theme="fog"] {
+  --acc: #0d9d63; --acc-hero: #0d9d63; --acc-dim: rgba(13, 157, 99, 0.11); --acc-c: #ffffff;
+  --warn: #8a6210; --warn-dim: rgba(138, 98, 16, 0.12);
+  --bg: #e8e6e1; --sf: #f1efea; --sf2: #e0ddd7;
+  --t0: #191815; --t1: #262420; --t2: #3b3934; --t3: #4a4842; --t4: #55524c;
+  --t5: #64615a; --t6: #737069; --t7: #918e86;
+  --ln1: rgba(30, 28, 22, 0.09); --ln2: rgba(30, 28, 22, 0.1); --ln3: rgba(30, 28, 22, 0.11);
+  --ln4: rgba(30, 28, 22, 0.15); --ln5: rgba(30, 28, 22, 0.17); --ln6: rgba(30, 28, 22, 0.21);
+  --ln7: rgba(30, 28, 22, 0.31); --ln8: rgba(30, 28, 22, 0.33);
+  --navbg: rgba(232, 230, 225, 0.78);
+  color-scheme: light;
+}
 html[data-theme="light"] {
   --acc: #0d9d63; --acc-dim: rgba(13, 157, 99, 0.1); --acc-c: #ffffff;
   --warn: #8f6410; --warn-dim: rgba(143, 100, 16, 0.1);

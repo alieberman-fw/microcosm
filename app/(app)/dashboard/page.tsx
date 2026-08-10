@@ -1,6 +1,6 @@
 import { CSSProperties } from "react";
 import Link from "next/link";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabase, getLocalUser } from "@/lib/supabase/server";
 import SimCards, { SimCardRow } from "@/components/app/SimCards";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -47,7 +47,8 @@ export default async function Dashboard() {
   }));
 
   // favorites (1b): the user's starred sims float first and power ★ FAVORITES
-  const { data: { user: authUser } } = await supabase!.auth.getUser();
+  // session cookie is already layout-verified — a local read saves a network auth round trip per nav
+  const authUser = await getLocalUser(supabase!);
   const { data: prefRow } = authUser
     ? await supabase!.from("users").select("prefs").eq("id", authUser.id).single()
     : { data: null };

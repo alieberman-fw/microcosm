@@ -1,4 +1,4 @@
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabase, getLocalUser } from "@/lib/supabase/server";
 import { ReportSpec, fmtMoney } from "@/lib/report";
 import ReportsClient, { ReportRow } from "@/components/app/ReportsClient";
 
@@ -55,7 +55,8 @@ export default async function ReportsPage() {
   });
 
   // favorites (1b): starred report sets (keyed by sim) float first
-  const { data: { user: authUser } } = await supabase!.auth.getUser();
+  // session cookie is already layout-verified — a local read saves a network auth round trip per nav
+  const authUser = await getLocalUser(supabase!);
   const { data: prefRow } = authUser
     ? await supabase!.from("users").select("prefs").eq("id", authUser.id).single()
     : { data: null };

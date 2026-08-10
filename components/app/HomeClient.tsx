@@ -330,9 +330,11 @@ export default function HomeClient({
         </div>
       )}
 
-      {/* trend charts: what you've been building and where it landed */}
+      {/* trend charts: what you've been building and where it landed —
+          cards stretch to the tallest in the row (field fix: the outcomes
+          box towered over its neighbors) */}
       {hasActivity && (
-        <div className="grid3" style={{ marginTop: 14, alignItems: "start" }}>
+        <div className="grid3" style={{ marginTop: 14 }}>
           <div className="card" style={{ padding: "20px 24px", minWidth: 0 }}>
             <SectionHead label="SIMULATIONS · 30 DAYS" href="/dashboard" cta="ALL →" />
             <MiniBars data={sims30} unit="CREATED" href="/dashboard" onNavigate={(h) => router.push(h)} />
@@ -496,8 +498,9 @@ export default function HomeClient({
         )}
       </div>
 
-      {/* reports · personas · conversations — three lanes, every child clamped */}
-      <div className="grid3" style={{ marginTop: 14, alignItems: "start" }}>
+      {/* reports · personas · conversations — three lanes, every child
+          clamped; cards stretch to the tallest in the row */}
+      <div className="grid3" style={{ marginTop: 14 }}>
         <div className="card" style={{ padding: "24px 26px", minWidth: 0 }}>
           <SectionHead label="LATEST REPORTS" href="/reports" cta={reports.length > 0 ? "ALL →" : undefined} />
           <div style={{ display: "flex", flexDirection: "column", marginTop: 8, minWidth: 0 }}>

@@ -14,15 +14,17 @@ export function Logo({ size = 30 }: { size?: number }) {
 }
 
 export default function Nav() {
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<string>("dark");
 
   useEffect(() => {
-    const t = (localStorage.getItem("mc-theme") as "dark" | "light") || "dark";
-    setTheme(t);
+    setTheme(localStorage.getItem("mc-theme") || "dark");
   }, []);
 
+  // cycle all four themes — flipping only light↔dark used to CLOBBER a
+  // saved middle theme (fog/gray) the moment the landing toggle was touched
   const toggleTheme = useCallback(() => {
-    const t = theme === "dark" ? "light" : "dark";
+    const ORDER = ["light", "fog", "gray", "dark"];
+    const t = ORDER[(ORDER.indexOf(theme) + 1) % ORDER.length] ?? "dark";
     localStorage.setItem("mc-theme", t);
     document.documentElement.dataset.theme = t;
     setTheme(t);
@@ -59,7 +61,7 @@ export default function Nav() {
             color: "var(--t3)", cursor: "pointer", padding: 0,
           }}
         >
-          {theme === "dark" ? (
+          {theme === "dark" || theme === "gray" ? (
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <circle cx="12" cy="12" r="4.5" />
               <path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" />
