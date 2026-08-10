@@ -502,12 +502,13 @@ export function blocksSynthSystem(blocksSpec: string): string {
     `You get the brief, the report's drafted answers (align with them — never contradict the report), and the transcript (posts numbered by [seq]). ` +
     `Reply with ONLY a JSON object: {"blocks": [{"kind": "ranked_list|matrix|comparison", "title": "...", "columns": ["..."], "rows": [{"label": "...", "cells": ["..."], "note": "...", "cites": [seq]}]}]}\n` +
     `BLOCKS REQUIRED (from the brief's contract — every one, complete):\n${blocksSpec}\n` +
-    `Block shapes: ranked_list — rows IN RANK ORDER, label "#<rank> · <item>", cells = [one committed verdict clause], note = 1-2 sentence rationale, cites = supporting post seqs; EVERY enumerated item present ("never debated — ranked on thesis fit alone" is an honest note). ` +
-    `matrix — columns = the criteria; ONE row per entity; each cell a SHORT committed verdict aligned to its column ("YES — 480V in place" / "WEAK — no comps"), never a paragraph. ` +
+    `Block shapes: ranked_list — rows IN RANK ORDER, label "#<rank> · <item>", cells = [one decisive verdict clause stating the judgment ITSELF, e.g. "the central mechanism — verdict hinges on the drafting" or "HOLDS — cliff confirmed at $2.1M"], note = 1-2 sentence rationale, cites = supporting post seqs; EVERY enumerated item present ("never debated — ranked on thesis fit alone" is an honest note). ` +
+    `matrix — columns = the criteria; ONE row per entity; each cell a SHORT decisive verdict aligned to its column ("YES — 480V in place" / "WEAK — no comps"), never a paragraph. ` +
     `comparison — columns ["PROS", "CONS", "BOTTOM LINE"], one row per option, cells aligned (compact "·"-separated clauses).\n` +
+    `NEVER open a cell with a meta-label about the answer's own quality — "COMMITTED", "ANSWERED", "DECIDED", "DEFINITIVE" are process words for YOU, not content; a cell that starts with one is a failure (field report: every ranked cell shipped as "COMMITTED — …"). State the substance directly.\n` +
     `NO EMPTY CELLS (non-negotiable): every row carries EXACTLY one cell per column and every cell is filled — never blank, never "—", never "N/A". ` +
-    `Where the panel produced no direct signal for an entity × criterion, the cell still commits from what IS known ("UNTESTED — panel never priced it; thesis fit says marginal"). A table with holes is a product failure.\n` +
-    `Every number from the transcript or the brief; cites are real post seqs. Commit in every cell — hedges are a failure.`
+    `Where the panel produced no direct signal for an entity × criterion, the cell still takes a position from what IS known ("UNTESTED — panel never priced it; thesis fit says marginal"). A table with holes is a product failure.\n` +
+    `Every number from the transcript or the brief; cites are real post seqs. Take a position in every cell — hedges are a failure.`
   );
 }
 
@@ -732,3 +733,9 @@ export async function synthesizePlain(
   }
   return { plain: null, lastErr };
 }
+
+/** synthesizer meta-labels that leaked into block cells (field report:
+ *  every ranked cell shipped "COMMITTED — …") — the prompt now bans them,
+ *  and stripping at render heals reports generated before the fix */
+export const stripCellMeta = (s: string | undefined | null): string =>
+  (s ?? "").replace(/^\s*(COMMITTED|ANSWERED|DECIDED|DEFINITIVE)\s*[—:–-]\s*/, "");

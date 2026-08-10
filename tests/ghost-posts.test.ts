@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clampWords, pickReplyTarget, windowOf } from "@/lib/engine";
+import { stripCellMeta } from "@/lib/report";
 
 /** Field report: "[REPLY] Renata O. (): ''" — a ghost post derailed a live
  *  panel for rounds, and long posts published ending mid-clause. */
@@ -58,5 +59,19 @@ describe("pickReplyTarget — ghosts are not reply targets", () => {
       const t = pickReplyTarget(posts, 1, salt, undefined, "lively");
       expect(t?.seq).toBe(1);
     }
+  });
+});
+
+describe("stripCellMeta — 'COMMITTED —' cell prefixes (field report)", () => {
+  it("strips the leaked meta-labels", () => {
+    expect(stripCellMeta("COMMITTED — the central mechanism")).toBe("the central mechanism");
+    expect(stripCellMeta("ANSWERED: splits by leverage tier")).toBe("splits by leverage tier");
+    expect(stripCellMeta("DECIDED – hold the parcel")).toBe("hold the parcel");
+  });
+  it("keeps honest cell verdicts untouched", () => {
+    expect(stripCellMeta("YES — 480V in place")).toBe("YES — 480V in place");
+    expect(stripCellMeta("UNTESTED — panel never priced it")).toBe("UNTESTED — panel never priced it");
+    expect(stripCellMeta("HOLDS — cliff confirmed at $2.1M")).toBe("HOLDS — cliff confirmed at $2.1M");
+    expect(stripCellMeta(undefined)).toBe("");
   });
 });
