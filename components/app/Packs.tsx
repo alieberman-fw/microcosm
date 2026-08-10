@@ -14,10 +14,12 @@ import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PersonaSpec } from "@/lib/personas";
 import { PACK_CAPS, PackKind, PackSummary } from "@/lib/packs";
+import PersonaProfile from "@/components/app/PersonaProfile";
+import PersonaEditor from "@/components/app/PersonaEditor";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
-export interface PackMemberRow { id: string; kind: string; spec: PersonaSpec }
+export interface PackMemberRow { id: string; kind: string; spec: PersonaSpec; source?: "library" | "custom" }
 
 /* ---------------------------------------------------------------- strip */
 
@@ -110,13 +112,21 @@ function AvatarStack({ preview, count }: { preview: PackSummary["preview"]; coun
   );
 }
 
-export function PacksSection({ onCount }: { onCount?: (n: number) => void }) {
+export function PacksSection({ orgId, onCount }: { orgId: string; onCount?: (n: number) => void }) {
   const [packs, setPacks] = useState<PackSummary[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<PackKind>("panel");
   const [open, setOpen] = useState<PackSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // describe-to-cast (the Pack Director)
+  const [castPrompt, setCastPrompt] = useState("");
+  const [castKind, setCastKind] = useState<PackKind | "auto">("auto");
+  const [casting, setCasting] = useState<null | {
+    status: string; name?: string; kind?: string; count?: number;
+    clamped?: boolean; requested?: number;
+    landed: { name: string; provenance: string }[];
+  }>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -149,6 +159,61 @@ export function PacksSection({ onCount }: { onCount?: (n: number) => void }) {
     }
   };
 
+  /** the Pack Director: describe the roster, watch members land live */
+  const castPack = async () => {
+    const prompt = castPrompt.trim();
+    if (!prompt || casting) return;
+    setError(null);
+    setCasting({ status: "PLANNING THE ROSTER…", landed: [] });
+    try {
+      const res = await fetch("/api/packs/cast", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, kind: castKind === "auto" ? undefined : castKind }),
+      });
+      if (!res.ok || !res.body) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error((d as { error?: string }).error ?? "Casting failed");
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      let packId: string | null = null;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let evt: { type?: string; name?: string; kind?: string; count?: number; clamped?: boolean; requested?: number; provenance?: string; member?: PackMemberRow; role?: string; packId?: string; error?: string } = {};
+          try { evt = JSON.parse(line); } catch { continue; }
+          if (evt.type === "plan") {
+            setCasting((c) => c && ({ ...c, status: "MATCHING & GENERATING…", name: evt.name, kind: evt.kind, count: evt.count, clamped: evt.clamped, requested: evt.requested }));
+          }
+          if (evt.type === "member") {
+            const name = evt.member?.spec?.name ?? evt.role ?? "…";
+            setCasting((c) => c && ({ ...c, landed: [...c.landed, { name, provenance: evt.provenance ?? "library" }] }));
+          }
+          if (evt.type === "error") throw new Error(evt.error ?? "Casting failed");
+          if (evt.type === "done" && evt.packId) packId = evt.packId;
+        }
+      }
+      const data = await (await fetch("/api/packs")).json();
+      const list: PackSummary[] = data.packs ?? [];
+      setPacks(list);
+      onCount?.(list.length);
+      setCasting(null);
+      setCastPrompt("");
+      setCreating(false);
+      const fresh = list.find((p) => p.id === packId);
+      if (fresh) setOpen(fresh);
+    } catch (e) {
+      setCasting(null);
+      setError(e instanceof Error ? e.message : "Casting failed");
+    }
+  };
+
   return (
     <div style={{ marginTop: 24 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -164,34 +229,102 @@ export function PacksSection({ onCount }: { onCount?: (n: number) => void }) {
         )}
       </div>
 
-      {creating && (
-        <div className="card" style={{ marginTop: 18, padding: "18px 22px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <input
+      {creating && !casting && (
+        <div className="card" style={{ marginTop: 18, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
+          {/* describe it — the Pack Director casts the whole roster */}
+          <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".1em", color: "var(--acc)" }}>✨ DESCRIBE THE PACK — IT CASTS ITSELF</div>
+          <textarea
             autoFocus
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void create(); if (e.key === "Escape") setCreating(false); }}
-            placeholder="Pack name — “Phoenix DC diligence panel”, “ZIP 85212 renters”…"
-            style={{ flex: 1, minWidth: 240, background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "10px 18px", fontSize: 13.5, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
+            value={castPrompt}
+            onChange={(e) => setCastPrompt(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void castPack(); } if (e.key === "Escape") setCreating(false); }}
+            rows={2}
+            placeholder="“A team of 25 investors focused on REITs, autonomous vehicles, and urban infill land” — every member distinct, matched from the library or generated fresh"
+            style={{ width: "100%", boxSizing: "border-box", resize: "none", background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 14, padding: "11px 15px", fontSize: 13.5, lineHeight: 1.5, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln4)")}
           />
-          <span style={{ display: "inline-flex", gap: 4, flex: "none" }}>
-            {(["panel", "crowd"] as const).map((k) => (
-              <button key={k} onClick={() => setNewKind(k)} style={{
-                ...mono, fontSize: 9.5, letterSpacing: ".06em", padding: "7px 14px", borderRadius: 100, cursor: "pointer",
-                border: `1px solid ${newKind === k ? "var(--acc)" : "var(--ln5)"}`,
-                background: newKind === k ? "var(--acc-dim)" : "transparent",
-                color: newKind === k ? "var(--acc)" : "var(--t5)",
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ display: "inline-flex", gap: 4 }}>
+              {(["auto", "panel", "crowd"] as const).map((k) => (
+                <button key={k} onClick={() => setCastKind(k)} title={k === "auto" ? "Let the director decide from the description" : undefined} style={{
+                  ...mono, fontSize: 9, letterSpacing: ".06em", padding: "6px 13px", borderRadius: 100, cursor: "pointer",
+                  border: `1px solid ${castKind === k ? "var(--acc)" : "var(--ln5)"}`,
+                  background: castKind === k ? "var(--acc-dim)" : "transparent",
+                  color: castKind === k ? "var(--acc)" : "var(--t5)",
+                }}>
+                  {k.toUpperCase()}
+                </button>
+              ))}
+            </span>
+            <button onClick={() => void castPack()} disabled={!castPrompt.trim()} className="btnAcc" style={{ padding: "9px 20px", fontSize: 13, opacity: castPrompt.trim() ? 1 : 0.5 }}>
+              ✨ Cast the pack
+            </button>
+            <span style={{ flex: 1 }} />
+            <button onClick={() => setCreating(false)} style={{ ...mono, fontSize: 9.5, background: "none", border: "none", color: "var(--t6)", cursor: "pointer" }}>
+              CANCEL
+            </button>
+          </div>
+
+          {/* or start empty */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", paddingTop: 12, borderTop: "1px solid var(--ln2)" }}>
+            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)", flex: "none" }}>OR START EMPTY</span>
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void create(); }}
+              placeholder="Pack name — “Phoenix DC diligence panel”…"
+              style={{ flex: 1, minWidth: 220, background: "var(--sf2)", border: "1px solid var(--ln5)", borderRadius: 100, padding: "9px 16px", fontSize: 13, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif" }}
+            />
+            <span style={{ display: "inline-flex", gap: 4, flex: "none" }}>
+              {(["panel", "crowd"] as const).map((k) => (
+                <button key={k} onClick={() => setNewKind(k)} style={{
+                  ...mono, fontSize: 9, letterSpacing: ".06em", padding: "6px 13px", borderRadius: 100, cursor: "pointer",
+                  border: `1px solid ${newKind === k ? "var(--acc)" : "var(--ln5)"}`,
+                  background: newKind === k ? "var(--acc-dim)" : "transparent",
+                  color: newKind === k ? "var(--acc)" : "var(--t5)",
+                }}>
+                  {k.toUpperCase()}
+                </button>
+              ))}
+            </span>
+            <button onClick={() => void create()} disabled={!newName.trim()} style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", padding: "8px 16px", borderRadius: 100, border: "1px solid var(--ln6)", background: "transparent", color: newName.trim() ? "var(--t3)" : "var(--t6)", cursor: newName.trim() ? "pointer" : "default", flex: "none" }}>
+              CREATE EMPTY
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* the casting theater — members land live as they match or generate */}
+      {casting && (
+        <div className="card" style={{ marginTop: 18, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.2s ease infinite", flex: "none" }} />
+            <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".1em", color: "var(--acc)" }}>{casting.status}</span>
+            {casting.name && (
+              <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t4)" }}>
+                {casting.name.toUpperCase()} · {String(casting.kind).toUpperCase()} · {casting.landed.length}/{casting.count}
+              </span>
+            )}
+            {casting.clamped && (
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--warn)" }}>
+                ASKED FOR {casting.requested} — NL CASTING CAPS AT {casting.count}; ADD MORE BY SEARCH
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {casting.landed.map((m, i) => (
+              <span key={i} style={{
+                ...mono, fontSize: 8.5, letterSpacing: ".04em", padding: "4px 11px", borderRadius: 100,
+                border: `1px solid ${m.provenance === "generated" ? "var(--acc)" : m.provenance === "failed" ? "var(--warn)" : "var(--ln5)"}`,
+                background: m.provenance === "generated" ? "var(--acc-dim)" : "var(--sf2)",
+                color: m.provenance === "failed" ? "var(--warn)" : m.provenance === "generated" ? "var(--acc)" : "var(--t4)",
+                animation: "fadeUp .25s ease both",
               }}>
-                {k.toUpperCase()}
-              </button>
+                {m.name.toUpperCase()}{m.provenance === "generated" ? " · NEW" : m.provenance === "yours" ? " · YOURS" : ""}
+              </span>
             ))}
-          </span>
-          <button onClick={() => void create()} disabled={!newName.trim()} className="btnAcc" style={{ padding: "9px 20px", fontSize: 13, flex: "none", opacity: newName.trim() ? 1 : 0.5 }}>
-            Create
-          </button>
-          <button onClick={() => setCreating(false)} style={{ ...mono, fontSize: 9.5, background: "none", border: "none", color: "var(--t6)", cursor: "pointer", flex: "none" }}>
-            CANCEL
-          </button>
+          </div>
         </div>
       )}
 
@@ -238,6 +371,7 @@ export function PacksSection({ onCount }: { onCount?: (n: number) => void }) {
       {open && (
         <PackModal
           pack={open}
+          orgId={orgId}
           onClose={() => setOpen(null)}
           onChanged={(updated) => {
             setOpen(updated);
@@ -255,8 +389,9 @@ export function PacksSection({ onCount }: { onCount?: (n: number) => void }) {
 
 /* -------------------------------------------------------------- modal */
 
-function PackModal({ pack, onClose, onChanged, onDeleted }: {
+function PackModal({ pack, orgId, onClose, onChanged, onDeleted }: {
   pack: PackSummary;
+  orgId: string;
   onClose: () => void;
   onChanged: (p: PackSummary) => void;
   onDeleted: (id: string) => void;
@@ -276,6 +411,11 @@ function PackModal({ pack, onClose, onChanged, onDeleted }: {
   const [libResults, setLibResults] = useState<PackMemberRow[]>([]);
   const [searching, setSearching] = useState(false);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // one-liner member draft + member profile/editor
+  const [draftPrompt, setDraftPrompt] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [profileM, setProfileM] = useState<PackMemberRow | null>(null);
+  const [editing, setEditing] = useState<{ member: PackMemberRow; mode: "edit" | "remix" } | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -338,6 +478,45 @@ function PackModal({ pack, onClose, onChanged, onDeleted }: {
     const cur = membersRef.current;
     if (members === null || cur.some((m) => m.id === r.id) || cur.length >= cap) return;
     commitMembers([...cur, r]);
+  };
+
+  /** one-liner draft: the model writes a NEW persona and the server appends
+   *  it to the pack — no PATCH here (the draft route already saved it) */
+  const draftMember = async () => {
+    const prompt = draftPrompt.trim();
+    if (!prompt || drafting || full) return;
+    setDrafting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/packs/${pack.id}/draft`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "Draft failed");
+      const member = data.member as PackMemberRow;
+      const next = [...membersRef.current, member];
+      membersRef.current = next;
+      setMembers(next);
+      setDraftPrompt("");
+      onChanged({ ...pack, count: next.length });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Draft failed");
+    } finally {
+      setDrafting(false);
+    }
+  };
+
+  /** editor save: edits update the member in place; remixes of library
+   *  personas SWAP the pack to the new editable copy */
+  const onEditorSaved = (row: { id: string; kind: string; spec: PersonaSpec }) => {
+    if (!editing) return;
+    const next = editing.mode === "remix"
+      ? membersRef.current.map((m) => (m.id === editing.member.id ? { id: row.id, kind: row.kind, spec: row.spec, source: "custom" as const } : m))
+      : membersRef.current.map((m) => (m.id === row.id ? { ...m, kind: row.kind, spec: row.spec } : m));
+    if (editing.mode === "remix") commitMembers(next);
+    else { membersRef.current = next; setMembers(next); }
+    setEditing(null);
+    setProfileM(null);
   };
 
   const has = (id: string) => Boolean(members?.some((m) => m.id === id));
@@ -440,13 +619,25 @@ function PackModal({ pack, onClose, onChanged, onDeleted }: {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>
               {(members ?? []).map((m) => (
                 <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 9, border: "1px solid var(--ln3)", borderRadius: 10, padding: "8px 11px", background: "var(--sf2)" }}>
-                  <span style={{ ...mono, width: 26, height: 26, borderRadius: "50%", flex: "none", background: "var(--sf)", border: "1px solid var(--ln5)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "var(--t4)" }}>
+                  <span style={{ ...mono, width: 26, height: 26, borderRadius: "50%", flex: "none", background: m.source === "custom" ? "var(--acc-dim)" : "var(--sf)", border: `1px solid ${m.source === "custom" ? "var(--acc)" : "var(--ln5)"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: m.source === "custom" ? "var(--acc)" : "var(--t4)" }}>
                     {m.spec.initials}
                   </span>
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.spec.name}</span>
-                    <span style={{ display: "block", fontSize: 10.5, color: "var(--t6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.spec.role}</span>
-                  </span>
+                  <button
+                    onClick={() => setProfileM(m)}
+                    title="View profile"
+                    style={{ minWidth: 0, flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                  >
+                    <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "var(--font-sans), sans-serif" }}>{m.spec.name}</span>
+                    <span style={{ display: "block", fontSize: 10.5, color: "var(--t6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "var(--font-sans), sans-serif" }}>{m.spec.role}</span>
+                  </button>
+                  <button
+                    onClick={() => setEditing({ member: m, mode: m.source === "custom" ? "edit" : "remix" })}
+                    title={m.source === "custom" ? "Edit this persona" : "Edit — library personas fork into your editable copy"}
+                    aria-label={`Edit ${m.spec.name}`}
+                    style={{ flex: "none", background: "none", border: "none", color: "var(--t6)", cursor: "pointer", fontSize: 11.5, lineHeight: 1, padding: "0 2px" }}
+                  >
+                    ✎
+                  </button>
                   <button
                     onClick={() => saveMembers(membersRef.current.filter((x) => x.id !== m.id))}
                     aria-label={`Remove ${m.spec.name}`}
@@ -472,6 +663,30 @@ function PackModal({ pack, onClose, onChanged, onDeleted }: {
               onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
               onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln4)")}
             />
+            {/* one-liner draft — someone the library doesn't have */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+              <input
+                value={draftPrompt}
+                onChange={(e) => setDraftPrompt(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void draftMember(); }}
+                disabled={drafting || full}
+                placeholder="✨ Or describe someone NEW — “a land-use attorney who's fought three data-center CUPs”…"
+                style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: "var(--sf2)", border: "1px solid var(--ln4)", borderRadius: 100, padding: "9px 16px", fontSize: 12.5, color: "var(--t1)", outline: "none", fontFamily: "var(--font-sans), sans-serif", opacity: full ? 0.5 : 1 }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln4)")}
+              />
+              <button
+                onClick={() => void draftMember()}
+                disabled={!draftPrompt.trim() || drafting || full}
+                style={{
+                  ...mono, flex: "none", fontSize: 9, letterSpacing: ".06em", padding: "8px 15px", borderRadius: 100, cursor: draftPrompt.trim() && !drafting && !full ? "pointer" : "default",
+                  border: "1px solid var(--acc)", background: draftPrompt.trim() && !full ? "var(--acc-dim)" : "transparent",
+                  color: draftPrompt.trim() && !full ? "var(--acc)" : "var(--t6)",
+                }}
+              >
+                {drafting ? "DRAFTING…" : "✨ CREATE"}
+              </button>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8, marginTop: 12 }}>
               {mineFiltered.slice(0, 6).map((r) => <ResultRow key={r.id} r={r} />)}
               {libResults.map((r) => <ResultRow key={r.id} r={r} />)}
@@ -513,6 +728,31 @@ function PackModal({ pack, onClose, onChanged, onDeleted }: {
           </button>
         </div>
       </div>
+
+      {/* member profile + editor — edits update in place, remixes swap the
+          pack to the new editable copy */}
+      {profileM && !editing && (
+        <PersonaProfile
+          kind={profileM.kind}
+          spec={profileM.spec}
+          chatKey={profileM.id}
+          source={profileM.source ?? "library"}
+          showChatCta={false}
+          onClose={() => setProfileM(null)}
+          onRemix={() => setEditing({ member: profileM, mode: profileM.source === "custom" ? "edit" : "remix" })}
+        />
+      )}
+      {editing && (
+        <PersonaEditor
+          orgId={orgId}
+          mode={editing.mode}
+          source={editing.mode === "edit"
+            ? { id: editing.member.id, kind: editing.member.kind, spec: editing.member.spec }
+            : { key: editing.member.id, kind: editing.member.kind, spec: editing.member.spec }}
+          onClose={() => setEditing(null)}
+          onSaved={onEditorSaved}
+        />
+      )}
     </div>
   );
 }

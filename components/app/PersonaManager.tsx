@@ -215,7 +215,7 @@ export default function PersonaManager({
         <FilterRail facets={facets} filters={filters} openFilter={openFilter} setOpenFilter={setOpenFilter} onFilter={setFilter} />
       )}
 
-      {tab === "packs" && <PacksSection onCount={setPackCount} />}
+      {tab === "packs" && <PacksSection orgId={orgId} onCount={setPackCount} />}
 
       {tab === "library" && (q || anyFilter) && !searching && (
         <div style={{ ...mono, marginTop: 14, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)" }}>

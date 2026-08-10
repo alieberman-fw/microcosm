@@ -24,13 +24,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pac
   if (!row) return NextResponse.json({ error: "Pack not found" }, { status: 404 });
 
   const ids = (row.persona_ids ?? []) as string[];
-  const members: { id: string; kind: string; spec: PersonaSpec }[] = [];
+  const members: { id: string; kind: string; spec: PersonaSpec; source: "library" | "custom" }[] = [];
   if (ids.length) {
-    const { data: personas } = await supabase.from("personas").select("id, kind, spec").in("id", ids);
+    const { data: personas } = await supabase.from("personas").select("id, kind, spec, org_id").in("id", ids);
     const byId = new Map((personas ?? []).map((p) => [p.id as string, p]));
     for (const id of ids) {
       const p = byId.get(id);
-      if (p) members.push({ id: p.id as string, kind: p.kind as string, spec: p.spec as PersonaSpec });
+      if (p) members.push({ id: p.id as string, kind: p.kind as string, spec: p.spec as PersonaSpec, source: p.org_id ? "custom" : "library" });
     }
   }
 
