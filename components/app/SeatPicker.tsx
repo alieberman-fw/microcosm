@@ -13,6 +13,7 @@
 
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { PersonaSpec } from "@/lib/personas";
+import Orb from "@/components/app/Orb";
 import { PackMemberRow } from "@/components/app/Packs";
 import { PACK_CAPS, PackSummary } from "@/lib/packs";
 
@@ -405,8 +406,9 @@ export default function SeatPicker({
             </div>
           )}
           <div>
-            <div style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)", marginBottom: 12 }}>
+            <div style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
               LIBRARY{searching ? " · SEARCHING…" : libResults.length ? ` · ${libResults.length}` : ""}
+              {searching && <Orb state="searching" size={20} aria-label="Searching the library" />}
             </div>
             {!query.trim() ? (
               <div style={{ fontSize: 12.5, color: "var(--t6)", lineHeight: 1.6 }}>Type above to search 1,800 built-world personas.</div>

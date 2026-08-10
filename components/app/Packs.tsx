@@ -17,6 +17,7 @@ import { PACK_CAPS, PackKind, PackSummary } from "@/lib/packs";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import PersonaEditor from "@/components/app/PersonaEditor";
 import CastingTheater from "@/components/app/CastingTheater";
+import Orb from "@/components/app/Orb";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -752,7 +753,11 @@ function PackModal({ pack, orgId, onClose, onChanged, onDeleted }: {
                 {query.trim() && !searching && libResults.length === 0 && (
                   <div style={{ marginTop: 10, fontSize: 12, color: "var(--t6)" }}>No library matches for “{query}”.</div>
                 )}
-                {searching && <div style={{ ...mono, marginTop: 10, fontSize: 9, letterSpacing: ".07em", color: "var(--t6)" }}>SEARCHING…</div>}
+                {searching && (
+                  <div style={{ ...mono, marginTop: 10, fontSize: 9, letterSpacing: ".07em", color: "var(--t6)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <Orb state="searching" size={20} aria-label="Searching the library" /> SEARCHING…
+                  </div>
+                )}
               </>
             )}
           </div>

@@ -15,6 +15,7 @@ import { TOOL_RACK } from "@/lib/tools";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import Markdown from "@/components/app/Markdown";
 import { PackChipStrip, PackMemberRow } from "@/components/app/Packs";
+import Orb from "@/components/app/Orb";
 import type { PackSummary } from "@/lib/packs";
 import Link from "next/link";
 
@@ -947,11 +948,7 @@ export default function Conversations({
                     ))}
                   </span>
                   <div style={{ borderRadius: "4px 14px 14px 14px", padding: "11px 15px", background: "var(--sf2)", border: "1px solid var(--ln3)", display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ display: "inline-flex", gap: 4 }}>
-                      {[0, 1, 2].map((i) => (
-                        <span key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--t6)", animation: `pulseDot 1.1s ${i * 0.18}s ease-in-out infinite` }} />
-                      ))}
-                    </span>
+                    <Orb state="composing" size={20} aria-label="Reply being written" />
                     <span style={{ ...mono, fontSize: 10, letterSpacing: ".05em", color: "var(--t6)" }}>
                       {(() => {
                         const first = (n: string) => n.trim().split(/\s+/)[0];
@@ -1100,6 +1097,7 @@ export default function Conversations({
               onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln5)")}
             />
             <div style={{ ...mono, flex: "none", marginTop: 10, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t7)", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              {q.length >= 2 && searchingLib && <Orb state="searching" size={20} aria-label="Searching the library" />}
               <span>
                 {q
                   ? searchingLib

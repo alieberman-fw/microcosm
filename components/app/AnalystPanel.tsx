@@ -14,6 +14,7 @@
 
 import { CSSProperties, Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "@/components/app/Markdown";
+import Orb from "@/components/app/Orb";
 import { CHAT_MODELS } from "@/lib/chat-models";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
@@ -426,7 +427,7 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
             <iframe title={viewing.name} srcDoc={viewDoc} sandbox="" style={{ flex: 1, width: "100%", border: "none", background: "var(--bg)" }} />
           ) : (
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.2s ease infinite" }} />
+              <Orb state="working" size={20} tone="quiet" aria-label="Opening the document" />
               <span style={{ ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>OPENING…</span>
             </div>
           )}
@@ -553,8 +554,9 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
         ))}
         {typing && (
           <div style={{ ...mono, fontSize: 9, letterSpacing: ".07em", color: "var(--t6)", display: "flex", alignItems: "center", gap: 8, margin: "4px 0 12px" }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.2s ease infinite" }} />
-            {typing.toUpperCase()} IS THINKING…
+            {/* the orb says WHAT kind of thinking: reasoning vs web search */}
+            <Orb state={typing === "Analyst" && webSearch ? "searching" : "solving"} size={20} aria-label="Thinking" />
+            {typing.toUpperCase()} IS {typing === "Analyst" && webSearch ? "SEARCHING" : "THINKING"}…
           </div>
         )}
         {error && <div style={{ ...mono, fontSize: 9.5, color: "var(--warn)", margin: "4px 0 12px" }}>{error.toUpperCase().slice(0, 140)}</div>}
