@@ -330,8 +330,14 @@ export default function PopulationStage({
     }
   };
 
-  const onAdded = (added: { key: string; provenance: "yours" | "library"; spec: PersonaSpec & { seat?: unknown } }[]) => {
+  const onAdded = (
+    added: { key: string; provenance: "yours" | "library"; spec: PersonaSpec & { seat?: unknown } }[],
+    crowdAdded: { key: string; spec: PersonaSpec & { seat?: unknown } }[] = [],
+  ) => {
     setSeats((prev) => [...prev, ...added.map((a) => ({ key: a.key, provenance: a.provenance, spec: a.spec as FrozenSpec }))]);
+    if (crowdAdded.length) {
+      setCrowd((prev) => [...prev, ...crowdAdded.map((a) => ({ key: a.key, provenance: "yours" as const, spec: a.spec as FrozenSpec }))]);
+    }
     router.refresh();
   };
 

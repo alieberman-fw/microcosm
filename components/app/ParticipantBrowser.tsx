@@ -17,6 +17,8 @@ import {
   LibraryRow, LibraryFacets, Filters, NO_FILTERS, AGE_BANDS, PAGE_SIZE,
   FilterRail, useLibrarySearch,
 } from "@/components/app/LibraryBrowse";
+import { PackChipStrip, PackMemberRow } from "@/components/app/Packs";
+import type { PackSummary } from "@/lib/packs";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -123,6 +125,39 @@ export default function ParticipantBrowser({
     });
   };
 
+  // one click applies a whole pack: panel members → leads (overflow rules
+  // as above), crowd-pack members → crowd (panel mode) or participants
+  const [packNote, setPackNote] = useState<string | null>(null);
+  const applyPack = (pack: PackSummary, members: PackMemberRow[]) => {
+    setPackNote(null);
+    setPicks((ps) => {
+      const next = [...ps];
+      let added = 0;
+      for (const m of members) {
+        if (next.some((p) => p.key === m.id)) continue;
+        const leads = next.filter((p) => p.tier === "lead").length;
+        const crowds = next.length - leads;
+        let tier: Pick_["tier"];
+        if (!panel) {
+          if (next.length >= maxPicks) break;
+          tier = "lead";
+        } else if (pack.kind === "crowd") {
+          if (crowds >= MAX_MANUAL_CROWD) break;
+          tier = "crowd";
+        } else {
+          tier = leads < maxPicks ? "lead" : "crowd";
+          if (tier === "crowd" && crowds >= MAX_MANUAL_CROWD) break;
+        }
+        next.push({ key: m.id, name: m.spec.name, initials: m.spec.initials, role: m.spec.role, kind: m.kind, source: "library", spec: m.spec, tier });
+        added++;
+      }
+      if (added < members.length) {
+        setPackNote(`${pack.name.toUpperCase()} — ADDED ${added} OF ${members.length}${!panel ? ` (ROOMS CAP AT ${MAX_PARTICIPANTS})` : ""}`);
+      }
+      return next;
+    });
+  };
+
   const start = async () => {
     if (!picks.length || launching) return;
     setLaunching(true);
@@ -173,6 +208,11 @@ export default function ParticipantBrowser({
         onFocus={(e) => (e.currentTarget.style.borderColor = "var(--acc)")}
         onBlur={(e) => (e.currentTarget.style.borderColor = "var(--ln5)")}
       />
+
+      <div style={{ marginTop: 16 }}>
+        <PackChipStrip label="YOUR PACKS" onApply={applyPack} />
+        {packNote && <div style={{ ...mono, marginTop: 8, fontSize: 9, letterSpacing: ".06em", color: "var(--warn)" }}>{packNote}</div>}
+      </div>
 
       <FilterRail facets={facets} filters={filters} openFilter={openFilter} setOpenFilter={setOpenFilter} onFilter={setFilter} />
 

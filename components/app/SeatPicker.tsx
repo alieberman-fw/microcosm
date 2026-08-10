@@ -9,6 +9,8 @@
 
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { PersonaSpec } from "@/lib/personas";
+import { PackChipStrip, PackMemberRow } from "@/components/app/Packs";
+import { PACK_CAPS, PackSummary } from "@/lib/packs";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -23,13 +25,19 @@ export default function SeatPicker({
   simId: string;
   remaining: number;
   onClose: () => void;
-  onAdded: (seats: { key: string; provenance: "yours" | "library"; spec: PersonaSpec & { seat?: unknown } }[]) => void;
+  onAdded: (
+    seats: { key: string; provenance: "yours" | "library"; spec: PersonaSpec & { seat?: unknown } }[],
+    crowdSeats: { key: string; spec: PersonaSpec & { seat?: unknown } }[],
+  ) => void;
 }) {
   const [mine, setMine] = useState<Row[]>([]);
   const [libResults, setLibResults] = useState<Row[]>([]);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState<Map<string, Row>>(new Map());
+  // crowd-pack members ride separately — they post as crowdPersonaIds
+  const [crowdPicked, setCrowdPicked] = useState<Map<string, Row>>(new Map());
+  const [packNote, setPackNote] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -76,19 +84,47 @@ export default function SeatPicker({
     });
   };
 
+  /** one click seats a whole pack: panel members fill lead capacity, crowd
+   *  packs land as polled crowd members */
+  const applyPack = (pack: PackSummary, members: PackMemberRow[]) => {
+    setPackNote(null);
+    if (pack.kind === "crowd") {
+      setCrowdPicked((prev) => {
+        const next = new Map(prev);
+        for (const m of members) {
+          if (next.size >= PACK_CAPS.crowd) break;
+          if (!next.has(m.id) && !picked.has(m.id)) next.set(m.id, m);
+        }
+        return next;
+      });
+      return;
+    }
+    setPicked((prev) => {
+      const next = new Map(prev);
+      let clipped = 0;
+      for (const m of members) {
+        if (next.has(m.id)) continue;
+        if (next.size >= remaining) { clipped++; continue; }
+        next.set(m.id, m);
+      }
+      if (clipped) setPackNote(`${pack.name.toUpperCase()} — ADDED ${members.length - clipped} OF ${members.length}; LEAD SEATS CAP AT ${remaining}`);
+      return next;
+    });
+  };
+
   const add = async () => {
-    if (picked.size === 0 || adding) return;
+    if ((picked.size === 0 && crowdPicked.size === 0) || adding) return;
     setAdding(true);
     setError(null);
     try {
       const res = await fetch(`/api/simulations/${simId}/agents`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ personaIds: [...picked.keys()] }),
+        body: JSON.stringify({ personaIds: [...picked.keys()], crowdPersonaIds: [...crowdPicked.keys()] }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not add");
-      onAdded(data.seats ?? []);
+      onAdded(data.seats ?? [], data.crowdSeats ?? []);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not add");
@@ -139,6 +175,7 @@ export default function SeatPicker({
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div style={{ ...mono, fontSize: 11, letterSpacing: ".1em", color: "var(--t6)" }}>
               HAND-PICK THE PANEL · {picked.size}/{remaining} SELECTED
+              {crowdPicked.size > 0 && <span style={{ color: "var(--t4)" }}> · {crowdPicked.size} CROWD</span>}
             </div>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 14 }}>
               <a href={`/sim/${simId}/cast`} style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: "var(--acc)" }}>
@@ -161,6 +198,16 @@ export default function SeatPicker({
         </div>
 
         <div style={{ overflowY: "auto", padding: "18px 26px", display: "flex", flexDirection: "column", gap: 20 }}>
+          <PackChipStrip label="YOUR PACKS" onApply={applyPack} />
+          {packNote && <div style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--warn)", marginTop: -10 }}>{packNote}</div>}
+          {crowdPicked.size > 0 && (
+            <div style={{ ...mono, display: "flex", alignItems: "center", gap: 10, fontSize: 9, letterSpacing: ".06em", color: "var(--t5)", marginTop: -10 }}>
+              <span>⛁ {crowdPicked.size} CROWD MEMBER{crowdPicked.size === 1 ? "" : "S"} FROM PACKS — POLLED EVERY ROUND, NEVER SPEAK</span>
+              <button onClick={() => setCrowdPicked(new Map())} style={{ ...mono, fontSize: 9, letterSpacing: ".06em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0 }}>
+                CLEAR
+              </button>
+            </div>
+          )}
           {filteredMine.length > 0 && (
             <div>
               <div style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--acc)", marginBottom: 12 }}>YOUR PERSONAS · {filteredMine.length}</div>
@@ -189,14 +236,18 @@ export default function SeatPicker({
           {error && <span style={{ ...mono, fontSize: 11, color: "var(--warn)" }}>{error}</span>}
           <button
             onClick={add}
-            disabled={picked.size === 0 || adding}
+            disabled={(picked.size === 0 && crowdPicked.size === 0) || adding}
             style={{
-              marginLeft: "auto", background: picked.size ? "var(--acc)" : "var(--sf2)", color: picked.size ? "var(--acc-c)" : "var(--t6)",
+              marginLeft: "auto", background: picked.size || crowdPicked.size ? "var(--acc)" : "var(--sf2)", color: picked.size || crowdPicked.size ? "var(--acc-c)" : "var(--t6)",
               fontWeight: 600, fontSize: 13.5, padding: "11px 24px", borderRadius: 100, border: "none",
-              cursor: picked.size && !adding ? "pointer" : "default", fontFamily: "var(--font-sans), sans-serif",
+              cursor: (picked.size || crowdPicked.size) && !adding ? "pointer" : "default", fontFamily: "var(--font-sans), sans-serif",
             }}
           >
-            {adding ? "Adding…" : picked.size ? `Add ${picked.size} to the panel` : "Select personas"}
+            {adding
+              ? "Adding…"
+              : picked.size || crowdPicked.size
+                ? `Add ${[picked.size ? `${picked.size} to the panel` : "", crowdPicked.size ? `${crowdPicked.size} to the crowd` : ""].filter(Boolean).join(" + ")}`
+                : "Select personas"}
           </button>
         </div>
       </div>
