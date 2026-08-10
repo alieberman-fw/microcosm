@@ -33,8 +33,10 @@ export default function Orb({ state, size = 20, tone = "acc", ink: inkOverride, 
   state: OrbState;
   /** the package's two hand-tuned presets */
   size?: 20 | 64;
-  /** acc = model cognition (accent token) · quiet = mechanical (--t5) */
-  tone?: "acc" | "quiet";
+  /** acc = model cognition (accent token) · quiet = mechanical (--t5) ·
+   *  contrast = ON an accent-filled ground (--acc-c ink, always tinted —
+   *  the ground dictates, so the user's mono/accent setting is moot here) */
+  tone?: "acc" | "quiet" | "contrast";
   /** pin the ink (the Settings preview uses this); default follows the user's setting */
   ink?: OrbInk;
   style?: CSSProperties;
@@ -64,9 +66,18 @@ export default function Orb({ state, size = 20, tone = "acc", ink: inkOverride, 
     const draw = MODE_DRAWS[mode];
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    let dark = themeIsDark(document.documentElement.dataset.theme);
-    let color = tone === "quiet" ? tokenRgb("--t5", FALLBACK_QUIET) : tokenRgb("--acc", FALLBACK_ACC);
-    const ctx = () => (ink === "mono" ? raw : tintedContext(raw, dark, color));
+    // contrast tone lives on an accent-filled ground: ink is the accent's
+    // own contrast token, and the ground's brightness flips the painter's
+    // dark flag (dark theme = bright green strip = light-mode painting)
+    const resolve = () => {
+      const themeDark = themeIsDark(document.documentElement.dataset.theme);
+      if (tone === "contrast") {
+        return { dark: !themeDark, color: tokenRgb("--acc-c", { r: 255, g: 255, b: 255 }) };
+      }
+      return { dark: themeDark, color: tone === "quiet" ? tokenRgb("--t5", FALLBACK_QUIET) : tokenRgb("--acc", FALLBACK_ACC) };
+    };
+    let { dark, color } = resolve();
+    const ctx = () => (ink === "mono" && tone !== "contrast" ? raw : tintedContext(raw, dark, color));
 
     const paint = (t: number) => {
       raw.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -85,8 +96,7 @@ export default function Orb({ state, size = 20, tone = "acc", ink: inkOverride, 
 
     // theme flips re-read the tokens live (same event surface as the shell)
     const retheme = () => {
-      dark = themeIsDark(document.documentElement.dataset.theme);
-      color = tone === "quiet" ? tokenRgb("--t5", FALLBACK_QUIET) : tokenRgb("--acc", FALLBACK_ACC);
+      ({ dark, color } = resolve());
     };
     window.addEventListener("mc-theme-changed", retheme);
     return () => {
