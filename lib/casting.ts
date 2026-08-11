@@ -20,7 +20,8 @@ export const CROWD_MODEL = process.env.CROWD_MODEL ?? "claude-haiku-4-5";
 export const CROWD_BATCH = 25;
 
 /** pre-run materialization cap: crowds beyond this get a representative
- * sample now (browsable/editable) and reach full scale at run time */
+ * sample now (browsable/editable); the run polls the sample AS the
+ * population (full-scale instantiation is roadmap, and the UI says so) */
 export const CROWD_SAMPLE_CAP = 300;
 
 export const MAX_SEATS = 20;
@@ -53,11 +54,13 @@ export interface CastSeat {
 export interface CastPlan {
   composition: "experts" | "consumers" | "mixed";
   rationale: string;
-  rationaleSummary: string;
+  /** U-H22: absent when the model omitted it — the UI then renders the FULL
+   *  rationale instead of a mid-sentence-ellipsed clip */
+  rationaleSummary?: string;
   scale: { experts: number; residents: number };
   mode: (typeof SIM_MODES)[number];
   modeRationale: string;
-  modeSummary: string;
+  modeSummary?: string;
   seats: CastSeat[];
 }
 
@@ -130,7 +133,9 @@ export function castingGenerateSystem(): string {
     `"demographics": {"age": N, "metro": "City", "state": "ST", "years_experience": N, "credentials": "...", "occupation": "...", "income_band": "$X–YK", "tenure": "owner|renter", "household": "..."}}]\n` +
     `Rules: every persona is a synthetic composite — never a real person. Full names must be distinct from each other and from the avoid-list. ` +
     `Ground each persona in the geography and asset type of the brief. A seat line marked "tribunal bench: CON" gets stances that GENUINELY oppose the thesis from its professional experience (not assigned contrarianism); a PRO bench seat genuinely supports it. Adversarial seats get stances that genuinely attack the thesis with professional credibility, not strawmen. ` +
-    `Ages, experience, income, credentials must be mutually coherent.`
+    `Ages, experience, income, credentials must be mutually coherent. ` +
+    `backstory: 3-4 sentences, HARD CEILING 90 words — career facts and one formative deal/project, no adjectives-for-color. ` +
+    `stances are ARGUABLE POSITIONS with a number or mechanism, not vibes — like "Broker interconnection timelines run 2x optimistic; I underwrite the utility's study, not the teaser" or "Setback variances die at council when the neighbors organize early — budget for the concession, not the fight". Never generic ("data-driven", "believes in due diligence").`
   );
 }
 
@@ -153,8 +158,100 @@ export function crowdGenerateSystem(group: "experts" | "residents", leadRoles: s
     `"tagline": "one sharp line", "backstory": "ONE sentence", "stances": ["...", "..."], ` +
     `"demographics": {"age": N, "metro": "City", "state": "ST", "occupation": "...", "income_band": "$X–YK", "tenure": "owner|renter", "household": "..."}}]\n` +
     `Rules: every persona is a synthetic composite — never a real person. Full names distinct from each other and the avoid-list. ` +
-    `Keep each member SHORT — these are crowd members, not leads. discipline: short UPPERCASE label.`
+    `Keep each member SHORT — these are crowd members, not leads. discipline: short UPPERCASE label.\n` +
+    `SPREAD TARGETS (a batch that reads uniform is a failure): span at least four decades of age; no more than a third of the batch in any one income band; ` +
+    `for residents, mix tenure (owners AND renters) and household shapes (solo, couples, families, retirees); for experts, mix seniority and employer type.\n` +
+    `TWO WORKED EXAMPLES OF THE REGISTER (do not copy them):\n` +
+    `{"name": "Marisol Vega", "initials": "MV", "role": "ER nurse, rents nearby", "kind": "resident", "discipline": "RENTERS", "tagline": "Night shifts — traffic and noise decide her vote", "backstory": "Rents a two-bed with her sister ten minutes from the site and works nights at the regional medical center.", "stances": ["Anything that adds commute time gets a no", "Would trade density for a real grocery store"], "demographics": {"age": 34, "metro": "Mesa", "state": "AZ", "occupation": "ER nurse", "income_band": "$75\u201390K", "tenure": "renter", "household": "shares with sister"}}\n` +
+    `{"name": "Gene Albrecht", "initials": "GA", "role": "Retired union electrician, owns outright", "kind": "resident", "discipline": "OWNERS", "tagline": "Forty years in the trade \u2014 reads every site plan himself", "backstory": "Bought his ranch house in 1994, wired half the county, and shows up to every planning meeting with the packet annotated.", "stances": ["Trusts the load study, not the developer's summary of it", "Property tax creep worries him more than construction noise"], "demographics": {"age": 71, "metro": "Mesa", "state": "AZ", "occupation": "retired electrician", "income_band": "$40\u201355K", "tenure": "owner", "household": "with spouse"}}`
   );
+}
+
+/** Wave 5b (audit U-H16/H17/H18): the plan's seat list is RECONCILED after
+ *  parse — exactly one adversarial (zero → the last seat flips; extras
+ *  demote to expert), Tribunal sides validated and balanced (non-Tribunal
+ *  modes strip orphaned sides), and the composition label DERIVED from the
+ *  kinds actually seated when the model's label disagrees. Pure for tests. */
+export function reconcileSeats(
+  seats: CastSeat[],
+  mode: (typeof SIM_MODES)[number],
+  labeled: "experts" | "consumers" | "mixed",
+): { seats: CastSeat[]; composition: "experts" | "consumers" | "mixed" } {
+  const out = seats.map((s) => ({ ...s }));
+  // U-H16: exactly one adversarial — "we hire our own critics", but only one
+  let seenAdv = false;
+  for (const s of out) {
+    if (s.kind !== "adversarial") continue;
+    if (seenAdv) { s.kind = "expert"; delete s.side; if (mode === "Tribunal") s.side = "con"; }
+    seenAdv = true;
+  }
+  if (!seenAdv && out.length > 0) {
+    const flip = out[out.length - 1];
+    flip.kind = "adversarial";
+    if (mode === "Tribunal") flip.side = "con";
+  }
+  // U-H18: sides only exist in a Tribunal; there, every seat gets one and
+  // the benches stay contestable (adversarial always argues con)
+  if (mode !== "Tribunal") {
+    for (const s of out) delete s.side;
+  } else {
+    for (const s of out) if (s.kind === "adversarial") s.side = "con";
+    const count = () => ({
+      pro: out.filter((s) => s.side === "pro").length,
+      con: out.filter((s) => s.side === "con").length,
+    });
+    for (const s of out) {
+      if (s.side === "pro" || s.side === "con") continue;
+      const c = count();
+      s.side = c.pro <= c.con ? "pro" : "con";
+    }
+    // a panel of 4+ never fields an empty or single-seat bench
+    if (out.length >= 4) {
+      const flippable = (side: "pro" | "con") => out.filter((s) => s.side === side && s.kind !== "adversarial");
+      let c = count();
+      while (c.con < 2 && flippable("pro").length > 2) { flippable("pro").pop()!.side = "con"; c = count(); }
+      while (c.pro < 2 && flippable("con").length > 2) { flippable("con").pop()!.side = "pro"; c = count(); }
+    }
+  }
+  // U-H17: the label must describe the seats actually cast
+  const substantive = out.filter((s) => s.kind !== "adversarial" && s.kind !== "stakeholder");
+  const consumers = substantive.filter((s) => s.kind === "consumer" || s.kind === "resident").length;
+  const derived: "experts" | "consumers" | "mixed" =
+    substantive.length === 0 ? labeled
+    : consumers === 0 ? "experts"
+    : consumers === substantive.length ? "consumers"
+    : "mixed";
+  return { seats: out, composition: derived };
+}
+
+/** Wave 5b (audit U-H21): generated kind/traits arrive from a model — the
+ *  kind is whitelisted (bad values fall back to the seat's) and traits keep
+ *  ONLY numeric 0-1 entries (a string trait silently killed every style
+ *  directive downstream in compilePersonaPrompt). Pure for tests. */
+export const PERSONA_KINDS = ["expert", "consumer", "resident", "stakeholder", "adversarial"] as const;
+export function sanitizeKind(raw: unknown, fallback: CastSeat["kind"]): CastSeat["kind"] {
+  return (PERSONA_KINDS as readonly string[]).includes(String(raw)) ? (raw as CastSeat["kind"]) : fallback;
+}
+export function sanitizeTraits(raw: unknown): Record<string, number> | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = Number(v);
+    if (Number.isFinite(n)) out[k.slice(0, 40)] = Math.min(Math.max(n, 0), 1);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** Wave 5b (audit U-H35): add-mode seat keys offset from the MAX numeric
+ *  suffix among existing keys, not the row count — a deleted seat used to
+ *  let a new key collide with a survivor and kill the insert post-spend. */
+export function nextKeyOffset(existingKeys: string[]): number {
+  let max = 0;
+  for (const k of existingKeys) {
+    const m = k.match(/-(\d+)$/);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return Math.max(max, existingKeys.length);
 }
 
 /** seat → agent_key slug ("grid-interconnection-planner-2") */

@@ -5,7 +5,8 @@ import { PersonaSpec } from "@/lib/personas";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import {
   CastPlan, CastSeat, FrozenSpec, MAX_SEATS, SIM_MODES,
-  CASTING_MODEL, CROWD_MODEL, castingAddSystem, castingGenerateSystem, castingPlanSystem, overlapScore, roleOverlap, seatKey,
+  CASTING_MODEL, CROWD_MODEL, castingAddSystem, castingGenerateSystem, castingPlanSystem,
+  nextKeyOffset, overlapScore, reconcileSeats, roleOverlap, sanitizeKind, sanitizeTraits, seatKey,
 } from "@/lib/casting";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { BriefContract, populationHintLines } from "@/lib/understand";
@@ -189,8 +190,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           }
         }
 
-        const keyOffset = existingRoles.length;
-        const seats: CastSeat[] = (Array.isArray(raw.seats) ? raw.seats : []).slice(0, addMode ? maxNew : MAX_SEATS)
+        // U-H35: offset from the MAX existing suffix — a deleted seat used to
+        // shrink the count and let a new key collide with a survivor
+        const keyOffset = nextKeyOffset((existingAgents ?? []).map((a) => a.agent_key as string));
+        // U-H19: an explicit seat target is a CEILING, not a floor
+        const seats: CastSeat[] = (Array.isArray(raw.seats) ? raw.seats : []).slice(0, addMode ? maxNew : (targetSeats ?? MAX_SEATS))
           .map((s: { role?: string; kind?: string; discipline?: string; why?: string; query?: string; side?: string }, i: number): CastSeat => ({
             key: seatKey(String(s.role ?? "seat"), keyOffset + i + 1),
             role: String(s.role ?? "Panelist").slice(0, 80),
@@ -209,21 +213,36 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           const cut = str.slice(0, n);
           return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), n - 40))}…`;
         };
+        const planMode = forcedMode ?? SIM_MODES.find((m) => m === raw.mode) ?? "Agora";
+        // U-H16/17/18: exactly one adversarial, Tribunal sides validated and
+        // balanced (other modes strip orphans), composition derived from the
+        // kinds actually seated when the model's label disagrees
+        const labeled = compOverride ?? (["experts", "consumers", "mixed"] as const).find((c) => c === raw.composition) ?? "mixed";
+        const reconciled = addMode ? { seats, composition: labeled } : reconcileSeats(seats, planMode, labeled);
+        const rawSummary = (raw as { rationale_summary?: unknown }).rationale_summary;
+        const rawModeSummary = (raw as { mode_summary?: unknown }).mode_summary;
         const plan: CastPlan = {
-          composition: compOverride ?? (["experts", "consumers", "mixed"] as const).find((c) => c === raw.composition) ?? "mixed",
+          composition: reconciled.composition,
           rationale: clip(raw.rationale, 1200),
-          rationaleSummary: clip((raw as { rationale_summary?: unknown }).rationale_summary ?? raw.rationale, 260),
-          // upfront crowd sizing (field report): the user's totals beat the plan's
+          // U-H22: no summary from the model = show the FULL rationale — never
+          // a mid-sentence-ellipsed clip masquerading as a summary
+          ...(rawSummary ? { rationaleSummary: clip(rawSummary, 260) } : {}),
+          // upfront crowd sizing (field report): the user's totals beat the plan's.
+          // U-H32: an experts-only composition zeroes the resident scale — the
+          // stale nonzero count had no UI control left to fix it
           scale: {
-            experts: Math.min(Math.max(Number(body.scale?.experts ?? 0) || Number(raw.scale?.experts) || seats.length, 4), 500),
-            residents: Math.min(Math.max(Number(body.scale?.residents ?? (Number(raw.scale?.residents) || 0)), 0), 1000),
+            experts: Math.min(Math.max(Number(body.scale?.experts ?? 0) || Number(raw.scale?.experts) || reconciled.seats.length, 4), 500),
+            residents: reconciled.composition === "experts"
+              ? 0
+              : Math.min(Math.max(Number(body.scale?.residents ?? (Number(raw.scale?.residents) || 0)), 0), 1000),
           },
-          mode: forcedMode ?? SIM_MODES.find((m) => m === raw.mode) ?? "Agora",
+          mode: planMode,
           modeRationale: clip(raw.mode_rationale, 900),
-          modeSummary: clip((raw as { mode_summary?: unknown }).mode_summary ?? raw.mode_rationale, 260),
-          seats,
+          ...(rawModeSummary ? { modeSummary: clip(rawModeSummary, 260) } : {}),
+          seats: reconciled.seats,
         };
         emit({ type: "plan", ...plan, add: addMode });
+        const finalSeats = plan.seats;
 
         // frozen spec = persona + seat metadata (+ adversarial mandate) — built
         // up-front so live seat events render exactly what gets persisted
@@ -242,8 +261,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         };
 
         // ---- 2 · match: org custom personas first, then the global library ----
+        // U-H14: recency-ordered with the source in hand — an unordered 200-row
+        // read was filling up with auto-generated leftovers and pushing the
+        // org's hand-made personas out of the candidate pool entirely
         const { data: customRows } = await supabase.from("personas")
-          .select("id, kind, spec").eq("org_id", orgId).limit(200);
+          .select("id, kind, spec, source").eq("org_id", orgId)
+          .order("created_at", { ascending: false }).limit(300);
         const usedPersonaIds = new Set<string>();
         if (addMode) {
           const { data: seated } = await supabase.from("sim_agents").select("persona_id").eq("sim_id", id);
@@ -252,7 +275,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const resolved: { seat: CastSeat; personaId: string; spec: FrozenSpec; provenance: "yours" | "library" }[] = [];
         const gaps: CastSeat[] = [];
 
-        for (const seat of seats) {
+        for (const seat of finalSeats) {
           const seatText = `${seat.role} ${seat.query}`;
           // FIT GATE: the loose OR-query fallback once seated a Wine Cellar
           // Builder as "Pool Design & Build Specialist" on a shared word.
@@ -263,9 +286,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           // Anything whose own title doesn't name the seat must survive a
           // Haiku yes/no before it sits — rejects become generated.
           let fitChecks = 0;
-          const fits = async (spec: PersonaSpec): Promise<boolean> => {
+          let fitExhausted = false;
+          const fits = async (spec: PersonaSpec, looseCandidate = false): Promise<boolean> => {
             if (roleOverlap(seat.role, spec.role) >= 2) return true;
-            if (fitChecks >= 4) return false; // bound model calls per seat
+            if (fitChecks >= 6) {
+              // U-H13: budget exhaustion is a DISTINCT outcome, logged once —
+              // it used to read exactly like a judged rejection
+              if (!fitExhausted) {
+                fitExhausted = true;
+                await logCall("casting.fit", CROWD_MODEL, null, Date.now(), undefined, { note: "fit budget exhausted", seat: seat.role, checks: fitChecks });
+              }
+              return false;
+            }
             fitChecks += 1;
             const tf = Date.now();
             try {
@@ -278,22 +310,31 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
               const verdict = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").toLowerCase();
               return verdict.includes("yes");
             } catch (e) {
-              await logCall("casting.fit", CROWD_MODEL, null, tf, e instanceof Error ? e.message : "fit check failed");
-              return true; // fail open — a plausible FTS match beats a dead cast
+              await logCall("casting.fit", CROWD_MODEL, null, tf, e instanceof Error ? e.message : "fit check failed", { loose: looseCandidate });
+              // U-H24: a candidate surfaced by the LOOSE or-query fails CLOSED
+              // on judge error — an unjudged lookalike is worse than generating
+              // the seat fresh; tighter matches keep the fail-open pragmatism
+              return !looseCandidate;
             }
           };
-          // 2a — the org's own people (the best lexical candidate still faces the gate)
-          let best: { id: string; spec: PersonaSpec } | null = null;
-          let bestScore = 0;
-          for (const row of customRows ?? []) {
-            if (usedPersonaIds.has(row.id)) continue;
-            const score = overlapScore(seatText, row.spec as PersonaSpec);
-            if (score > bestScore) { best = { id: row.id, spec: row.spec as PersonaSpec }; bestScore = score; }
+          // 2a — the org's own people. U-H12: the TOP THREE lexical candidates
+          // each face the gate (one judged "no" used to eliminate the whole
+          // org library for the seat); hand-made personas outrank auto ones
+          // at equal score so the self-heal never buries the curated bench
+          const orgRanked = (customRows ?? [])
+            .filter((row) => !usedPersonaIds.has(row.id))
+            .map((row) => ({ id: row.id as string, spec: row.spec as PersonaSpec, auto: row.source === "auto", score: overlapScore(seatText, row.spec as PersonaSpec) }))
+            .filter((c) => c.score >= 2)
+            .sort((a, b) => (b.score - a.score) || (Number(a.auto) - Number(b.auto)))
+            .slice(0, 3);
+          let orgHit: { id: string; spec: PersonaSpec } | null = null;
+          for (const cand of orgRanked) {
+            if (await fits(cand.spec)) { orgHit = cand; break; }
           }
-          if (best && bestScore >= 2 && (await fits(best.spec))) {
-            usedPersonaIds.add(best.id);
-            const frozenYours = freeze(seat, best.spec, "yours");
-            resolved.push({ seat, personaId: best.id, spec: frozenYours, provenance: "yours" });
+          if (orgHit) {
+            usedPersonaIds.add(orgHit.id);
+            const frozenYours = freeze(seat, orgHit.spec, "yours");
+            resolved.push({ seat, personaId: orgHit.id, spec: frozenYours, provenance: "yours" });
             emit({ type: "seat", key: seat.key, provenance: "yours", spec: frozenYours });
             continue;
           }
@@ -304,13 +345,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           const orQuery = [...new Set(`${seat.query} ${seat.role}`.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3))].join(" or ");
           outer: for (const q of [seat.query, seat.role.toLowerCase(), orQuery]) {
             if (!q) continue;
+            const loose = q === orQuery; // U-H24: or-joined matches fail CLOSED on judge error
             const { data: rows } = await supabase.rpc("search_personas", {
               q, kinds, cats: null, age_min: null, age_max: null, tenure_f: null,
               sort: "relevance", off_set: 0, lim: 5,
             });
             for (const r of (rows as { id: string; spec: PersonaSpec }[] | null) ?? []) {
               if (usedPersonaIds.has(r.id)) continue;
-              if (await fits(r.spec)) { hit = r; break outer; }
+              if (await fits(r.spec, loose)) { hit = r; break outer; }
             }
           }
           if (hit) {
@@ -363,13 +405,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           }));
           for (let ci = 0; ci < chunks.length; ci++) {
             const specsChunk = chunkSpecs[ci];
+            // U-H20: positional attachment is trusted ONLY when the model kept
+            // the order and dropped seat_key ENTIRELY — with partial keying,
+            // a missing match means the order is untrustworthy, so the seat
+            // fails into the retry pass instead of wearing a neighbor's persona
+            const anyKeyed = specsChunk.some((s) => s.seat_key);
             for (const seat of chunks[ci]) {
-              const genSpec = specsChunk.find((s) => s.seat_key === seat.key) ?? specsChunk[chunks[ci].indexOf(seat)];
+              const genSpec = specsChunk.find((s) => s.seat_key === seat.key)
+                ?? (anyKeyed ? undefined : specsChunk[chunks[ci].indexOf(seat)]);
               if (!genSpec?.name) { failed.push(seat); continue; }
-              // concurrent chunks can't see each other's names — de-collide here
+              // concurrent chunks can't see each other's names. U-H29: a
+              // collision on the FIRST pass regenerates the seat (fresh name,
+              // fresh persona — the avoid-list now carries the taken name);
+              // the LAST pass de-collides with a middle initial so the seat
+              // never dies over a name, looping to a genuinely unused letter
               if (usedNames.has(String(genSpec.name).trim().toLowerCase())) {
+                if (attempt === 1) { failed.push(seat); continue; }
                 const parts = String(genSpec.name).trim().split(/\s+/);
-                genSpec.name = [parts[0], `${String.fromCharCode(66 + ci)}.`, ...parts.slice(1)].join(" ");
+                for (let li = 0; li < 26; li++) {
+                  const candidate = [parts[0], `${String.fromCharCode(65 + ((ci + li) % 26))}.`, ...parts.slice(1)].join(" ");
+                  if (!usedNames.has(candidate.toLowerCase())) { genSpec.name = candidate; break; }
+                }
               }
               usedNames.add(String(genSpec.name).trim().toLowerCase());
               const spec: PersonaSpec = {
@@ -378,11 +434,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 role: genSpec.role || seat.role,
                 tagline: genSpec.tagline,
                 discipline: seat.discipline,
-                kind: seat.kind === "adversarial" ? "adversarial" : (genSpec.kind ?? seat.kind),
+                // U-H21: model-supplied kind is WHITELISTED, traits keep only
+                // numeric 0-1 entries (a string trait silently disabled every
+                // style directive in compilePersonaPrompt)
+                kind: seat.kind === "adversarial" ? "adversarial" : sanitizeKind(genSpec.kind, seat.kind),
                 backstory: genSpec.backstory ?? "",
                 stances: Array.isArray(genSpec.stances) ? genSpec.stances.slice(0, 4) : [],
                 skills: Array.isArray(genSpec.skills) ? genSpec.skills.slice(0, 6) : [],
-                traits: genSpec.traits,
+                traits: sanitizeTraits(genSpec.traits),
                 demographics: genSpec.demographics,
               };
               const { data: inserted, error: insErr } = await supabase.from("personas")

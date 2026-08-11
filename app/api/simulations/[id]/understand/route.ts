@@ -72,21 +72,30 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   let lastStop: string | null = null;
   for (let attempt = 0; attempt < 2 && !contract; attempt++) {
     const t0 = Date.now();
+    // U-H23: the retry is INFORMED, not a blind identical re-roll (computed
+    // before the call — referencing lastStop inside it made `res` circular)
+    const retryNote: string = attempt === 0
+      ? ""
+      : `\nNOTE: your previous reply ${lastStop === "max_tokens" ? "was TRUNCATED (it hit the output ceiling)" : "did not parse as the required JSON"}. Reply with COMPLETE, terse JSON — shorter notes, no prose outside the object.`;
     try {
-      const res = await anthropic.messages.create({
+      const res: Anthropic.Message = await anthropic.messages.create({
         model: CASTING_MODEL,
-        max_tokens: UNDERSTAND_MAX_TOKENS,
+        // U-H15: a truncated attempt retries at DOUBLE the ceiling
+        max_tokens: attempt === 0 ? UNDERSTAND_MAX_TOKENS : UNDERSTAND_MAX_TOKENS * 2,
         system: understandSystem(docNames),
-        messages: [{ role: "user", content: briefText }],
+        messages: [{ role: "user", content: `${briefText}${retryNote}` }],
       });
       lastStop = res.stop_reason;
       const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-      contract = parseContract(text, docNames);
+      // U-H15: a max_tokens stop is a FAILED attempt even when the bracket
+      // salvage can close the JSON — the last-ordered fields (doc_roles,
+      // flags, poll_plan) are exactly what truncation silently destroys
+      contract = res.stop_reason === "max_tokens" ? null : parseContract(text, docNames);
       await supabase.from("agent_interactions").insert({
         org_id: orgId, user_id: user.id, surface: "brief.understand", model: CASTING_MODEL, sim_id: id,
         input_tokens: res.usage?.input_tokens ?? null, output_tokens: res.usage?.output_tokens ?? null,
         latency_ms: Date.now() - t0, status: contract ? "ok" : "error",
-        error: contract ? null : `unparseable contract (stop: ${res.stop_reason})`,
+        error: contract ? null : (res.stop_reason === "max_tokens" ? "truncated contract (rejected, retrying bigger)" : `unparseable contract (stop: ${res.stop_reason})`),
         detail: { problem: problem.slice(0, 160), docs: docNames.length, attempt },
       });
     } catch (e) {

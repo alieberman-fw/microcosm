@@ -989,7 +989,7 @@ function CastingAndPopulation() {
         </div>
         <CrowdBand experts={120} residents={380} />
       </div>
-      <P><B>GENERATE THE CROWD</B> turns the counts into real members — compact personas created in fast batches, each with a name, role, one-line story, stances, and demographics. The counter ticks and the band lights up as they land. <B>BROWSE THE CROWD</B> opens the full roster: search it, filter experts vs residents, open any profile, remove anyone. Crowds beyond 300 generate a proportional representative sample now and reach full scale at run time. Changing counts after generating shows a COUNTS CHANGED warning — <B>REGENERATE</B> rebuilds to match.</P>
+      <P><B>GENERATE THE CROWD</B> turns the counts into real members — compact personas created in fast batches, each with a name, role, one-line story, stances, and demographics. The counter ticks and the band lights up as they land. <B>BROWSE THE CROWD</B> opens the full roster: search it, filter experts vs residents, open any profile, remove anyone. Crowds beyond 300 generate a proportional representative sample, and the run polls that sample as the population — the distribution stands in for the full count (full-scale instantiation is on the roadmap). Changing counts after generating shows a COUNTS CHANGED warning — <B>REGENERATE</B> rebuilds to match.</P>
       <Callout label="HONEST LABEL">
         Resident crowd members are narrative-seeded today (marked “ACS PUMS SOON”). When demographic seeding lands, resident cohorts sample real Census microdata for your geography — ages, incomes, tenures that match the actual market.
       </Callout>
