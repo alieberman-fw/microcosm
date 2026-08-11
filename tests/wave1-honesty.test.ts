@@ -154,3 +154,64 @@ describe("middleClip (Wave 4a, R-H9) — the closing rounds survive", () => {
     expect(middleClip("short", 1000)).toBe("short");
   });
 });
+
+describe("factGate (Wave 4b, R-H1) — the report's own figures are counted", () => {
+  const base = {
+    verdict: { label: "GO", tone: "go", headline: "h" },
+    executive_summary: "", sections: [], risks: [], dissents: [],
+    tripwires: [], criteria: [], dimension_scores: [],
+    methodology: {} as never, limitations: "",
+  };
+
+  it("counts lead figures only for the quantified kinds", async () => {
+    const { factGate } = await import("@/lib/report");
+    const spec = { ...base, lead: { kind: "price_range", low: 1, high: 2, cites: [4] }, sections: [], dimension_scores: [] };
+    expect(factGate(spec as never)).toEqual({ figures: 1, cited: 1 });
+    // a decision lead carries no figure to gate
+    const spec2 = { ...base, lead: { kind: "decision" } };
+    expect(factGate(spec2 as never)).toEqual({ figures: 0, cited: 0 });
+  });
+
+  it("every dimension score is a figure; uncited ones count against the ledger", async () => {
+    const { factGate } = await import("@/lib/report");
+    const spec = { ...base, dimension_scores: [
+      { name: "A", score: 7, note: "", cites: [2] },
+      { name: "B", score: 3, note: "" },
+    ] };
+    expect(factGate(spec as never)).toEqual({ figures: 2, cited: 1 });
+  });
+
+  it("a number inherits its section's cites when it has none of its own", async () => {
+    const { factGate } = await import("@/lib/report");
+    const spec = { ...base, sections: [{
+      question: "q", answer: "", finding: "", cites: [9],
+      numbers: [ { label: "N1", value: "1" }, { label: "N2", value: "2", cites: [] } ],
+    }] };
+    // N1 falls back to the section's [9]; N2's explicit [] does too (empty own cites)
+    expect(factGate(spec as never)).toEqual({ figures: 2, cited: 2 });
+  });
+
+  it("no section cites + no number cites = counted but uncited", async () => {
+    const { factGate } = await import("@/lib/report");
+    const spec = { ...base, sections: [{
+      question: "q", answer: "", finding: "", cites: [],
+      numbers: [{ label: "N", value: "1" }],
+    }] };
+    expect(factGate(spec as never)).toEqual({ figures: 1, cited: 0 });
+  });
+
+  it("an empty spec gates nothing", async () => {
+    const { factGate } = await import("@/lib/report");
+    expect(factGate(base as never)).toEqual({ figures: 0, cited: 0 });
+  });
+});
+
+describe("reportVerifierSystem (Wave 4b, R-H3) — the second verifier pass exists", () => {
+  it("audits the ASSEMBLED report and answers in counted JSON", async () => {
+    const { reportVerifierSystem } = await import("@/lib/report");
+    const sys = reportVerifierSystem();
+    expect(sys).toContain("checked");
+    expect(sys).toContain("contradicted");
+    expect(sys.toLowerCase()).toContain("report");
+  });
+});

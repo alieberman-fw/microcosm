@@ -27,6 +27,8 @@ export interface ReportLead {
   finding?: string;                                   // the committed conclusion — a claim someone could disagree with
   so_what?: string;                                   // one line: what to do with it
   magnitude?: { label: string; value: string }[];     // up to 3 numbers that carry the finding
+  /** Wave 4b fact gate: the posts the lead figure(s) come from */
+  cites?: number[];
   /* price_range */
   currency?: string;                                  // assembly-set ("$")
   low?: number; high?: number; point?: number;        // plain numbers; point = central estimate
@@ -63,10 +65,10 @@ export interface ReportSpec {
    *  thing that would change it, and what to do next (3a report overhaul) */
   bottom_line?: { answer: string; changes_it: string; next_step: string };
   executive_summary: string;
-  dimension_scores: { name: string; score: number; note: string }[];
+  dimension_scores: { name: string; score: number; note: string; cites?: number[] }[];
   /** answer-first sections: `answer` directly answers the question AS ASKED;
    *  `finding` is the supporting argument; `numbers` are the key figures */
-  sections: { question: string; answer?: string; finding: string; numbers?: { label: string; value: string }[]; cites: number[] }[];
+  sections: { question: string; answer?: string; finding: string; numbers?: { label: string; value: string; cites?: number[] }[]; cites: number[] }[];
   /** 6-PR4 — the answer's shape as artifacts (ranked list / matrix /
    *  comparison), required by the contract's output_contracts */
   blocks?: ReportBlock[];
@@ -75,7 +77,9 @@ export interface ReportSpec {
   audience?: "executive" | "technical";
   /** 6-PR4 (§6e) — the answer-completeness judge's receipt: did the draft
    *  answer every contract line, and what did the repair pass fix */
-  judge?: { pass: boolean; fixed: number; notes?: string[] };
+  judge?: { pass: boolean; fixed: number; notes?: string[]; rejudged?: boolean };
+  /** Wave 4b fact gate: how many figures carry citations */
+  fact_gate?: { figures: number; cited: number };
   /** success-criteria delivery map — the brief's bar, checked off explicitly */
   criteria?: { criterion: string; where: string }[];
   risks: { risk: string; severity: "high" | "medium" | "low"; mitigation: string; watch_signal: string }[];
@@ -102,7 +106,7 @@ export interface ReportSpec {
   transcript?: { seq: number; name: string; role: string; initials: string; adversarial: boolean; tag: string; content: string; round: number }[];
   cast?: { name: string; role: string; kind: string; provenance: string; adversarial: boolean }[];
   run_config?: { mode: string; rounds: number; max_posts: number; speaker: string; convergence: string; temperature: string; tier: string; verifier: boolean };
-  verification?: { checks: number; supported: number; contradicted: number; unverifiable: number; contradictions: { claim: string; seq: number; note: string }[] };
+  verification?: { checks: number; supported: number; contradicted: number; unverifiable: number; contradictions: { claim: string; seq: number; note: string }[]; report_checks?: number; report_contradicted?: number };
   /** cached PLAIN-ENGLISH translation of this frozen spec (generated on first
    *  toggle; same answers and numbers, jargon-free — never a re-synthesis) */
   plain?: ReportPlain;
@@ -125,7 +129,7 @@ export type ReportLength = "brief" | "standard" | "dense";
 export interface ReportPlain {
   bottom_line: { answer: string; changes_it: string; next_step: string };
   executive_summary: string;
-  sections: { question: string; answer: string; explanation: string }[];
+  sections: { question: string; answer: string; explanation: string; cites?: number[] }[];
   risks: { risk: string; mitigation: string; watch_signal: string }[];
   tripwires: string[];
   glossary: { term: string; meaning: string }[];
@@ -233,6 +237,7 @@ export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
         basis: { type: "string" },
         odds: { type: "number" },
         drivers: { type: "array", items: { type: "string" } },
+        cites: { type: "array", items: { type: "integer" } },
       },
     },
     bottom_line: {
@@ -242,7 +247,7 @@ export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
     executive_summary: { type: "string" },
     dimension_scores: {
       type: "array",
-      items: { type: "object", additionalProperties: false, required: ["name", "score", "note"], properties: { name: { type: "string" }, score: { type: "number" }, note: { type: "string" } } },
+      items: { type: "object", additionalProperties: false, required: ["name", "score", "note"], properties: { name: { type: "string" }, score: { type: "number" }, note: { type: "string" }, cites: { type: "array", items: { type: "integer" } } } },
     },
     sections: {
       type: "array",
@@ -252,7 +257,7 @@ export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
           question: { type: "string" },
           answer: { type: "string" },
           finding: { type: "string" },
-          numbers: { type: "array", items: { type: "object", additionalProperties: false, required: ["label", "value"], properties: { label: { type: "string" }, value: { type: "string" } } } },
+          numbers: { type: "array", items: { type: "object", additionalProperties: false, required: ["label", "value"], properties: { label: { type: "string" }, value: { type: "string" }, cites: { type: "array", items: { type: "integer" } } } } },
           cites: { type: "array", items: { type: "integer" } },
         },
       },
@@ -330,10 +335,11 @@ export function reportSynthSystem(length: ReportLength = "standard", opts?: { di
     ` "lead": {"kind": "decision|key_finding|price_range|approval_odds", ...},  // the report's LEAD VISUAL — pick the kind that matches what the brief ASKS (rules below)\n` +
     ` "bottom_line": {"answer": "ONE plain sentence answering the brief — no jargon, a CEO reads only this", "changes_it": "ONE plain sentence: the single thing most likely to change this answer", "next_step": "ONE plain sentence: what to do in the next two weeks"},\n` +
     ` "executive_summary": "4-6 sentences a decision-maker reads first — concrete, numbers included",\n` +
-    ` "dimension_scores": [{"name": "...", "score": 0-10, "note": "one line"}],   // 4-6 dimensions THIS brief actually turns on\n` +
+    ` "dimension_scores": [{"name": "...", "score": 0-10, "note": "one line", "cites": [seq]}],   // 4-6 dimensions THIS brief actually turns on\n` +
+    `FACT GATE (non-negotiable): every numbers entry, every dimension score, and the lead figures carry "cites" — the post seq(s) the figure actually comes from. A figure with no post source gets "cites": [] and ships marked UNSOURCED, so prefer figures the panel actually argued.\n` +
     (director
       ? `SECTION DRAFTS ARE PROVIDED in the user message — they were written in parallel by section workers and are FINAL. Do NOT emit a "sections" field; write every other field CONSISTENT with those drafts (same verdict direction, same numbers, cite the same posts where relevant).\n`
-      : ` "sections": [{"question": "the user's question AS THEY ASKED IT (shorten but keep their words — never replace with an analyst label)", "answer": "1-2 sentences that DIRECTLY answer the question as asked — verdict first, then the number ('Yes — 900 units absorb, but at $1.95-2.05/SF, not the underwritten $2.05+')", "finding": "3-5 sentences of supporting argument", "numbers": [{"label": "ABSORPTION", "value": "20-24 units/mo"}], "cites": [seq, ...]}],  // one per question-to-resolve IN ORDER, THEN one per success criterion the question sections don't already fully deliver; 2-4 numbers per section ([] only if truly qualitative)\n` +
+      : ` "sections": [{"question": "the user's question AS THEY ASKED IT (shorten but keep their words — never replace with an analyst label)", "answer": "1-2 sentences that DIRECTLY answer the question as asked — verdict first, then the number ('Yes — 900 units absorb, but at $1.95-2.05/SF, not the underwritten $2.05+')", "finding": "3-5 sentences of supporting argument", "numbers": [{"label": "ABSORPTION", "value": "20-24 units/mo", "cites": [seq]}], "cites": [seq, ...]}],  // one per question-to-resolve IN ORDER, THEN one per success criterion the question sections don't already fully deliver; 2-4 numbers per section ([] only if truly qualitative)\n` +
         `RANKING RULE (non-negotiable): when the brief ENUMERATES a set of items to rank, order, or compare (categories, options, sites, plans), the section answering it must place the COMPLETE ordered list in "numbers" — one entry per enumerated item, {"label": "#1", "value": "item name — one-clause reason"}, EVERY item from the brief present with an explicit position, even the ones the panel barely discussed (say so in the reason: "never debated — ranked on thesis fit alone"). A ranking that covers a subset and narrates the rest in prose FAILS the user's ask.\n`) +
     ` "criteria": [{"criterion": "the success criterion verbatim (shortened ok)", "where": "one line: which section/part of this report delivers it"}],  // one entry per success criterion — this is the delivery receipt\n` +
     ` "risks": [{"risk": "...", "severity": "high|medium|low", "mitigation": "...", "watch_signal": "the observable that says it's happening"}],\n` +
@@ -452,7 +458,7 @@ export function sectionWorkerSystem(length: ReportLength = "standard"): string {
     `{"question": "the assigned question AS THE USER ASKED IT (shorten but keep their words)", ` +
     `"answer": "1-2 sentences that DIRECTLY answer it — verdict first, then the number", ` +
     `"finding": "the supporting argument from the transcript", ` +
-    `"numbers": [{"label": "ABSORPTION", "value": "20-24 units/mo"}], "cites": [seq, ...]}\n` +
+    `"numbers": [{"label": "ABSORPTION", "value": "20-24 units/mo", "cites": [seq]}], "cites": [seq, ...]}\n` +
     `RANKING RULE (non-negotiable): if the assigned question enumerates items to rank or compare, "numbers" carries the COMPLETE ` +
     `ordered list — {"label": "#1", "value": "item — one-clause reason"}, EVERY item placed, barely-debated ones honestly noted.\n` +
     `Rules: ANSWER FIRST; every number from the transcript or the brief; cites are real post seqs that support the finding; ` +
@@ -725,7 +731,15 @@ export async function synthesizePlain(
       if (!parsed) { lastErr = "unparseable translation"; continue; }
       const incomplete = plainSpecIncomplete(parsed, spec.sections.length);
       if (incomplete) { lastErr = `incomplete translation — ${incomplete}`; continue; }
-      return { plain: parsed as unknown as ReportPlain, lastErr: "" };
+      const plain = parsed as unknown as ReportPlain;
+      // Wave 4b (audit R-H1): the plain view keeps the evidence trail — copy
+      // each section's cites from the frozen spec (translation never adds or
+      // invents citations; it inherits them by position)
+      plain.sections = plain.sections.map((ps, i) => {
+        const c = spec.sections[i]?.cites;
+        return c?.length ? { ...ps, cites: c } : ps;
+      });
+      return { plain, lastErr: "" };
     } catch (e) {
       lastErr = e instanceof Error ? e.message : "translation failed";
       await log(model, null, t0, lastErr);
@@ -760,4 +774,29 @@ export function middleClip(text: string, max: number): string {
   const head = Math.floor(max * 0.55);
   const tail = max - head;
   return `${text.slice(0, head)}\n\n[… TRANSCRIPT CLIPPED FOR LENGTH — ${text.length - max} CHARACTERS FROM THE MIDDLE OMITTED; THE OPENING AND THE CLOSING ROUNDS ARE INTACT …]\n\n${text.slice(-tail)}`;
+}
+
+
+/** Wave 4b (audit R-H1): the fact gate ledger — how many figures the report
+ *  asserts, and how many carry a post citation. Rendered in methodology;
+ *  unsourced figures get marked in the view. */
+export function factGate(spec: ReportSpec): { figures: number; cited: number } {
+  let figures = 0, cited = 0;
+  const count = (has: boolean, c?: number[]) => { if (!has) return; figures += 1; if ((c ?? []).length > 0) cited += 1; };
+  const l = spec.lead;
+  if (l && (l.kind === "price_range" || l.kind === "approval_odds")) count(true, l.cites);
+  for (const d of spec.dimension_scores ?? []) count(true, d.cites);
+  for (const s of spec.sections ?? []) for (const n of s.numbers ?? []) count(true, (n.cites ?? []).length ? n.cites : s.cites);
+  return { figures, cited };
+}
+
+/** Wave 4b (audit R-H3): the verifier's SECOND pass — the assembled report's
+ *  own claims, checked against the corpus and tool findings before insert. */
+export function reportVerifierSystem(): string {
+  return (
+    `You audit a finished decision report against its evidence. You get the report's numeric claims and the ` +
+    `underlying documents/tool findings. Check up to 15 claims: does each figure appear in, or follow arithmetically ` +
+    `from, the evidence? Reply ONLY JSON: {"checked": N, "contradicted": N, "contradictions": [{"claim": "...", "note": "what the evidence actually says"}]}. ` +
+    `A figure attributed to the panel's own reasoning is NOT a contradiction — flag only figures that conflict with the evidence.`
+  );
 }
