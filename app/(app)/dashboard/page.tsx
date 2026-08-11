@@ -63,6 +63,7 @@ export default async function Dashboard() {
         </div>
         <Link
           href="/sim/new"
+          className="pbtn"
           style={{
             background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 13.5,
             padding: "11px 22px", borderRadius: 100,

@@ -9,6 +9,15 @@
   --ln4: rgba(255, 255, 255, 0.12); --ln5: rgba(255, 255, 255, 0.14); --ln6: rgba(255, 255, 255, 0.15);
   --ln7: rgba(255, 255, 255, 0.22); --ln8: rgba(255, 255, 255, 0.25);
   --navbg: rgba(10, 11, 12, 0.72);
+  /* premium-finish tokens (inert unless html[data-finish="premium"]) */
+  --edge-top: rgba(255, 255, 255, 0.13);
+  --sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 42%);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px -14px rgba(0, 0, 0, 0.55);
+  --shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 18px 44px -16px rgba(0, 0, 0, 0.6);
+  --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 10px -2px rgba(55, 217, 138, 0.4);
+  --row-hover: rgba(255, 255, 255, 0.045);
+  --focus-ring: 0 0 0 3px rgba(55, 217, 138, 0.28);
+  --spring: cubic-bezier(0.2, 0.9, 0.25, 1);
   color-scheme: dark;
 }
 /* GRAY — the middle theme (Settings → Appearance slider): a warm dark-gray
@@ -24,6 +33,14 @@ html[data-theme="gray"] {
   --ln4: rgba(255, 250, 240, 0.12); --ln5: rgba(255, 250, 240, 0.14); --ln6: rgba(255, 250, 240, 0.15);
   --ln7: rgba(255, 250, 240, 0.22); --ln8: rgba(255, 250, 240, 0.25);
   --navbg: rgba(33, 32, 29, 0.72);
+  --edge-top: rgba(255, 250, 240, 0.13);
+  --sheen: linear-gradient(180deg, rgba(255, 250, 240, 0.035), rgba(255, 250, 240, 0) 42%);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px -14px rgba(0, 0, 0, 0.48);
+  --shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.3), 0 18px 44px -16px rgba(0, 0, 0, 0.54);
+  --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 10px -2px rgba(55, 217, 138, 0.38);
+  --row-hover: rgba(255, 250, 240, 0.05);
+  --focus-ring: 0 0 0 3px rgba(55, 217, 138, 0.28);
+  --spring: cubic-bezier(0.2, 0.9, 0.25, 1);
   color-scheme: dark;
 }
 /* FOG — the light warm gray (4-way slider, field request): a stone-toned
@@ -39,6 +56,14 @@ html[data-theme="fog"] {
   --ln4: rgba(30, 28, 22, 0.15); --ln5: rgba(30, 28, 22, 0.17); --ln6: rgba(30, 28, 22, 0.21);
   --ln7: rgba(30, 28, 22, 0.31); --ln8: rgba(30, 28, 22, 0.33);
   --navbg: rgba(232, 230, 225, 0.78);
+  --edge-top: rgba(255, 255, 255, 0.75);
+  --sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 46%);
+  --shadow-card: 0 1px 2px rgba(30, 28, 22, 0.05), 0 12px 32px -18px rgba(30, 28, 22, 0.28);
+  --shadow-hover: 0 2px 5px rgba(30, 28, 22, 0.06), 0 20px 48px -20px rgba(30, 28, 22, 0.34);
+  --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 2px 10px -2px rgba(13, 157, 99, 0.4);
+  --row-hover: rgba(30, 28, 22, 0.05);
+  --focus-ring: 0 0 0 3px rgba(13, 157, 99, 0.25);
+  --spring: cubic-bezier(0.2, 0.9, 0.25, 1);
   color-scheme: light;
 }
 html[data-theme="light"] {
@@ -51,6 +76,14 @@ html[data-theme="light"] {
   --ln4: rgba(0, 0, 0, 0.14); --ln5: rgba(0, 0, 0, 0.16); --ln6: rgba(0, 0, 0, 0.2);
   --ln7: rgba(0, 0, 0, 0.3); --ln8: rgba(0, 0, 0, 0.32);
   --navbg: rgba(246, 246, 244, 0.78);
+  --edge-top: rgba(255, 255, 255, 0.85);
+  --sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 46%);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 32px -18px rgba(0, 0, 0, 0.22);
+  --shadow-hover: 0 2px 5px rgba(0, 0, 0, 0.05), 0 20px 48px -20px rgba(0, 0, 0, 0.28);
+  --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 2px 10px -2px rgba(13, 157, 99, 0.4);
+  --row-hover: rgba(0, 0, 0, 0.045);
+  --focus-ring: 0 0 0 3px rgba(13, 157, 99, 0.25);
+  --spring: cubic-bezier(0.2, 0.9, 0.25, 1);
   color-scheme: light;
 }
 
@@ -161,3 +194,147 @@ button { font-family: var(--font-grotesk), sans-serif; }
 
 /* run-config primary CTA — same hover grammar as site primary buttons */
 .runCta:hover { filter: brightness(1.12); }
+
+/* ————————————————————————————————————————————————————————————————
+   PREMIUM FINISH — Settings → Appearance → Finish.
+   Every rule is scoped under html[data-finish="premium"]; with the
+   attribute absent the app is byte-identical to the shipped design.
+   Tokens (--edge-top, --sheen, the --shadow set, --row-hover, --focus-ring,
+   --spring) are defined per theme above, so the skin holds on light · fog · gray ·
+   dark. Hook classes (.pbtn .pchip .pnum .prow .pverdict .pcard) carry ZERO
+   rules outside this block — adding them to a component cannot change
+   normal mode. Orbs read --acc/--acc-c, which premium never touches.
+   ———————————————————————————————————————————————————————————————— */
+
+/* 01 · cards get physics: light-from-above edge, sheen, ambient shadow;
+   hover lifts instead of flashing the accent border */
+html[data-finish="premium"] .card,
+html[data-finish="premium"] .pcard {
+  border-color: var(--ln2);
+  border-top-color: var(--edge-top);
+  background: var(--sheen), var(--sf);
+  box-shadow: var(--shadow-card);
+  transition: transform 0.18s var(--spring), box-shadow 0.18s var(--spring),
+    border-color 0.25s, background 0.25s;
+}
+html[data-finish="premium"] .cardHover:hover {
+  border-color: var(--ln2);
+  border-top-color: var(--edge-top);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+html[data-finish="premium"] .cardHoverQuiet:hover {
+  border-color: var(--ln2);
+  border-top-color: var(--edge-top);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-hover);
+}
+
+/* 02 · stat numbers read machined: tabular digits, tighter tracking,
+   variable-font weight (!important beats per-tile inline styles) */
+html[data-finish="premium"] .pnum {
+  font-weight: 560 !important;
+  letter-spacing: -0.03em !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 03 · accent discipline: primary buttons gain a vertical gradient, inner
+   top light, and a pressed state; ghost buttons hover to a tinted fill;
+   .pchip turns bordered accent pills into quiet tinted fills */
+html[data-finish="premium"] .btnAcc,
+html[data-finish="premium"] .pbtn {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 86%, white 14%), var(--acc)) !important;
+  box-shadow: var(--shadow-btn);
+  transition: transform 0.13s var(--spring), box-shadow 0.13s var(--spring), filter 0.13s;
+}
+html[data-finish="premium"] .btnAcc:hover,
+html[data-finish="premium"] .pbtn:hover,
+html[data-finish="premium"] .runCta:hover {
+  filter: brightness(1.06);
+}
+html[data-finish="premium"] .btnAcc:active,
+html[data-finish="premium"] .pbtn:active {
+  transform: scale(0.98) translateY(0.5px);
+}
+html[data-finish="premium"] .btnGhost:hover {
+  background: var(--acc-dim);
+  border-color: transparent;
+  color: var(--acc);
+}
+html[data-finish="premium"] .pchip {
+  background: var(--acc-dim) !important;
+  border-color: transparent !important;
+}
+
+/* 05 · data rows: retire the border grid, hover wash instead */
+html[data-finish="premium"] .prow {
+  border-bottom-color: transparent !important;
+  border-radius: 10px;
+  transition: background 0.14s;
+}
+html[data-finish="premium"] .prow:hover {
+  background: var(--row-hover);
+}
+html[data-finish="premium"] .homeRow:hover {
+  background: var(--row-hover);
+}
+
+/* 06 · the constellation whispers: kickers trail a fading dot-run */
+html[data-finish="premium"] .kicker::after {
+  content: "";
+  display: inline-block;
+  width: 27px;
+  height: 4px;
+  margin-left: 10px;
+  vertical-align: 1px;
+  background:
+    radial-gradient(circle at 3px 50%, currentColor 0 1.7px, transparent 1.8px),
+    radial-gradient(circle at 13px 50%, color-mix(in srgb, currentColor 55%, transparent) 0 1.7px, transparent 1.8px),
+    radial-gradient(circle at 23px 50%, color-mix(in srgb, currentColor 28%, transparent) 0 1.7px, transparent 1.8px);
+}
+
+/* + · the verdict seal: live dot + tone glow, color inherited from the
+   chip's own tone (currentColor), so GO/CONDITIONAL/NO-GO all read right */
+html[data-finish="premium"] .pverdict {
+  background: linear-gradient(180deg, color-mix(in srgb, currentColor 19%, transparent), color-mix(in srgb, currentColor 8%, transparent)) !important;
+  box-shadow: 0 4px 18px -6px;
+}
+html[data-finish="premium"] .pverdict::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+
+/* 07 · the last 2%: focus ring, accent caret, pill scrollbars */
+html[data-finish="premium"] :focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+html[data-finish="premium"] input,
+html[data-finish="premium"] textarea {
+  caret-color: var(--acc);
+}
+html[data-finish="premium"] {
+  scrollbar-color: var(--ln4) transparent;
+}
+html[data-finish="premium"] ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+html[data-finish="premium"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+html[data-finish="premium"] ::-webkit-scrollbar-thumb {
+  background: var(--ln4);
+  border-radius: 100px;
+  border: 2px solid var(--bg);
+}
+html[data-finish="premium"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--ln7);
+}
