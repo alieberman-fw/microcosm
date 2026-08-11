@@ -49,6 +49,7 @@ export default function RunConfigStage({
   crowd,
   initialRun,
   initialTools = null,
+  crowdBusy = false,
 }: {
   simId: string;
   mode: string | null;
@@ -61,6 +62,8 @@ export default function RunConfigStage({
   initialRun?: Partial<RunConfig> | null;
   /** 3d — the saved agent-tools allowlist (config.tools; empty = all off) */
   initialTools?: string[] | null;
+  /** crowd generation in flight — launch waits so the run never starts on a half-crowd (field fix) */
+  crowdBusy?: boolean;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<string>(initialMode ?? "Agora");
@@ -410,17 +413,18 @@ export default function RunConfigStage({
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 7 }}>
           <button
             onClick={() => void proceed()}
-            disabled={launching}
+            disabled={launching || crowdBusy}
             className="runCta"
             style={{
               display: "inline-flex", alignItems: "center", gap: 10, border: "none",
-              background: "var(--acc)", color: "var(--acc-c)", fontWeight: 600, fontSize: 15,
+              background: crowdBusy ? "var(--sf2)" : "var(--acc)", color: crowdBusy ? "var(--t5)" : "var(--acc-c)", fontWeight: 600, fontSize: 15,
               padding: "13px 30px", borderRadius: 100, fontFamily: "var(--font-sans), sans-serif",
-              cursor: launching ? "default" : "pointer", opacity: launching ? 0.75 : 1,
+              cursor: launching || crowdBusy ? "default" : "pointer", opacity: launching ? 0.75 : 1,
+              ...(crowdBusy ? { border: "1px solid var(--ln4)" } : {}),
             }}
           >
-            {launching ? "Saving settings…" : "Proceed to launch"}
-            <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>→</span>
+            {crowdBusy ? "Waiting for the crowd to generate…" : launching ? "Saving settings…" : "Proceed to launch"}
+            {!crowdBusy && <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>→</span>}
           </button>
           <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)" }}>
             SAVES THESE SETTINGS · OPENS THE RUN SCREEN

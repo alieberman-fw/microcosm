@@ -206,3 +206,17 @@ export function modeFitFlags(args: { mode: string; leads: number; expertSide: nu
   }
   return flags;
 }
+
+/** one chip per source: the model may cite the same document many times in
+ *  one post (field report: three identical chips) — keep the first quote.
+ *  Lives here (not engine.ts) so client components can import it without
+ *  pulling the Anthropic SDK into the bundle. */
+export function dedupeCites<T extends { title: string; url?: string }>(cites: T[]): T[] {
+  const seen = new Set<string>();
+  return cites.filter((c) => {
+    const key = (c.url ?? c.title).trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}

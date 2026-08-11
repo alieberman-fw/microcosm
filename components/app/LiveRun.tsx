@@ -16,6 +16,7 @@ import { MiniSwarm } from "@/components/app/CastingTheater";
 import Markdown from "@/components/app/Markdown";
 import Orb from "@/components/app/Orb";
 import { distShares } from "@/lib/dist";
+import { dedupeCites } from "@/lib/run";
 import { computeToolAttachment } from "@/lib/feed";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import StageRail from "@/components/app/StageRail";
@@ -1482,7 +1483,9 @@ export default function LiveRun({
                     })}
                     {p.cites.length > 0 && (
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7 }}>
-                        {p.cites.map((c, ci) => (
+                        {/* dedupe at render too — heals transcripts persisted
+                            before the engine deduped (field report: 3× chips) */}
+                        {dedupeCites(p.cites).map((c, ci) => (
                           <span key={ci} title={c.quote} style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", border: "1px solid var(--ln4)", borderRadius: 100, padding: "2px 8px", color: "var(--t6)" }}>
                             ⌗ {c.title.toUpperCase().slice(0, 28)}
                           </span>

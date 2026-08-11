@@ -73,8 +73,10 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
     const pollPlan: PollAngle[] | null = Array.isArray(brief.contract?.poll_plan) ? brief.contract!.poll_plan! : null;
     const config = (sim.config as Record<string, unknown>) ?? {};
     const cfg: RunConfig = { ...RUN_DEFAULTS, ...((config.run as Partial<RunConfig>) ?? {}) };
-    const mode = String((config.casting as { mode?: string } | undefined)?.mode ?? "Agora");
     const runState = (config.run_state as RunState | undefined) ?? {};
+    // the launch pinned the mode into run_state — every slice, chain child,
+    // and reclaim honors it; casting.mode is only the pre-launch seed
+    const mode = String(runState.mode ?? (config.casting as { mode?: string } | undefined)?.mode ?? "Agora");
 
     const { data: agents } = await db.from("sim_agents").select("agent_key, spec_frozen").eq("sim_id", simId);
     const leads: EngineLead[] = (agents ?? [])

@@ -89,6 +89,7 @@ export default function PopulationStage({
   onCountChange,
   onCastingChange,
   onModeChange,
+  onCrowdGenChange,
 }: {
   simId: string;
   initialSeats: WorkspaceSeat[];
@@ -98,6 +99,8 @@ export default function PopulationStage({
   onCastingChange?: (busy: boolean) => void;
   /** a fresh cast plan landed — the run-config mode picker re-seeds from it */
   onModeChange?: (mode: string) => void;
+  /** crowd generation in flight — the launch CTA locks on this (field fix) */
+  onCrowdGenChange?: (busy: boolean) => void;
 }) {
   const router = useRouter();
   const [seats, setSeats] = useState<WorkspaceSeat[]>(initialSeats);
@@ -277,6 +280,7 @@ export default function PopulationStage({
   const generateCrowd = async () => {
     if (crowdGen || casting) return;
     setCrowdGen(true);
+    onCrowdGenChange?.(true);
     setCrowd([]);
     setError(null);
     arrivalQueue.current = [];
@@ -340,6 +344,7 @@ export default function PopulationStage({
       drain.stop();
       setCrowd((prev) => arrivalQueue.current.length ? [...prev, ...arrivalQueue.current.splice(0)] : prev);
       setCrowdGen(false);
+      onCrowdGenChange?.(false);
       setCrowdSample(null);
     }
   };

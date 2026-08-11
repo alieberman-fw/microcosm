@@ -16,6 +16,9 @@ export interface RunState {
   worker?: string | null;       // nonce of the worker currently driving
   stop_requested?: boolean;     // set by /run/stop; the worker suspends at the next safe boundary
   started_at?: string;
+  /** the mode this run LAUNCHED under — every slice/reclaim honors it, so a
+   *  config mutation mid-run can never flip a live run's choreography */
+  mode?: string;
 }
 
 /** a suspending slice that has FIRED the chain marks the handoff with this
