@@ -335,6 +335,309 @@ function PopulationMathVignette() {
   );
 }
 
+/* --------------- one model vs the room — the science page hero --------------- */
+
+function SingleVsSwarmVignette() {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, margin: "18px 0", maxWidth: 720 }}>
+      <div style={{ border: "1px dashed var(--ln5)", borderRadius: 14, padding: "18px 20px", background: "transparent" }}>
+        <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t6)", marginBottom: 12 }}>ONE MODEL, ONE PASS</div>
+        <div style={{ fontSize: 13, lineHeight: 1.65, color: "var(--t4)", fontStyle: "italic" }}>
+          “Overall, this appears to be a promising opportunity, though there are several factors to consider…”
+        </div>
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+          {["ONE VOICE, AVERAGED PRIORS", "DISAGREEMENT SMOOTHED AWAY", "DEMAND DESCRIBED, NOT MEASURED", "NOBODY OWNS ANY CLAIM"].map((l) => (
+            <span key={l} style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", color: "var(--t7)" }}>· {l}</span>
+          ))}
+        </div>
+      </div>
+      <div style={{ border: "1px solid var(--ln3)", borderRadius: 14, padding: "18px 20px", background: "var(--sf)" }}>
+        <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--acc)", marginBottom: 12 }}>THE ROOM — 12 LEADS · 340 POLLED</div>
+        <span style={{ ...mono, fontSize: 10, letterSpacing: ".08em", padding: "6px 13px", borderRadius: 100, border: "1px solid var(--warn)", background: "var(--warn-dim)", color: "var(--warn)" }}>
+          CONDITIONAL GO — 3 TRIPWIRES
+        </span>
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+          {[
+            ["45 OF 48 ALIGNED", "var(--t4)"],
+            ["3 DISSENTS PRESERVED, ATTRIBUTED", "var(--warn)"],
+            ["DEMAND: 41% “YES, IF CONCERNS MET” (205 OF 500)", "var(--t4)"],
+            ["EVERY CLAIM CITED TO A FILE + PAGE", "var(--t4)"],
+          ].map(([l, c]) => (
+            <span key={l} style={{ ...mono, fontSize: 8.5, letterSpacing: ".07em", color: c }}>· {l}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------- single-AI vs swarm comparison (the honest table) ------------- */
+
+const VS_ROWS: { dim: string; single: string; swarm: string }[] = [
+  { dim: "Voices", single: "One generalist voice doing its best impression of many.", swarm: "10–20 named specialists with different priors, plus a polled population of hundreds." },
+  { dim: "Disagreement", single: "Internally resolved before you ever see it — you get the average.", swarm: "Surfaced, argued in public, and preserved in the report with names attached." },
+  { dim: "Demand & sentiment", single: "Described: “renters would likely accept…”", swarm: "Measured: 500 renters actually polled, every round — a distribution, with every vote inspectable." },
+  { dim: "Anchoring", single: "The first framing sticks; the answer often mirrors the question.", swarm: "Blind first takes (Jury, Chamber) and a seeded adversarial seat paid to attack the thesis." },
+  { dim: "Evidence", single: "Quotes your documents if you paste them; no receipt trail.", swarm: "Documents ride natively — claims come back pinned to file + page, and contradictions get flagged." },
+  { dim: "Output", single: "An essay you re-prompt until it feels right.", swarm: "A decision-grade report: verdict, scores, risks, tripwires, dissents — every finding cited to a post." },
+  { dim: "Follow-up", single: "A new chat that has forgotten the reasoning.", swarm: "The room stays open: ask the analyst, @mention any panelist, fork the scenario." },
+];
+
+function SingleVsSwarmTable() {
+  const th: CSSProperties = { ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t6)", textTransform: "uppercase", textAlign: "left", padding: "8px 12px 8px 0", borderBottom: "1px solid var(--ln3)", whiteSpace: "nowrap" };
+  const td: CSSProperties = { fontSize: 12.5, lineHeight: 1.55, color: "var(--t4)", padding: "9px 12px 9px 0", borderBottom: "1px solid var(--ln2)", verticalAlign: "top" };
+  return (
+    <div style={{ overflowX: "auto", margin: "14px 0 18px" }}>
+      <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
+        <thead><tr><th style={th} /><th style={th}>One AI chat</th><th style={{ ...th, color: "var(--acc)" }}>A Microcosm swarm</th></tr></thead>
+        <tbody>
+          {VS_ROWS.map((r) => (
+            <tr key={r.dim}>
+              <td style={{ ...td, ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t1)", whiteSpace: "nowrap", textTransform: "uppercase" }}>{r.dim}</td>
+              <td style={td}>{r.single}</td>
+              <td style={{ ...td, color: "var(--t3)" }}>{r.swarm}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ----------------- forum feed post, in miniature (run screen) ----------------- */
+
+function FeedPostVignette() {
+  const cite = (t: string) => (
+    <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", border: "1px solid var(--ln4)", borderRadius: 100, padding: "2px 8px", color: "var(--t6)" }}>⌗ {t}</span>
+  );
+  const head = (initials: string, name: string, role: string, tag: string, warn?: boolean) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+      <span style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--sf2)", border: `1px solid ${warn ? "var(--warn)" : "var(--ln5)"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: 8, color: warn ? "var(--warn)" : "var(--t3)" }}>{initials}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600 }}>{name}</span>
+      <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: "var(--t6)" }}>{role.toUpperCase()}</span>
+      <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".06em", border: `1px solid ${warn ? "var(--warn)" : "var(--ln4)"}`, color: warn ? "var(--warn)" : "var(--t5)", borderRadius: 100, padding: "1px 7px" }}>{tag}</span>
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div>
+        {head("RM", "Rosa Menendez", "Grid interconnection", "POST 7")}
+        <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--t3)" }}>
+          The broker package says 250MW is “reserved” with 30-month energization. The utility's own screening
+          study says the existing line supports a 60MW bridge and full build is <B>48–60 months</B>. Those can't both be true — and one of them prices this deal.
+        </div>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7 }}>
+          {cite("INTERCONNECTION-SCREENING.TXT · §3")}{cite("LAND-BROKER-PACKAGE.TXT")}
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+          <span style={{ ...mono, fontSize: 8, letterSpacing: ".05em", color: "var(--acc)" }}>▲ 6 ENDORSED</span>
+          <span style={{ ...mono, fontSize: 8, letterSpacing: ".05em", color: "var(--t7)" }}>3 REPLIES</span>
+        </div>
+      </div>
+      <div style={{ marginLeft: 30, borderLeft: "2px solid var(--ln2)", paddingLeft: 14 }}>
+        {head("EB", "Étienne Bassett", "Capital markets", "FLIP", true)}
+        <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--t3)" }}>
+          I opened this round underwriting the broker timeline. Rosa's cite changes my position: at 48+ months the
+          LOI's 2028 condition fails and the carry math breaks. I'm now conditional-no without a self-funded substation.
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ flex: 1, height: 1, background: "var(--ln2)" }} />
+        <span style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t6)" }}>+34 POSTS · 214 RESIDENT AGENTS ACTIVE</span>
+        <span style={{ flex: 1, height: 1, background: "var(--ln2)" }} />
+      </div>
+    </div>
+  );
+}
+
+/* --------------------- crowd poll card, in miniature --------------------- */
+
+function PollVignette() {
+  const rows: { label: string; pct: number; n: number; warn?: boolean }[] = [
+    { label: "WOULD SAY YES", pct: 22, n: 110 },
+    { label: "YES, IF CONCERNS ARE MET", pct: 41, n: 205 },
+    { label: "WOULD PUSH BACK", pct: 24, n: 120, warn: true },
+    { label: "NOT ENGAGED", pct: 13, n: 65 },
+  ];
+  return (
+    <div>
+      <div style={{ fontSize: 12.5, color: "var(--t3)", marginBottom: 10 }}>
+        “Would you rent here at $2.05/SF, given the concessions on offer?”
+      </div>
+      {rows.map((r) => (
+        <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 7 }}>
+          <span style={{ ...mono, fontSize: 8, letterSpacing: ".05em", color: "var(--t5)", width: 168, flex: "none" }}>{r.label}</span>
+          <span style={{ flex: 1, height: 7, borderRadius: 100, background: "var(--sf2)", overflow: "hidden" }}>
+            <span style={{ display: "block", width: `${r.pct}%`, height: "100%", borderRadius: 100, background: r.warn ? "var(--warn)" : "var(--acc)", opacity: r.warn ? 0.9 : 1 }} />
+          </span>
+          <span style={{ ...mono, fontSize: 9, color: "var(--t3)", width: 72, flex: "none", textAlign: "right" }}>{r.pct}% · {r.n}</span>
+        </div>
+      ))}
+      <div style={{ ...mono, fontSize: 8, letterSpacing: ".07em", color: "var(--t7)", marginTop: 9 }}>
+        ROUND 2 · 500 POLLED — EVERY MEMBER, EVERY ROUND · “SEE EVERY VOTE” EXPANDS THE BALLOTS
+      </div>
+    </div>
+  );
+}
+
+/* ------------------- report opening block, in miniature ------------------- */
+
+function VerdictVignette() {
+  const tile = (n: string, l: string) => (
+    <span style={{ display: "inline-flex", flexDirection: "column", gap: 3, border: "1px solid var(--ln3)", borderRadius: 10, padding: "10px 14px", background: "var(--sf2)" }}>
+      <span style={{ ...mono, fontSize: 15, color: "var(--t1)" }}>{n}</span>
+      <span style={{ ...mono, fontSize: 7, letterSpacing: ".07em", color: "var(--t6)" }}>{l}</span>
+    </span>
+  );
+  return (
+    <div>
+      <span style={{ ...mono, fontSize: 10, letterSpacing: ".09em", padding: "6px 14px", borderRadius: 100, border: "1px solid var(--warn)", background: "var(--warn-dim)", color: "var(--warn)" }}>
+        CONDITIONAL GO — 3 TRIPWIRES
+      </span>
+      <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-.015em", lineHeight: 1.4, margin: "12px 0 0", color: "var(--t1)" }}>
+        Exercise the option only with a self-funded substation commitment and a council-approved water contract — the broker timeline does not survive its own documents.
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+        {tile("45/48", "ALIGNED AT CLOSE")}{tile("9", "CLAIMS CONTRADICTED")}{tile("3", "DISSENTS PRESERVED")}{tile("41%", "CROWD: YES, IF")}
+      </div>
+      <div style={{ marginTop: 14, borderTop: "1px solid var(--ln2)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        {[
+          ["THE ANSWER", "Go at $18.05M only if the two conditions close within the option window."],
+          ["WHAT WOULD CHANGE IT", "A cluster-study result under 40 months, or the moratorium passing — either flips the verdict."],
+          ["WHAT TO DO NEXT", "Commission the substation feasibility letter before the option expires; it prices both conditions."],
+        ].map(([k, v]) => (
+          <div key={k} style={{ display: "flex", gap: 12 }}>
+            <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--acc)", width: 132, flex: "none", paddingTop: 2 }}>{k}</span>
+            <span style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--t4)" }}>{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------- the analyst, in miniature ---------------------- */
+
+function AnalystVignette() {
+  const seq = (n: number) => (
+    <span style={{ ...mono, fontSize: 8, letterSpacing: ".03em", border: "1px solid var(--acc)", color: "var(--acc)", borderRadius: 100, padding: "1px 7px", margin: "0 2px" }}>{n}</span>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ alignSelf: "flex-end", borderRadius: 14, padding: "10px 14px", fontSize: 12.5, lineHeight: 1.55, maxWidth: 420, background: "var(--acc-dim)", border: "1px solid var(--acc)" }}>
+        Compare the round 1 and round 3 polls — who moved, and what moved them?
+      </div>
+      <div style={{ maxWidth: 480 }}>
+        <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)", marginBottom: 5 }}>✻ THE ANALYST</div>
+        <div style={{ borderRadius: 14, padding: "12px 15px", fontSize: 12.5, lineHeight: 1.65, background: "var(--sf2)", color: "var(--t3)" }}>
+          “Yes, if concerns are met” grew from 29% to 41% while “would push back” fell 9 points. The movement
+          concentrates in renters over 55 — it starts right after the phasing concession lands in round 2
+          {seq(23)}{seq(31)}. Computed from the ballots; the two posts that did the moving are linked.
+        </div>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 10, marginTop: 9, border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 10, padding: "8px 12px" }}>
+          <span style={{ ...mono, fontSize: 8, letterSpacing: ".07em", color: "var(--acc)" }}>CREATED · IC-MEMO-WATER-RISK</span>
+          <span style={{ ...mono, fontSize: 8, letterSpacing: ".07em", color: "var(--t5)" }}>OPEN →</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* --------------- WHAT I UNDERSTOOD checkpoint, in miniature --------------- */
+
+function UnderstoodVignette() {
+  return (
+    <div>
+      <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--acc)", marginBottom: 10 }}>WHAT I UNDERSTOOD</div>
+      <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--t3)" }}>
+        A <B>buy / renegotiate / pass</B> decision on a 310,000 SF office tower at $14M, converting to ~240 units —
+        judged on conversion cost, achievable rents, and the city incentive terms.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, margin: "10px 0" }}>
+        {["Does the floor plate actually convert?", "The honest all-in basis per unit", "Can downtown absorb 240 more units?", "What does the abatement really require?"].map((q) => (
+          <span key={q} style={{ ...mono, fontSize: 9, letterSpacing: ".03em", color: "var(--t5)" }}>✓ {q}</span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+        <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", border: "1px solid var(--ln5)", borderRadius: 100, padding: "4px 11px", color: "var(--t4)", background: "var(--sf2)" }}>
+          CLARIFIER — hold period: 5 years · 10 years · exit at CO?
+        </span>
+        <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", border: "1px solid var(--acc)", borderRadius: 100, padding: "4px 11px", color: "var(--acc)" }}>
+          LOOKS RIGHT — CAST & RUN →
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ------------- question shapes — what to ask a swarm (the craft) ------------- */
+
+const QUESTION_SHAPES: { shape: string; ask: string; mode: string; comp: string; lead: string }[] = [
+  { shape: "Site go / no-go", ask: "“Should we exercise the $18M option on 190 acres for a 250MW data center campus — and what must be true?”", mode: "Agora", comp: "Mixed — engineers argue feasibility, residents stress-test consent", lead: "GO / CONDITIONAL / NO-GO chip with named conditions" },
+  { shape: "Parcel valuation", ask: "“What is a fair price for this 38-acre industrial parcel asking $12.5M?”", mode: "Chamber", comp: "Experts only — blind valuations kill anchoring, then peer review", lead: "A defended PRICE RANGE with a walk-away marker" },
+  { shape: "Pricing & absorption", ask: "“Will 900 new units absorb at $2.05/SF, and over what lease-up period?”", mode: "Agora or Roundtable", comp: "Consumer-heavy — the polled crowd IS the demand curve", lead: "Willingness-to-pay distribution + lease-up scenario" },
+  { shape: "Unit mix / product", ask: "“Which of these three unit-mix schemes for a 280-unit project — and why?”", mode: "Roundtable", comp: "Mixed panel of equals; crossfire keeps schemes honest", lead: "A ranked comparison with every scheme placed" },
+  { shape: "Entitlement rehearsal", ask: "“Will the 380-unit rezoning survive the council hearing — what concessions buy consent?”", mode: "Tribunal", comp: "Two benches + a judge; residents as the jury pool", lead: "APPROVAL ODDS with the concession map" },
+  { shape: "Policy impact", ask: "“Should the town cap short-term rentals at 12% of dwellings — what actually happens if it does?”", mode: "Agora (bustling)", comp: "Resident-heavy — the crowd's per-round shift is the finding", lead: "PASS / AMEND / REJECT with predicted effects" },
+  { shape: "Market entry / forecast", ask: "“Enter the Salt Lake City industrial-outdoor-storage niche with $75M over 3 years?”", mode: "Expedition → Agora", comp: "Research pack first, then experts argue the plan", lead: "A staged entry thesis with tripwires per stage" },
+  { shape: "Deal screen / IC memo", ask: "“Score this off-market portfolio 0–10: does it go to full IC?” · “Draft the IC memo for the $52.5M BTR acquisition.”", mode: "Jury · Desk", comp: "Experts only — blind scores, or director + section workers", lead: "A tallied score with movement · the memo itself" },
+];
+
+function QuestionShapeCards() {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14, margin: "18px 0" }}>
+      {QUESTION_SHAPES.map((q) => (
+        <div key={q.shape} className="card" style={{ padding: "16px 18px 14px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{q.shape}</div>
+            <div style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--acc)", whiteSpace: "nowrap" }}>{q.mode.toUpperCase()}</div>
+          </div>
+          <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--t4)", marginTop: 8, fontStyle: "italic" }}>{q.ask}</div>
+          <div style={{ fontSize: 11.5, lineHeight: 1.55, color: "var(--t5)", marginTop: 8 }}>
+            <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t6)" }}>CAST · </span>{q.comp}
+          </div>
+          <div style={{ fontSize: 11.5, lineHeight: 1.55, color: "var(--t5)", marginTop: 4 }}>
+            <span style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t6)" }}>REPORT LEADS WITH · </span>{q.lead}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------- leads × crowd per mode — the architecture page's table ---------- */
+
+const LEADS_CROWD_MODES: { mode: string; leads: string; crowd: string }[] = [
+  { mode: "Agora", leads: "Open the round, reply in threads, change positions in public", crowd: "Polled every round; sampled voices interject; votes endorse arguments" },
+  { mode: "Roundtable", leads: "Every voice once per round, then crossfire", crowd: "Polled every round" },
+  { mode: "Tribunal", leads: "Two benches volley; a judge rules each round", crowd: "Polls read as the jury pool's temperature" },
+  { mode: "Chamber", leads: "Blind takes → anonymized peer review → chair synthesis", crowd: "Reacts after the takes and after the synthesis" },
+  { mode: "Jury", leads: "Score or pick blind; see the tally; re-verdict", crowd: "The big-sample verdict alongside the jurors' scores" },
+  { mode: "Desk", leads: "Director assigns; workers draft sections; director merges", crowd: "Not polled — research choreography" },
+  { mode: "Expedition", leads: "Scouts fan out per research phase and return", crowd: "Not used — this is research, not deliberation" },
+];
+
+function LeadsCrowdModeTable() {
+  const th: CSSProperties = { ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t6)", textTransform: "uppercase", textAlign: "left", padding: "8px 12px 8px 0", borderBottom: "1px solid var(--ln3)", whiteSpace: "nowrap" };
+  const td: CSSProperties = { fontSize: 12.5, lineHeight: 1.55, color: "var(--t4)", padding: "9px 12px 9px 0", borderBottom: "1px solid var(--ln2)", verticalAlign: "top" };
+  return (
+    <div style={{ overflowX: "auto", margin: "14px 0 18px" }}>
+      <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
+        <thead><tr><th style={th}>Mode</th><th style={th}>The leads</th><th style={th}>The crowd</th></tr></thead>
+        <tbody>
+          {LEADS_CROWD_MODES.map((r) => (
+            <tr key={r.mode}>
+              <td style={{ ...td, ...mono, fontSize: 10, letterSpacing: ".06em", color: "var(--t1)", whiteSpace: "nowrap" }}>{r.mode.toUpperCase()}</td>
+              <td style={td}>{r.leads}</td>
+              <td style={td}>{r.crowd}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /* -------------------------------- pages -------------------------------- */
 
 function WhatIsMicrocosm() {
@@ -362,10 +665,26 @@ function WhatIsMicrocosm() {
 function SimulationsAndSwarms() {
   return (
     <>
-      <P>A single AI model asked “should I build this?” gives you one articulate opinion with unknown blind spots. A <B>simulation</B> is different: many model instances, each locked into a distinct persona — a grid engineer who distrusts broker timelines, a renter with a $2,000 budget, a developer competing for the same site — reasoning from different priors, checking each other in public.</P>
-      <P>The research behind this is consistent: persona-grounded agent populations reproduce real survey distributions surprisingly well, panels with seeded opposition catch failure modes single models miss, and structured deliberation (rounds, evidence, position changes) outperforms one-shot answers on judgment-heavy questions. That's the bet Microcosm industrializes for real estate.</P>
-      <H>What a “swarm” means here</H>
-      <P>A swarm is a set of agents plus a <B>choreography</B> — the rules of who speaks when, who sees what, and how positions aggregate. The seven interaction modes are seven choreographies over the same cast. Underneath, Microcosm orchestrates each agent as its own model call with its own persona, memory of the transcript, and access to your documents.</P>
+      <P><B>A swarm is a room, not an oracle.</B> Ask a single AI model “should I build this?” and you get one articulate opinion with unknown blind spots — the model resolves every internal disagreement <B>before</B> you see a word, and hands you the average. A swarm refuses to average. It puts many model instances in a room, each locked into a distinct persona — a grid engineer who distrusts broker timelines, a renter with a $2,000 budget, a competing developer, a seeded skeptic — and makes them argue in public, with your documents on the table, until the shape of the truth shows.</P>
+      <SingleVsSwarmVignette />
+      <H>Why one chat isn't enough — even with web search or deep research</H>
+      <P>Deep-research tools are genuinely good at one thing: <B>gathering</B>. They read widely and write a confident synthesis. But a hard real-estate decision fails on different axes: whether the demand is real (a measurement problem), whether the timeline survives an adversary (a stress-testing problem), and whether the community consents (a many-constituencies problem). One voice — however well-read — can't poll 500 renters, can't genuinely argue with itself, and can't tell you <B>who</B> on the panel would dissent and why. The table below is the honest comparison:</P>
+      <SingleVsSwarmTable />
+      <H>The mechanisms — why the room outperforms the essay</H>
+      <Term term="Diverse priors">Each persona reasons from its own backstory, stances, and incentives. The lender's caution, the broker's optimism, and the neighbor's suspicion are different starting points, not one model's mood.</Term>
+      <Term term="Blind takes kill anchoring">In Chamber and Jury, first positions form independently — nobody sees anyone else's answer before committing. The first loud voice can't drag the room.</Term>
+      <Term term="A paid skeptic">Every panel seats at least one adversarial persona instructed to attack the thesis with credibility. Agreeable drift — the classic failure of AI panels — gets an immune system.</Term>
+      <Term term="Minds change on the record">Rounds, evidence, and replies mean positions move — and a FLIP is tagged in the feed and cited in the report. The demo's famous day-13 flip is this mechanism.</Term>
+      <Term term="Distributions, not adjectives">The crowd is polled every round — hundreds of ballots, not the word “likely”. You get 22 / 41 / 24 / 13, who moved between rounds, and every individual vote on demand.</Term>
+      <Term term="Receipts">Documents ride natively with citations enabled: claims come back pinned to file and page, contradictions between your own documents get caught, and every report finding links to the post behind it.</Term>
+      <H>When to use a swarm — and when not to</H>
+      <P><B>Use a swarm</B> when the decision is judgment-heavy and the stakes dwarf the run cost: go/no-go on a site, a price you'd defend to a committee, lease-up risk, a hearing you get one shot at, a policy with constituencies on both sides. The signal you want a swarm: <B>reasonable people would disagree</B>, and you need to know where and why.</P>
+      <P><B>Skip the swarm</B> when one honest voice is enough: a fact lookup, summarizing a document, drafting an email, early brainstorming you'll judge yourself. A Conversation with one or five library personas is often the right tool there — cheaper, instant, and still in character.</P>
+      <Callout label="RULE OF THUMB">
+        If the deliverable is <B>an answer you must defend</B> — to an IC, a lender, a council, a partner — run the swarm. If the deliverable is <B>your own thinking, accelerated</B>, open a Conversation.
+      </Callout>
+      <H>What a swarm is, mechanically</H>
+      <P>A swarm is a cast plus a <B>choreography</B> — the rules of who speaks when, who sees what, and how positions aggregate. The seven interaction modes are seven choreographies over the same cast (<Link href="/docs/interaction-modes" style={{ color: "var(--acc)" }}>animated here</Link>). Underneath, every agent is its own model call with its own persona, memory of the transcript, and access to your documents — orchestrated, persisted, and streamed to your screen post by post.</P>
       <H>Grounding — why agents don't just make things up</H>
       <Term term="Your corpus">Documents are passed to agents natively with citations enabled — claims come back pinned to a file and page.</Term>
       <Term term="Persona discipline">Each agent's backstory, stances, and traits are compiled into its system prompt. The renter doesn't suddenly know transformer lead times.</Term>
@@ -373,6 +692,160 @@ function SimulationsAndSwarms() {
       <Term term="Verifier pass">A fact-checking agent runs behind the deliberation, testing numeric claims against your documents and flagging contradictions into the transcript — landing with the run engine.</Term>
       <Callout label="THE HONEST-INSTRUMENT LINE">
         Simulations are directional instruments, not oracles. They're best at surfacing the <B>structure</B> of a decision — which risks dominate, where the disagreement lives, what would change the answer — and they always ship with their limitations printed on them.
+      </Callout>
+      <Callout label="GO DEEPER">
+        <Link href="/docs/leads-and-the-crowd" style={{ color: "var(--acc)" }}>Leads &amp; the crowd</Link> explains the two-tier architecture. <Link href="/docs/asking-good-questions" style={{ color: "var(--acc)" }}>Asking good questions</Link> shows what to feed a swarm. <Link href="/docs/reports-and-the-analyst" style={{ color: "var(--acc)" }}>The report &amp; the analyst</Link> shows what comes back. <Link href="/docs/guided-tour" style={{ color: "var(--acc)" }}>The guided tour</Link> walks one end to end.
+      </Callout>
+    </>
+  );
+}
+
+function LeadsAndTheCrowd() {
+  return (
+    <>
+      <P>Every Microcosm population has two tiers. <B>Leads</B> — up to 20 — sit at the table and speak: they open rounds, reply, flip positions, and get cited by name in the report. <B>The crowd</B> — up to 1,500 — is the population behind them: polled every round, sampled into the feed as interjections, and counted as the distribution your demand and consent numbers come from. One question decides everything about the architecture: <B>who needs to argue, and who needs to be measured?</B></P>
+      <PopulationMathVignette />
+      <H>Why not 1,000 agents all talking to each other?</H>
+      <P>Because conversation doesn't scale like polling does. A forum where 1,000 voices all reply to each other produces <B>n² interactions</B> — millions of crossing messages: unreadable for you, unaffordable to run, and — worst — <B>low-signal</B>, because the important arguments drown in reactions to reactions. Human institutions solved this centuries ago: a council debates while the town votes. Microcosm uses the same shape. Deliberation quality comes from a small room (beyond ~20 voices a forum turns to noise); market truth comes from a big sample (500 polled renters, not 5 loud ones). The two tiers give you both, at linear cost instead of quadratic.</P>
+      <H>Why not just one agent with deep research?</H>
+      <P>Flip it around: collapse the room to one voice and you lose the three things the architecture exists for. The <B>distribution</B> — one voice can say “renters are price-sensitive,” but it can't produce 500 ballots that split 22/41/24/13 and shift after a concession. The <B>collision</B> — the moment the grid engineer's citation breaks the capital seat's underwriting happens between two committed perspectives, not inside one balanced paragraph. And the <B>attribution</B> — when your IC asks “who disagreed?”, a swarm answers with names, stated reasons, and links to the posts.</P>
+      <H>The leads — a panel with assigned seats</H>
+      <Term term="Seats own questions">Casting guarantees every question-to-resolve has at least one lead whose expertise owns it. Nothing in your brief goes unargued.</Term>
+      <Term term="The adversarial seed">Exactly one seat (more if you ask) is instructed to oppose — credibly, with evidence. It's the panel's immune system against group agreement.</Term>
+      <Term term="Named and accountable">Leads carry personas — backstory, stances, traits. Their report citations read like a real panel's: “Rosa M. (grid interconnection), posts 7, 23.”</Term>
+      <Term term="You can join them">Take the Floor puts you in the forum as a first-class participant — post, @mention a lead, and they answer with the full transcript and corpus in mind.</Term>
+      <H>The crowd — a population you can poll</H>
+      <Term term="Polled every round">Every crowd member answers the poll, every round — the question is derived from your brief (a choose-between brief polls your actual options). Percentages always sum to 100, raw counts sit beside them, and EVERY VOTE expands the individual ballots.</Term>
+      <Term term="Sampled voices">A rotating handful of crowd members interject into the feed each round — the “+34 POSTS · 214 RESIDENT AGENTS ACTIVE” bursts — so the crowd has a voice, not just a number.</Term>
+      <Term term="Votes as endorsement">Crowd members endorse arguments (the ▲ chips). The most-endorsed arguments become citable signals in the report.</Term>
+      <Term term="Grounded next">Named cohorts (“renters within 3 miles”) with per-cohort poll splits, then census-grounded sampling (ACS PUMS) so a Phoenix crowd literally matches Phoenix's demographics — both on the roadmap, both landing on this same architecture.</Term>
+      <Vignette label="A CROWD POLL">
+        <PollVignette />
+      </Vignette>
+      <H>How the two tiers behave in each mode</H>
+      <LeadsCrowdModeTable />
+      <Callout label="THE SHORT VERSION">
+        Leads argue. The crowd measures. The report cites the argument <B>and</B> charts the measurement — that's the whole trick, and it's why a swarm's answer holds up in rooms where “ChatGPT said so” doesn't.
+      </Callout>
+    </>
+  );
+}
+
+function AskingGoodQuestions() {
+  return (
+    <>
+      <P>Swarms are at their best on questions where judgment, evidence, and constituencies collide. This page is the craft: the question shapes that work, real examples of each, and how to write a brief the panel can actually decide.</P>
+      <H>The eight question shapes</H>
+      <P>Every card is a real, runnable pattern — the italic line is a brief you could paste today. The mode and cast are what AUTO would typically choose; you can always override.</P>
+      <QuestionShapeCards />
+      <H>Writing the brief — five habits</H>
+      <Steps items={[
+        { title: "Ask something decidable", body: <>“Tell me about the Phoenix industrial market” gives the panel nothing to resolve. <B>“Should we exercise the option at $18.05M — and what must be true?”</B> gives it a verdict to fight over. If your ask is genuinely exploratory, run Expedition first — it exists for that.</> },
+        { title: "Describe the WHO if it matters", body: <>“How would homebuyers aged 35–45 in Beverly Hills react to a 2% rate increase?” — the understanding pass extracts that population and casting honors it. Omit it and the director casts from the question's own logic.</> },
+        { title: "Attach the documents that disagree", body: <>The panel is sharpest where your documents conflict — the broker's timeline vs. the utility's study, the teaser's costs vs. the architect's. Upload both sides; contradiction-catching is what the verifier and the adversarial seat are for.</> },
+        { title: "Name your success criteria", body: <>Bullets like “a defended price range, not a single number” or “every demand claim tied to a document” become the report's contract — the synthesizer is held to every one.</> },
+        { title: "Don't pre-bake the answer", body: <>“Confirm that this deal pencils” anchors the room. Ask the neutral form — “does this pencil, and at what basis?” — and let the adversarial seat earn its keep.</> },
+      ]} />
+      <H>Questions a swarm should NOT get</H>
+      <Term term="Single-fact lookups">“What's the current 10-year treasury?” — one model call (or one search) answers this. A panel adds cost, not judgment.</Term>
+      <Term term="Individual screening">Anything that ranks or filters a specific tenant or buyer is out of scope, full stop — the fair-housing line. Microcosm simulates markets and decisions, never people's applications.</Term>
+      <Term term="Pure preference">“Which logo do you like?” — a crowd CAN poll it, but you don't need deliberation; a Conversation poll of five personas gets you there in seconds.</Term>
+      <Callout label="STEAL THE STARTERS">
+        The <B>examples library</B> ships ten complete scenarios — brief, documents, cast guidance, and run settings — one flagship per mode plus three extra Agora scenarios (a data-center land option, an office-to-residential conversion, a short-term-rental cap fight). Paste one in and run it end to end.
+      </Callout>
+    </>
+  );
+}
+
+function ReportsAndTheAnalyst() {
+  return (
+    <>
+      <P>A run's deliverable is not a transcript — it's a <B>decision-grade interactive report</B>, synthesized from the full argument, held to your brief's contract, and permanently versioned. And every report ships with the room still warm: an analyst that knows the entire run, and panelists you can still @mention.</P>
+      <H>The anatomy — what every report opens with</H>
+      <Vignette label="THE REPORT'S OPENING BLOCK">
+        <VerdictVignette />
+      </Vignette>
+      <Term term="The lead">Matches what you asked: a decision brief opens with the GO / CONDITIONAL / NO-GO chip, a valuation with a defended PRICE RANGE band, a hearing with APPROVAL ODDS, anything else with a committed KEY FINDING. Every kind commits to an answer.</Term>
+      <Term term="The bottom line">Three lines before anything else: the answer, what would change it, what to do next.</Term>
+      <Term term="Your questions, answered">Each question-to-resolve gets a direct answer before the supporting evidence — the report's structure comes from your brief, never a fixed template.</Term>
+      <Term term="Findings with receipts">Every finding cites the posts behind it — click a citation and the transcript scrolls to the exact moment. Stat tiles trace to documents, tool calls, or ballots.</Term>
+      <Term term="Risks & tripwires">A risk register with mitigations and watch signals, and the tripwires — the specific facts that would flip the verdict.</Term>
+      <Term term="Preserved dissents">The panelists who disagreed at the close, verbatim and attributed. Averaged-away disagreement is how blind spots ship; we print it instead.</Term>
+      <Term term="Methodology">Auto-generated honesty: cast, mode, rounds, stop reason, checks run, and every claim the verifier contradicted.</Term>
+      <H>Two reads of the same report</H>
+      <P><B>SIMPLIFY</B> turns the expert report into a different page, not the same page with softer words: the answer as the headline, your questions as plain Q&amp;A cards, word grades (STRONG / MIXED / WEAK) instead of decimal bars, the crowd poll in everyday labels, and a mini-glossary. Same answers, same numbers underneath — hand the simplified read to anyone.</P>
+      <H>The crowd's numbers, inspectable</H>
+      <Vignette label="A ROUND'S POLL, AS THE REPORT SHOWS IT">
+        <PollVignette />
+      </Vignette>
+      <P>A round slider scrubs through every poll; each shows the exact question asked, percentages that sum to 100 with raw counts, and EVERY VOTE expands to the individual ballots. Movement between rounds is the deliberation working — the analyst can tell you who moved and why.</P>
+      <H>The analyst — the room, still warm</H>
+      <Vignette label="ASKING THE ANALYST">
+        <AnalystVignette />
+      </Vignette>
+      <Term term="What it knows">Everything: the brief, every document, every post, every poll ballot, every vote, and the report itself. Citations come back as [seq] chips that jump the transcript.</Term>
+      <Term term="What to ask">“Summarize the water section for my partner.” “Compare round 1 and round 3 — who moved?” “What did the dissenters actually want?” “What would a lender push back on first?” It computes from the data and labels extrapolation plainly.</Term>
+      <Term term="@mention anyone">Tag any lead or crowd member — one or several — and they answer in character with full memory of the run. The room never really closes.</Term>
+      <Term term="It writes documents">“Write a one-page memo on the water risk.” “Re-cut this report for my IC.” Drafts land as report-styled pages in the chat and the ⧉ DOCS section — readable in the panel, renameable, revisable by asking.</Term>
+      <Term term="Threads persist">Every report keeps its analyst conversations — + NEW starts clean, history reopens any thread with its memory. None of it enters the run record; analysis is annotation, never evidence.</Term>
+      <H>Sharing, versions, and the record</H>
+      <P>Reports share by <B>magic link</B> — named, view-only, expiring links that show the report and nothing else, revocable one by one. Re-runs version rather than overwrite; every version stays. Favorites, search, and verdict filters live in the Reports tab; unread reports carry a pulsing dot until you open them.</P>
+      <Callout label="THE POINT">
+        The report is built to survive the second meeting — the one where someone asks <B>“says who?”</B> Every number has a source, every judgment has an author, and the dissent is still attached.
+      </Callout>
+    </>
+  );
+}
+
+function GuidedTour() {
+  return (
+    <>
+      <P>One simulation, end to end, with the actual screens in miniature. The scenario: a 71%-vacant office tower offered at $14M — <B>buy it and convert to 240 apartments, renegotiate, or pass?</B> Fifteen minutes, one honest answer.</P>
+      <H>Step 1 — Write the brief</H>
+      <P>New simulation → the brief box (or ⚡ QUICK RUN for the one-box version). Write the decision, the context, and what a good answer must contain. Drop your files straight on the prompt — the teaser, the feasibility study, the market study, the incentive term sheet.</P>
+      <div style={{ border: "1px solid var(--ln3)", borderRadius: 12, background: "var(--sf2)", padding: "14px 18px", margin: "14px 0", maxWidth: 720 }}>
+        <div style={{ ...mono, fontSize: 8, letterSpacing: ".08em", color: "var(--t6)", marginBottom: 8 }}>A BRIEF WORTH STEALING</div>
+        <div style={{ fontSize: 12.5, lineHeight: 1.7, color: "var(--t3)", fontStyle: "italic" }}>
+          “Meridian Tower is a 22-story, 310,000 SF office tower, 71% vacant, asking $14M. We're underwriting a full
+          conversion to ~240 market-rate units using the city's conversion incentive. The broker pencils $185/SF
+          conversion cost and $1.95/SF rents. Should we buy at $14M and convert, renegotiate, or pass? I need the
+          honest all-in basis, whether downtown absorbs 240 more units, and what the abatement actually requires.”
+        </div>
+      </div>
+      <H>Step 2 — Check WHAT I UNDERSTOOD</H>
+      <P>Before anything casts, the system mirrors your brief back: the intent, every sub-ask, the population it noticed, the report shape, and clarifier questions as one-tap chips. Fix anything in one click — the run is held to this reading at synthesis.</P>
+      <Vignette label="THE CHECKPOINT">
+        <UnderstoodVignette />
+      </Vignette>
+      <H>Step 3 — Cast the panel</H>
+      <P>AUTO-CAST reads the brief and corpus, then fills 6–20 lead seats live — your custom personas first, the 1,800-persona library second, true gaps generated fresh. Every question gets an owner; exactly one seat is the adversarial seed. Re-cast with guidance (“add an architect who has actually delivered a conversion”) or hand-pick instead.</P>
+      <Vignette label="TWO OF YOUR LEADS">
+        <PersonaCardVignette />
+      </Vignette>
+      <H>Step 4 — Materialize the crowd</H>
+      <P>Set the totals — say 50 experts and 150 downtown residents — and GENERATE. The dot-field lights as each member lands; browse or prune the roster. The launch button waits for the crowd to finish, so a run never starts against a half-built population.</P>
+      <H>Step 5 — Pick the choreography</H>
+      <P>The mode cards animate their choreography before you pick. The director's recommendation arrives pre-selected and tagged ✦ DIRECTOR'S PICK; for this brief expect AGORA — numeric contradictions across four documents want an open forum with threads. The cost estimate sits on the launch button the whole time — no surprise bills.</P>
+      <div style={{ maxWidth: 380, margin: "14px 0", borderRadius: 10, background: "var(--sf2)", overflow: "hidden" }}>
+        <ModeDiagram mode="agora" height={120} />
+      </div>
+      <H>Step 6 — Launch, watch, take the floor</H>
+      <P>Left: the network canvas — nodes are agents, pulses are messages. Right: the forum feed. Posts arrive with document citations; replies chain; positions flip on the record; the crowd is polled between rounds. Close the tab if you like — the run continues server-side. At any pause, take the floor: <B>“@Meera — if we drop floors 4–8 from the unit count, what does the project become?”</B></P>
+      <Vignette label="THE FORUM FEED">
+        <FeedPostVignette />
+      </Vignette>
+      <H>Step 7 — Synthesize and read</H>
+      <P>One click when the run completes. The verdict commits, the bottom line answers, every question gets a direct answer, findings cite posts, risks carry watch signals, and the dissents survive. Hit SIMPLIFY to hand the same answers to anyone.</P>
+      <Vignette label="THE REPORT OPENS">
+        <VerdictVignette />
+      </Vignette>
+      <H>Step 8 — Interrogate it</H>
+      <P>The ✻ circle bottom-right splits the screen: ask the analyst to compare polls, trace flips, or draft the IC memo — and @mention any panelist who owes you a better answer. Threads persist with the report; share the report itself by magic link when it's ready to travel.</P>
+      <Vignette label="THE ANALYST PANEL">
+        <AnalystVignette />
+      </Vignette>
+      <Callout label="RUN THIS YOURSELF">
+        This exact scenario — brief, four documents with planted contradictions, cast guidance, and run settings — ships in the examples library as <B>office-to-resi</B>, alongside nine more covering every mode. Paste, upload, run.
       </Callout>
     </>
   );
@@ -578,11 +1051,15 @@ function GettingStarted() {
 export const DOC_RENDER: Record<string, () => ReactNode> = {
   "what-is-microcosm": WhatIsMicrocosm,
   "simulations-and-swarms": SimulationsAndSwarms,
+  "leads-and-the-crowd": LeadsAndTheCrowd,
   "core-concepts": CoreConcepts,
+  "asking-good-questions": AskingGoodQuestions,
   "agents-and-the-library": AgentsAndLibrary,
   "conversations": ConversationsPage,
   "interaction-modes": InteractionModes,
   "casting-and-population": CastingAndPopulation,
+  "reports-and-the-analyst": ReportsAndTheAnalyst,
   "monitoring": MonitoringPage,
+  "guided-tour": GuidedTour,
   "getting-started": GettingStarted,
 };
