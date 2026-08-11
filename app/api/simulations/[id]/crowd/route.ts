@@ -11,8 +11,9 @@ export const maxDuration = 300; // up to 12 Haiku batches, 3 concurrent
 /**
  * Materialize the crowd (CLAUDE.md §3 Stage 3 / §4.1): turn the cast's
  * scale numbers into real, browsable crowd members. Crowds beyond
- * CROWD_SAMPLE_CAP get a proportional representative sample now and reach
- * full scale at run time. Streamed as ND-JSON:
+ * CROWD_SAMPLE_CAP get a proportional representative sample; the RUN polls
+ * the sample as the population (full-scale instantiation is roadmap — the
+ * UI copy says so honestly, audit U-H31). Streamed as ND-JSON:
  *   {type:"start", target, sample, experts, residents}
  *   {type:"members", members:[...], generated}   one per resolved batch
  *   {type:"done", generated} | {type:"error"}
@@ -135,7 +136,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
         const runBatch = async (batch: { group: "experts" | "residents"; count: number; index: number }) => {
           let specs: PersonaSpec[] = [];
-          for (let attempt = 0; attempt < 2 && specs.length === 0; attempt++) {
+          // U-H27: a LOW-YIELD batch retries too (a 4-of-25 reply used to be
+          // accepted as-is) — the better attempt wins, never the later one
+          const yieldFloor = Math.ceil(batch.count * 0.6);
+          for (let attempt = 0; attempt < 2 && specs.length < yieldFloor; attempt++) {
             const t0 = Date.now();
             const avoid = [...seenNames].slice(-80).join(", ") || "none";
             let usage: { input_tokens: number; output_tokens: number } | null = null;
@@ -155,7 +159,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               });
               usage = res.usage;
               const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-              specs = extractSpecs(text);
+              const got = extractSpecs(text);
+              if (got.length > specs.length) specs = got;
             } catch (e) {
               errMsg = e instanceof Error ? e.message : "generation failed";
             }
@@ -243,6 +248,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         }
 
         if (generated === 0) throw new Error("Crowd generation produced no members — try again");
+        // U-H25: a shortfall is REPORTED, not just implied by the counts —
+        // 240-of-300 used to emit a done that read exactly like success
+        const shortfall = Math.max(sample - generated, 0);
 
         // FRESH read-merge-write: this stream runs for minutes, and spreading
         // the config snapshot from request start clobbered everything written
@@ -256,12 +264,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             ...freshConfig,
             casting: {
               ...freshCasting,
-              crowd: { generated, sample, sampled_of: target, at: new Date().toISOString() },
+              crowd: { generated, sample, sampled_of: target, at: new Date().toISOString(), ...(shortfall > 0 ? { shortfall } : {}) },
             },
           },
         }).eq("id", id);
 
-        emit({ type: "done", generated, sample, target });
+        emit({ type: "done", generated, sample, target, ...(shortfall > 0 ? { shortfall } : {}) });
       } catch (e) {
         emit({ type: "error", error: e instanceof Error ? e.message : "Crowd generation failed" });
       } finally {

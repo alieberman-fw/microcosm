@@ -79,6 +79,10 @@ export interface BriefContract {
   derived_at: string;
   /** brief edited after derivation — card offers RE-DERIVE */
   stale?: boolean;
+  /** Wave 5b (U-H34): the user hand-edited this contract — RE-DERIVE asks
+   *  before replacing it, and edits clear the stale flag (the user's own
+   *  correction IS the refresh) */
+  edited?: boolean;
 }
 
 export function understandSystem(docNames: string[]): string {
@@ -260,7 +264,9 @@ export function normalizeContractEdits(raw: Record<string, unknown> | null, exis
     const answer = str(src?.answer, 80);
     if (answer && f.options.includes(answer)) f.answer = answer;
   }
-  return { ...merged, stale: existing.stale };
+  // U-H34: a manual edit IS the user's refresh — it clears stale and marks
+  // the contract edited so RE-DERIVE knows to ask before replacing it
+  return { ...merged, edited: true };
 }
 
 /** The casting-visible line for population hints (cast route appends it). */

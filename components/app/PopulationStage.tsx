@@ -923,7 +923,7 @@ export default function PopulationStage({
                 )}
                 {!crowdStale && castingInfo.crowd && castingInfo.crowd.sampled_of > (castingInfo.crowd.sample ?? castingInfo.crowd.sampled_of) && (
                   <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)" }}>
-                    {(castingInfo.crowd.sample ?? 0).toLocaleString()}-MEMBER SAMPLE OF {castingInfo.crowd.sampled_of.toLocaleString()} — FULL SCALE AT RUN
+                    {(castingInfo.crowd.sample ?? 0).toLocaleString()}-MEMBER REPRESENTATIVE SAMPLE OF {castingInfo.crowd.sampled_of.toLocaleString()} — THE RUN POLLS THE SAMPLE
                   </span>
                 )}
                 {!crowdStale && castingInfo.crowd && crowd.length < (castingInfo.crowd.sample ?? castingInfo.crowd.sampled_of) && (
@@ -1006,7 +1006,7 @@ export default function PopulationStage({
           members={crowd}
           note={
             castingInfo?.crowd && castingInfo.crowd.sampled_of > (castingInfo.crowd.sample ?? castingInfo.crowd.sampled_of)
-              ? `SAMPLE OF ${castingInfo.crowd.sampled_of.toLocaleString()} — FULL SCALE AT RUN`
+              ? `REPRESENTATIVE SAMPLE OF ${castingInfo.crowd.sampled_of.toLocaleString()} — THE RUN POLLS THE SAMPLE`
               : castingInfo?.crowd && crowd.length < (castingInfo.crowd.sample ?? castingInfo.crowd.sampled_of)
               ? `${crowd.length} OF ${(castingInfo.crowd.sample ?? castingInfo.crowd.sampled_of).toLocaleString()} — DUPLICATES DROPPED`
               : undefined

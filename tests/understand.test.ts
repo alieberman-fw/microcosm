@@ -146,12 +146,15 @@ describe("parseContract — loose-JSON salvage", () => {
 describe("normalizeContractEdits", () => {
   const base = (): BriefContract => normalizeContract(full(), DOCS, NOW)!;
 
-  it("preserves derived_at + stale and re-normalizes the edit", () => {
+  it("preserves derived_at, re-normalizes the edit — and the edit CLEARS stale + marks edited (Wave 5b, U-H34)", () => {
     const existing = { ...base(), stale: true };
     const edited = { ...existing, entities: ["micro-fulfillment"], sub_asks: existing.sub_asks.slice(0, 1) };
     const c = normalizeContractEdits(edited as unknown as Record<string, unknown>, existing, DOCS)!;
     expect(c.derived_at).toBe(NOW());
-    expect(c.stale).toBe(true);
+    // the user's own correction IS the refresh — the warning clears, and
+    // RE-DERIVE now knows to ask before replacing their work
+    expect(c.stale).toBeUndefined();
+    expect(c.edited).toBe(true);
     expect(c.entities).toEqual(["micro-fulfillment"]);
     expect(c.sub_asks).toHaveLength(1);
   });

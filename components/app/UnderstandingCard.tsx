@@ -91,6 +91,15 @@ export default function UnderstandingCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialContract]);
 
+  // U-H34: RE-DERIVE over a hand-edited contract asks first — two-step arm
+  // (first click warns, second replaces; disarms after a beat)
+  const [rederiveArmed, setRederiveArmed] = useState(false);
+  useEffect(() => {
+    if (!rederiveArmed) return;
+    const t = setTimeout(() => setRederiveArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [rederiveArmed]);
+
   const derive = async () => {
     if (deriving) return;
     setDeriving(true);
@@ -209,12 +218,16 @@ export default function UnderstandingCard({
         </span>
         <span style={{ flex: 1 }} />
         <button
-          onClick={() => void derive()}
+          onClick={() => {
+            if (c.edited && !rederiveArmed) { setRederiveArmed(true); return; }
+            setRederiveArmed(false);
+            void derive();
+          }}
           disabled={deriving}
-          title="Re-run the Understanding pass over the current brief + documents"
-          style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, background: "transparent", border: `1px solid ${c.stale || docsDrifted ? "var(--warn)" : "var(--ln6)"}`, color: c.stale || docsDrifted ? "var(--warn)" : "var(--t5)", cursor: deriving ? "default" : "pointer" }}
+          title={c.edited ? "This reading carries your manual edits — re-deriving replaces them" : "Re-run the Understanding pass over the current brief + documents"}
+          style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", padding: "4px 12px", borderRadius: 100, background: rederiveArmed ? "var(--warn-dim)" : "transparent", border: `1px solid ${rederiveArmed || c.stale || docsDrifted ? "var(--warn)" : "var(--ln6)"}`, color: rederiveArmed || c.stale || docsDrifted ? "var(--warn)" : "var(--t5)", cursor: deriving ? "default" : "pointer" }}
         >
-          {deriving ? "RE-DERIVING…" : "↻ RE-DERIVE"}
+          {deriving ? "RE-DERIVING…" : rederiveArmed ? "REPLACES YOUR EDITS — CLICK AGAIN" : "↻ RE-DERIVE"}
         </button>
       </div>
 
