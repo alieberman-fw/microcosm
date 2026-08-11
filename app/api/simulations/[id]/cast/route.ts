@@ -495,8 +495,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
               : {
                   composition: plan.composition, rationale: plan.rationale, rationaleSummary: plan.rationaleSummary, scale: plan.scale,
                   // mode is CHOSEN in run config; the director's pick seeds it and
-                  // recommended_mode survives user changes so the card stays tagged
-                  mode: plan.mode, recommended_mode: plan.mode, modeRationale: plan.modeRationale, modeSummary: plan.modeSummary,
+                  // recommended_mode survives user changes so the card stays tagged.
+                  // cast_mode is the mode this CAST was designed for — only a
+                  // re-cast may move it (the RE-CAST chip compares against it;
+                  // field report: the chip used to compare against the LAST
+                  // CLICK, so switching back never cleared it and re-clicking
+                  // the same new mode wrongly did)
+                  mode: plan.mode, recommended_mode: plan.mode, cast_mode: plan.mode, modeRationale: plan.modeRationale, modeSummary: plan.modeSummary,
                   guidance: guidance || null, cast_at: new Date().toISOString(),
                 },
           },

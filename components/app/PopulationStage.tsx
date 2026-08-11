@@ -38,6 +38,9 @@ export interface CastingInfo {
   mode: string;
   /** the director's original pick — survives user mode changes (tags the run-config card) */
   recommended_mode?: string;
+  /** the mode the current CAST was designed for — written only by a completed
+   *  cast, never by the mode picker (the RE-CAST chip's comparison baseline) */
+  cast_mode?: string;
   modeRationale: string;
   modeSummary?: string;
   user_set?: { mode?: boolean; scale?: boolean };
@@ -150,7 +153,16 @@ export default function PopulationStage({
   // change after a cast raises the RE-CAST chip instead of silently
   // mismatching; an explicit mode is a plan constraint at cast time.
   const [modeChoice, setModeChoice] = useState<string | null>(initialCasting?.user_set?.mode ? (initialCasting.mode ?? null) : null);
-  const [recastForMode, setRecastForMode] = useState(false);
+  /** the mode the CURRENT CAST was designed for — only a completed cast may
+   *  move it. The RE-CAST chip compares selections against THIS, never
+   *  against the previous click (field report: switching back to the cast's
+   *  own mode left the chip up; re-clicking the same new mode cleared it) */
+  const [designedForMode, setDesignedForMode] = useState<string | null>(initialCasting?.cast_mode ?? initialCasting?.mode ?? null);
+  const [recastForMode, setRecastForMode] = useState(
+    // the warning survives a reload: the persisted selection differs from
+    // the mode the cast was designed for
+    () => !!initialCasting?.cast_mode && !!initialCasting?.mode && initialCasting.cast_mode !== initialCasting.mode,
+  );
   // upfront crowd sizing (field report): blank = the director recommends
   const [preExperts, setPreExperts] = useState<string>("");
   const [preResidents, setPreResidents] = useState<string>("");
@@ -206,7 +218,8 @@ export default function PopulationStage({
           const p = evt as unknown as CastingInfo & { seats: PendingSeat[]; add?: boolean };
           if (!p.add) {
             const forced = modeChoice;
-            setCastingInfo({ composition: p.composition, rationale: p.rationale, rationaleSummary: p.rationaleSummary, scale: p.scale, mode: p.mode, recommended_mode: forced ? undefined : p.mode, user_set: forced ? { mode: true } : undefined, modeRationale: p.modeRationale, modeSummary: p.modeSummary });
+            setCastingInfo({ composition: p.composition, rationale: p.rationale, rationaleSummary: p.rationaleSummary, scale: p.scale, mode: p.mode, recommended_mode: forced ? undefined : p.mode, cast_mode: p.mode, user_set: forced ? { mode: true } : undefined, modeRationale: p.modeRationale, modeSummary: p.modeSummary });
+            setDesignedForMode(p.mode); // the new cast IS designed for this mode
             setRecastForMode(false);
             onContractApplied?.();
             onModeChange?.(p.mode); // the run-config picker re-seeds to the director's pick
@@ -441,16 +454,18 @@ export default function PopulationStage({
       onSelect={(m) => {
         setModeChoice(m);
         const effective = m ?? castingInfo?.recommended_mode ?? null;
-        if (castingInfo && effective && effective !== castingInfo.mode) {
-          // persist the choice now (the engine honors it even un-recast) and
-          // offer the re-cast — the cast was designed for the old mode
+        if (!castingInfo || !effective) return;
+        if (effective !== castingInfo.mode) {
+          // persist the choice now — the engine honors it even un-recast
           setCastingInfo((prev) => prev ? { ...prev, mode: effective, user_set: { ...(prev.user_set ?? {}), mode: !!m } } : prev);
           onModeChange?.(effective);
-          setRecastForMode(true);
           void fetch(`/api/simulations/${simId}/config`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: effective }) });
-        } else if (castingInfo && effective && effective === castingInfo.mode) {
-          setRecastForMode(false);
         }
+        // the chip is a PURE COMPARISON against the mode the cast was designed
+        // for — recomputed on every selection, in both directions: switching
+        // back to the cast's own mode clears it, re-clicking the same new
+        // mode keeps it (field report: both were wrong before)
+        setRecastForMode(designedForMode !== null && effective !== designedForMode);
       }}
     />
     {(recastForMode || (contractDirty && castingInfo)) && (
