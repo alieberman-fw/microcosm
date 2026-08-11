@@ -173,13 +173,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         const keyOffset = existingRoles.length;
         const seats: CastSeat[] = (Array.isArray(raw.seats) ? raw.seats : []).slice(0, addMode ? maxNew : MAX_SEATS)
-          .map((s: { role?: string; kind?: string; discipline?: string; why?: string; query?: string }, i: number): CastSeat => ({
+          .map((s: { role?: string; kind?: string; discipline?: string; why?: string; query?: string; side?: string }, i: number): CastSeat => ({
             key: seatKey(String(s.role ?? "seat"), keyOffset + i + 1),
             role: String(s.role ?? "Panelist").slice(0, 80),
             kind: ["expert", "consumer", "resident", "stakeholder", "adversarial"].includes(String(s.kind)) ? (s.kind as CastSeat["kind"]) : "expert",
             discipline: String(s.discipline ?? "PANEL").toUpperCase().slice(0, 20),
             why: String(s.why ?? "").slice(0, 200),
             query: String(s.query ?? s.role ?? "").slice(0, 80),
+            // Tribunal benches, structural (adversarial always argues con)
+            ...(s.side === "pro" || s.side === "con" ? { side: (s.kind === "adversarial" ? "con" : s.side) as "pro" | "con" } : {}),
           }));
         if (seats.length === 0) throw new Error("Casting pass produced no seats");
 
@@ -209,7 +211,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const freeze = (seat: CastSeat, spec: PersonaSpec, provenance: "yours" | "library" | "generated"): FrozenSpec => {
           const frozen: FrozenSpec = {
             ...spec,
-            seat: { role: seat.role, why: seat.why, discipline: seat.discipline, adversarial: seat.kind === "adversarial", provenance },
+            seat: { role: seat.role, why: seat.why, discipline: seat.discipline, adversarial: seat.kind === "adversarial", provenance, ...(seat.side ? { side: seat.side } : {}) },
           };
           if (seat.kind === "adversarial") {
             frozen.stances = [

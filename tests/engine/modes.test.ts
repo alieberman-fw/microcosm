@@ -75,6 +75,20 @@ describe("Tribunal", () => {
     expect(r).toMatchObject({ converged: false, stopReason: "rounds" });
     expect(h.sentimentRounds()).toEqual([1, 2]);
   });
+
+  it("explicit seat.side benches override the kind heuristic (side-aware casting)", async () => {
+    // four EXPERTS (the kind heuristic would put all four on PRO) with
+    // genuine benches assigned at cast time, deliberately interleaved
+    const leads = makeLeads(4);
+    const sides: ("pro" | "con")[] = ["con", "pro", "con", "pro"];
+    leads.forEach((l, i) => { (l.spec.seat as { side?: string }).side = sides[i]; });
+    const h = makeHarness({ mode: "Tribunal", leads, cfg: { rounds: 1 } });
+    await runMode(h.ctx);
+    const recs = h.postRecs();
+    const authors = (tag: string) => new Set(recs.filter((p) => p.tag === tag && p.round === 1).map((p) => p.name));
+    expect(authors("ARGUMENT")).toEqual(new Set(["Bea C.", "Dee E."]));
+    expect(authors("REBUTTAL")).toEqual(new Set(["Al B.", "Cy D."]));
+  });
 });
 
 describe("Jury", () => {

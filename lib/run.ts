@@ -180,16 +180,21 @@ export function estimateRunCost(args: {
 
 export interface FitFlag { level: "warn" | "info"; text: string }
 
-/** pre-launch sanity checks: does the cast fit the chosen choreography? */
-export function modeFitFlags(args: { mode: string; leads: number; expertSide: number; residentSide: number; crowd: number }): FitFlag[] {
+/** pre-launch sanity checks: does the cast fit the chosen choreography?
+ *  benchPro/benchCon are the ENGINE's actual Tribunal benches (explicit
+ *  seat.side when the cast carries it, kind heuristic otherwise) — pass them
+ *  so the flag judges what will really happen at launch. */
+export function modeFitFlags(args: { mode: string; leads: number; expertSide: number; residentSide: number; crowd: number; benchPro?: number; benchCon?: number }): FitFlag[] {
   const { mode, leads, expertSide, residentSide, crowd } = args;
   const flags: FitFlag[] = [];
   if (mode === "Roundtable" && leads > 12) {
     flags.push({ level: "warn", text: `ROUNDTABLE WORKS BEST AT 6–12 VOICES — ${leads} leads means long rounds. Consider trimming or switching to Agora.` });
   }
   if (mode === "Tribunal") {
-    if (expertSide < 2 || residentSide < 2) {
-      flags.push({ level: "warn", text: `TRIBUNAL SIDES SPLIT ${expertSide} vs ${residentSide} — the engine auto-balances the benches at launch, but adding leads to the thin side makes the opposition genuine rather than assigned.` });
+    const pro = args.benchPro ?? expertSide;
+    const con = args.benchCon ?? residentSide;
+    if (pro < 2 || con < 2) {
+      flags.push({ level: "warn", text: `TRIBUNAL SIDES SPLIT ${pro} vs ${con} — the engine auto-balances the benches at launch, but adding leads to the thin side (or RE-CASTING with Tribunal selected, which assigns genuine benches) makes the opposition real rather than assigned.` });
     }
   }
   if (mode === "Chamber" && leads > 16) {
