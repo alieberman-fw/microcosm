@@ -83,7 +83,9 @@ export function pollAngleForRound(plan: PollAngle[], round: number, totalRounds:
   if (!plan.length || round < 1) return null;
   const ordered = [...plan].sort((a, b) => PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase]);
   // a 1-round run still polls once; otherwise each used angle needs ≥2 rounds
-  const usable = Math.max(1, Math.min(ordered.length, Math.floor(totalRounds / 2) || 1));
+  // Wave 3 (audit E-C1): floor(rounds/2) made the plan INERT at the default
+  // 3 rounds (only the early gut-read ever fired) — ceil gives early+late
+  const usable = Math.max(1, Math.min(ordered.length, Math.ceil(totalRounds / 2)));
   const angles = ordered.slice(0, usable);
   const base = Math.floor(totalRounds / angles.length);
   const extra = totalRounds % angles.length;

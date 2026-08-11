@@ -348,11 +348,11 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
 /** transcript window: the last N posts as compact attributed lines — empty
  *  posts (legacy ghost rows) never render, and a missing role never prints
  *  as bare "()" (both confused live panels into meta-arguing, field report) */
-export function windowOf(posts: { name: string; role: string; content: string; tag: string }[], n = 16): string {
+export function windowOf(posts: { name: string; role: string; content: string; tag: string; seq?: number }[], n = 16, votes?: Map<number, number>): string {
   return posts
     .filter((p) => p.content.trim())
     .slice(-n)
-    .map((p) => `[${p.tag}] ${p.name}${p.role ? ` (${p.role})` : ""}: ${p.content}`)
+    .map((p) => `[${p.tag}] ${p.name}${p.role ? ` (${p.role})` : ""}: ${p.content}${votes && p.seq !== undefined && (votes.get(p.seq) ?? 0) !== 0 ? ` [${(votes.get(p.seq) ?? 0) > 0 ? "▲" : "▼"}${Math.abs(votes.get(p.seq) ?? 0)}]` : ""}`)
     .join("\n");
 }
 
@@ -455,16 +455,16 @@ export async function derivePollInstrument(
  *  tally honestly instead of dragging the run into a hard kill. Each round's
  *  poll carries a digest of what the panel just argued, so movement between
  *  rounds is reaction, not sampling noise. */
-async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Promise<void> {
-  if (ctx.crowd.length === 0) return;
-  if (ctx.polledRounds.has(round)) return; // already polled before a suspension
+async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Promise<string | null> {
+  if (ctx.crowd.length === 0) return null;
+  if (ctx.polledRounds.has(round)) return null; // already polled before a suspension
   // 6-PR3 adaptive polling (§6d): the contract's poll PLAN supersedes the
   // single launch-derived instrument — each round asks the angle matched to
   // its place in the run's arc. An EMPTY plan is a decision: this brief has
   // no sentiment surface, so no poll card exists at all (interjections and
   // votes still run). pollPlan null = legacy contract-less path, unchanged.
   const angle = ctx.pollPlan === null ? null : pollAngleForRound(ctx.pollPlan, round, ctx.cfg.rounds);
-  if (ctx.pollPlan !== null && !angle) return;
+  if (ctx.pollPlan !== null && !angle) return null;
   const pollQ = angle?.question ?? ctx.pollQuestion;
   const pollOpts = angle ? (angle.options ?? []) : ctx.pollOptions;
   // question-matched answer labels (poll-language fix): the members are polled
@@ -548,7 +548,17 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
   if (polled > 0) {
     ctx.polledRounds.add(round);
     await ctx.emit({ type: "sentiment", round, polled, dist, quotes, question: pollQ, ballots, ...(choice ? { options: pollOpts } : {}), ...(!choice && labels ? { labels } : {}), ...(angle ? { angle: angle.angle } : {}) });
+    // Wave 3 (audit E-A1): the crowd's read RETURNS to the panel — the next
+    // round's speakers see what the population they're arguing about thinks
+    const share = (n: number) => `${Math.round((n / polled) * 100)}%`;
+    const summary = Object.entries(dist)
+      .filter(([, n]) => n > 0)
+      .map(([k, n]) => `${(labels as Record<string, string> | null)?.[k] ?? k} ${share(n)}`)
+      .join(" · ");
+    const topQuote = quotes[0] ? ` Top voice: "${quotes[0].quote}" — ${quotes[0].name}.` : "";
+    return `CROWD READ AFTER ROUND ${round} (${polled} polled) — "${pollQ}": ${summary}.${topQuote}`;
   }
+  return null;
 }
 
 /** convergence check (stability rule): cheap judge on whether positions still move */
@@ -606,6 +616,32 @@ export function parseStabilityVerdict(text: string): boolean {
   const lines = stripThinking(text).split("\n").map((l) => l.trim()).filter(Boolean);
   const last = (lines[lines.length - 1] ?? "").toLowerCase();
   return /^\W*stable\W*$/.test(last);
+}
+
+/** Wave 3 (audit E-A4): the rolling position ledger — one line per lead,
+ *  refreshed at each round close, prepended to the next round's context so
+ *  late-round speakers argue with memory instead of a 16-post window. */
+async function positionsDigest(ctx: EngineContext, posts: PostRec[]): Promise<string | null> {
+  if (ctx.leads.length < 3) return null;
+  const model = TIER_MODELS[ctx.cfg.tier].crowd;
+  const t0 = Date.now();
+  try {
+    const res = await ctx.anthropic.messages.create({
+      model, max_tokens: 600,
+      system:
+        `You keep the position ledger of a deliberation panel. From the transcript, write ONE terse line per ` +
+        `panelist: their CURRENT position and its load-bearing reason (10-18 words each). ` +
+        `Format: "- Name: position". Only names from the roster; skip anyone who has not spoken.`,
+      messages: [{ role: "user", content: `ROSTER: ${ctx.leads.map((l) => l.spec.name).join(" · ")}\n\n${windowOf(posts, 30).slice(-12000)}` }],
+    });
+    const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+    await ctx.logCall("engine.digest", model, res.usage, t0, undefined, { mode: ctx.mode, check: "position ledger" });
+    const lines = stripThinking(text).split("\n").map((l) => l.trim()).filter((l) => l.startsWith("-")).slice(0, ctx.leads.length);
+    return lines.length ? `POSITIONS SO FAR:\n${lines.join("\n")}` : null;
+  } catch (e) {
+    await ctx.logCall("engine.digest", model, null, t0, e instanceof Error ? e.message : "digest failed", { mode: ctx.mode });
+    return null;
+  }
 }
 
 /** the closing position census (audit E-B6): who actually dissents at the
@@ -767,6 +803,7 @@ export function pickReplyTarget(
   salt: number,
   excludeAgentKey?: string,
   density: RunConfig["density"] = "focused",
+  votes?: Map<number, number>,
 ): (typeof posts)[number] | null {
   const replyCount = new Map<number, number>();
   const roundOf = new Map<number, number>();
@@ -788,7 +825,7 @@ export function pickReplyTarget(
   if (cands.length === 0) return null;
   const scored = cands.map((p, i) => ({
     p,
-    w: Math.pow(0.4, round - p.round) * (1 / (1 + (cands.length - 1 - i))) + 0.7 * (replyCount.get(p.seq) ?? 0),
+    w: Math.pow(0.4, round - p.round) * (1 / (1 + (cands.length - 1 - i))) + 0.7 * (replyCount.get(p.seq) ?? 0) + 0.35 * Math.min(3, Math.abs(votes?.get(p.seq) ?? 0)),
   }));
   scored.sort((a, b) => b.w - a.w || b.p.seq - a.p.seq);
   return scored[Math.abs(salt) % Math.min(3, scored.length)].p;
@@ -829,7 +866,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     const dedupeAgainst = posts
       .filter((p) => p.agentKey === lead.key && p.round === o.round)
       .map((p) => p.content);
-    const r = await speak(ctx, lead, { seq, transcript: transcript ?? windowOf(posts), dedupeAgainst, ...rest });
+    const r = await speak(ctx, lead, { seq, transcript: transcript ?? windowOf(posts, 16, voteNet), dedupeAgainst, ...rest });
     // ghost-post guard: a skipped (empty) turn records nothing — the seq gap
     // is harmless, an empty PostRec would poison every later transcript
     if (r.text) {
@@ -955,6 +992,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
             if (down) b.down += 1; else b.up += 1;
             pairs.add(`${s}:${voter.key}`);
             all.push({ seq: s, voter_key: voter.key, voter_name: voter.spec.name, voter_role: voter.spec.seat?.role ?? voter.spec.role, vote: down ? -1 : 1 });
+            voteNet.set(s, (voteNet.get(s) ?? 0) + (down ? -1 : 1));
           }
         }
       } catch (e) {
@@ -1026,17 +1064,35 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       await ctx.logCall("engine.tracker", model, null, t0, e instanceof Error ? e.message : "tracker failed");
     }
   };
+  // Wave 3 feedback loops: the crowd's read and the position ledger flow
+  // back into the NEXT round's instructions (audit E-A1/E-A4)
+  let lastCrowdRead = "";
+  let positionsLine = "";
+  // Wave 3 (audit E-A3): running net endorsement per post — rendered into
+  // every transcript window and weighted into reply targeting
+  const voteNet = new Map<number, number>();
   const roundClose = async (round: number) => {
-    await pollCrowd(ctx, round, roundDigest(round));
+    const read = await pollCrowd(ctx, round, roundDigest(round));
+    if (read) lastCrowdRead = read;
     await burst(round);
     await voteRound(round);
     await trackCoverage(round);
+    if (round < ctx.cfg.rounds && !outOfTime()) {
+      const ledger = await positionsDigest(ctx, posts);
+      if (ledger) positionsLine = ledger;
+    }
   };
   /** the round's agenda (§6c) — rides in opener instructions; emitted once
    *  per round so the feed and header can label the round. null without a
    *  contract, so contract-less runs read exactly as before. */
   const agendaOf = (round: number) =>
     agendaForRound(ctx.subAsks, ctx.coverage.length ? ctx.coverage : null, round, ctx.cfg.rounds);
+  /** the feedback block appended to round instructions: last crowd read +
+   *  the position ledger (empty on round 1 / when neither exists) */
+  const extraContext = () => {
+    const bits = [lastCrowdRead, positionsLine].filter(Boolean);
+    return bits.length ? `\n${bits.join("\n")}` : "";
+  };
 
   if (ctx.mode === "Roundtable") {
     for (let round = startRound; round <= ctx.cfg.rounds && budget(); round++) {
@@ -1078,7 +1134,15 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       await roundClose(round);
       if (ctx.cfg.convergence === "stability" && round >= 3) {
         stableStreak = (await stabilityCheck(ctx, windowOf(posts, 30))) ? stableStreak + 1 : 0;
-        if (stableStreak >= 2) { converged = true; stopReason = "stability"; break; }
+        if (stableStreak >= 2) {
+          // Wave 3 (audit E-B3): a stable panel with unresolved sub-asks is
+          // NOT converged — coverage gates the stop (missing tracker data
+          // never holds the run hostage; the rounds cap still applies)
+          const gate = ctx.subAsks.length === 0 || ctx.coverage.length === 0 ||
+            Math.min(...ctx.coverage.map((c) => c.score)) >= 70;
+          if (gate) { converged = true; stopReason = "stability"; break; }
+          await ctx.logCall("engine.converge", "none", null, Date.now(), undefined, { note: "stability blocked by coverage", round, min: Math.min(...ctx.coverage.map((c) => c.score)) });
+        }
       }
     }
   } else if (ctx.mode === "Tribunal") {
@@ -1114,13 +1178,13 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         if (!budget()) break;
         if (did(lead.spec.name, "ARGUMENT", round)) continue;
         if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
-        await turn(lead, { round, thread: "TRIBUNAL", tag: "ARGUMENT", side: "pro", instruction: `Round ${round}: argue FOR the thesis with your strongest specific evidence. ${q}` });
+        await turn(lead, { round, thread: "TRIBUNAL", tag: "ARGUMENT", side: "pro", instruction: `Round ${round}: argue FOR the thesis with your strongest specific evidence. ${q}${agendaOf(round) ? ` ROUND AGENDA: ${agendaOf(round)!.instruction}` : ""}${extraContext()}` });
       }
       for (const lead of bench(residentSide, round)) {
         if (!budget()) break;
         if (did(lead.spec.name, "REBUTTAL", round)) continue;
         if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
-        await turn(lead, { round, thread: "TRIBUNAL", tag: "REBUTTAL", side: "con", instruction: `Round ${round}: rebut the arguments just made — attack the weakest link with specifics.` });
+        await turn(lead, { round, thread: "TRIBUNAL", tag: "REBUTTAL", side: "con", instruction: `Round ${round}: rebut the arguments just made — attack the weakest link with specifics.${extraContext()}` });
       }
       // §2a counter-volley: density-scaled COUNTER slots alternating benches
       // (pro answers the rebuttals, con answers back) before the judge rules
@@ -1244,8 +1308,8 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
             round, thread: "JURY", tag: "VERDICT",
             transcript: windowOf(posts, ctx.leads.length + 3),
             instruction: choice
-              ? `Deliberation round ${round} of ${ctx.cfg.rounds}. The tally and your peers' verdicts are above. Re-verdict: HOLD your pick or SWITCH — if you switch, name exactly which argument moved you; if you hold against the majority, defend why they're wrong. Options, verbatim: ${optList}. Start EXACTLY with "PICK: <option> · CONFIDENCE: <n>/10 — ".`
-              : `Deliberation round ${round} of ${ctx.cfg.rounds}. The tally and your peers' verdicts are above. Re-score: HOLD or MOVE — if you move, name exactly which argument moved you; if you hold against the majority, defend why they're wrong. Start EXACTLY with "SCORE: <n>/10 — ".`,
+              ? `Deliberation round ${round} of ${ctx.cfg.rounds}. The tally and your peers' verdicts are above. Re-verdict: HOLD your pick or SWITCH — if you switch, name exactly which argument moved you; if you hold against the majority, defend why they're wrong. Options, verbatim: ${optList}. Start EXACTLY with "PICK: <option> · CONFIDENCE: <n>/10 — ".${extraContext()}`
+              : `Deliberation round ${round} of ${ctx.cfg.rounds}. The tally and your peers' verdicts are above. Re-score: HOLD or MOVE — if you move, name exactly which argument moved you; if you hold against the majority, defend why they're wrong. Start EXACTLY with "SCORE: <n>/10 — ".${extraContext()}`,
           });
         }
       }
@@ -1453,7 +1517,15 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       await roundClose(round);
       if (ctx.cfg.convergence === "stability" && round >= 3) {
         stableStreak = (await stabilityCheck(ctx, windowOf(posts, 30))) ? stableStreak + 1 : 0;
-        if (stableStreak >= 2) { converged = true; stopReason = "stability"; break; }
+        if (stableStreak >= 2) {
+          // Wave 3 (audit E-B3): a stable panel with unresolved sub-asks is
+          // NOT converged — coverage gates the stop (missing tracker data
+          // never holds the run hostage; the rounds cap still applies)
+          const gate = ctx.subAsks.length === 0 || ctx.coverage.length === 0 ||
+            Math.min(...ctx.coverage.map((c) => c.score)) >= 70;
+          if (gate) { converged = true; stopReason = "stability"; break; }
+          await ctx.logCall("engine.converge", "none", null, Date.now(), undefined, { note: "stability blocked by coverage", round, min: Math.min(...ctx.coverage.map((c) => c.score)) });
+        }
       }
     }
   }

@@ -121,13 +121,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const leadCount = (agents ?? []).filter((a) => (a.spec_frozen as { seat?: { tier?: string } }).seat?.tier !== "crowd").length;
   const crowdCount = (agents ?? []).length - leadCount;
 
-  const { data: sentimentRows } = await supabase.from("events")
-    .select("payload").eq("sim_id", id).eq("type", "sentiment").order("seq", { ascending: true });
+  const { data: eventRows } = await supabase.from("events")
+    .select("type, payload").eq("sim_id", id).in("type", ["sentiment", "coverage", "convergence"]).order("seq", { ascending: true });
+  const sentimentRows = (eventRows ?? []).filter((e) => e.type === "sentiment");
+  // Wave 3 (audit R-H8): the run's own resolution + census reach synthesis
+  const lastCoverage = (eventRows ?? []).filter((e) => e.type === "coverage").pop()?.payload as { scores?: { id: string; score: number; missing?: string }[] } | undefined;
+  const censusEvt = (eventRows ?? []).filter((e) => e.type === "convergence").pop()?.payload as { aligned?: number; total?: number; dissenters?: string[]; measured?: boolean } | undefined;
   const sentimentsRaw = (sentimentRows ?? []).map((e) => {
-    const p = e.payload as { round: number; polled: number; dist: Record<string, number>; ballots?: { name: string; stance: string }[]; question?: string; options?: string[]; labels?: Record<string, string>; angle?: string };
+    const p = e.payload as { round: number; polled: number; dist: Record<string, number>; ballots?: { name: string; stance: string }[]; quotes?: { name: string; stance: string; quote: string }[]; question?: string; options?: string[]; labels?: Record<string, string>; angle?: string };
     // 6-PR3: adaptive plans vary the question per round — each poll keeps its
     // own question/options/labels/angle so every display shares one referent
-    return { round: p.round, polled: p.polled, dist: p.dist, ballots: p.ballots, question: p.question, options: p.options, labels: p.labels, angle: p.angle };
+    return { round: p.round, polled: p.polled, dist: p.dist, ballots: p.ballots, quotes: p.quotes, question: p.question, options: p.options, labels: p.labels, angle: p.angle };
   });
   // concurrent engine slices once double-polled rounds (the twin-chain field
   // incident — migration 0018's dedupe key now stops new duplicates at the
@@ -177,8 +181,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     return m.name ?? "Agent";
   };
   const ranked = [...netBySeq.entries()].sort((a, b) => b[1] - a[1]);
-  const endorsed = ranked.filter(([, n]) => n > 0).slice(0, 3);
-  const contested = ranked.filter(([, n]) => n < 0).slice(-2);
+  const endorsed = ranked.filter(([, n]) => n > 0).slice(0, 10);
+  const contested = ranked.filter(([, n]) => n < 0).slice(-10);
   const voteText = ranked.length
     ? `PANEL VOTE SIGNALS (in-character endorsements; cite post numbers):\n` +
       (endorsed.length ? `- most-endorsed: ${endorsed.map(([s, n]) => `post ${s} by ${nameOf(s)} (net +${n})`).join("; ")}\n` : "") +
@@ -201,7 +205,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     // must meet — the completeness judge checks against exactly these lines
     (contract?.sub_asks?.length ? `THE BRIEF CONTRACT (every sub-ask below must be ANSWERED by a section — the report is judged against this):\n${contract.sub_asks.map((s) => `- [${s.id}] ${s.ask} (evidence standard: ${s.evidence})`).join("\n")}\n` : "") +
     (success.length ? `SUCCESS CRITERIA (the report is held to every one):\n${success.map((x) => `- ${x}`).join("\n")}\n` : "") +
-    (sentiments.length ? `CROWD SENTIMENT BY ROUND${pollQuestion ? ` (the crowd was asked: "${pollQuestion}")` : ""}${pollOptions ? ` (a preference poll — the crowd chose among: ${pollOptions.join(" · ")})` : ""}${pollLabels ? ` (the stances MEAN, for this question: support = "${pollLabels.support}" · conditional = "${pollLabels.conditional}" · oppose = "${pollLabels.oppose}" · disengaged = "${pollLabels.disengaged}" — write about the crowd in THESE terms)` : ""}:\n${sentiments.map((x) => `- round ${x.round}${new Set(sentiments.map((s) => s.question).filter(Boolean)).size > 1 && x.question ? ` (asked: "${x.question}")` : ""}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}`).join("\n")}\n` : "") +
+    (sentiments.length ? `CROWD SENTIMENT BY ROUND${pollQuestion ? ` (the crowd was asked: "${pollQuestion}")` : ""}${pollOptions ? ` (a preference poll — the crowd chose among: ${pollOptions.join(" · ")})` : ""}${pollLabels ? ` (the stances MEAN, for this question: support = "${pollLabels.support}" · conditional = "${pollLabels.conditional}" · oppose = "${pollLabels.oppose}" · disengaged = "${pollLabels.disengaged}" — write about the crowd in THESE terms)` : ""}:\n${sentiments.map((x) => `- round ${x.round}${new Set(sentiments.map((s) => s.question).filter(Boolean)).size > 1 && x.question ? ` (asked: "${x.question}")` : ""}: ${x.polled} polled — ${Object.entries(x.dist).map(([k, v]) => `${k} ${v}`).join(", ")}${(x.quotes ?? []).length ? ` · voices: ${(x.quotes ?? []).slice(0, 3).map((qt) => `"${qt.quote}" (${qt.name}, ${qt.stance})`).join(" · ")}` : ""}`).join("\n")}\n` : "") +
+    // Wave 3 (audit R-H8): what the run itself measured — sub-ask resolution
+    // at close and the position census — reaches the synthesizer verbatim
+    ((lastCoverage?.scores ?? []).length ? `SUB-ASK RESOLUTION AT CLOSE (the run tracked these):\n${lastCoverage!.scores!.map((c) => `- [${c.id}] ${c.score}/100 resolved${c.missing ? ` — missing: ${c.missing}` : ""}`).join("\n")}\n` : "") +
+    (censusEvt && censusEvt.measured ? `CLOSING POSITION CENSUS (measured): ${censusEvt.aligned} of ${censusEvt.total} aligned${(censusEvt.dissenters ?? []).length ? ` — dissenting: ${censusEvt.dissenters!.join(", ")}` : ""}\n` : "") +
     (toolFindings.length ? `TOOL FINDINGS (live web searches the panel ran — citable as "source: web", URLs are real):\n${toolFindings.map((f) => `- [${f.agent}] searched "${f.query}" → ${f.results.slice(0, 3).map((x) => `${x.title} <${x.url}>`).join(" · ") || "no results"}`).join("\n")}\n` : "") +
     ((docs?.length ?? 0) > 0 ? `UPLOADED MATERIALS (exact filenames — usable in "media" when the decision turned on one):\n${docs!.map((d) => `- ${d.name} (${(d.mime ?? "").startsWith("image/") ? "image" : "document"})`).join("\n")}\n` : "") +
     voteText;
