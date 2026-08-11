@@ -233,10 +233,14 @@ export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
         high: { type: "number" },
         point: { type: "number" },
         walk_away_value: { type: "number" },
-        walk_away_label: { type: "string" },
+        // GRAMMAR BUDGET (live 400 "compiled grammar is too large", caught by
+        // npm run smoke after Wave 4b added the three cites arrays): the lead
+        // is at the structured-outputs complexity ceiling — walk_away_label
+        // and drivers were cut to fit. The label is fixed at assembly; odds
+        // drivers travel " · "-joined inside `basis`. Adding ANY property
+        // here must re-run the live bisect (scripts history: grammar-repro).
         basis: { type: "string" },
         odds: { type: "number" },
-        drivers: { type: "array", items: { type: "string" } },
         cites: { type: "array", items: { type: "integer" } },
       },
     },
@@ -283,6 +287,14 @@ export const REPORT_JSON_SCHEMA: Record<string, unknown> = {
     },
   },
 };
+
+/** GRAMMAR BUDGET: `drivers` no longer fits the lead schema — for
+ *  approval_odds leads the drivers travel " · "-joined inside `basis` and
+ *  split back out at assembly. Exported pure for tests. */
+export function oddsDriversFromBasis(basis: unknown): string[] | undefined {
+  const items = String(basis ?? "").split("·").map((x) => x.trim()).filter(Boolean).slice(0, 4).map((x) => x.slice(0, 140));
+  return items.length ? items : undefined;
+}
 
 /** PR-A — map the synthesizer's media picks (filenames) onto real uploaded
  *  documents. Unknown names are DROPPED, matches are case-insensitive, and
@@ -349,8 +361,8 @@ export function reportSynthSystem(length: ReportLength = "standard", opts?: { di
     `FILE NAMING (non-negotiable): refer to uploaded files by their EXACT filename ("1.jpg", "survey.pdf") in every headline, finding, and caption. NEVER invent your own "Image 1/2/3" numbering — when filenames contain digits, a made-up ordinal points at the WRONG file.\n` +
     `THE LEAD (the report's opening visual — its kind must match what the brief ASKS; a DECISION SHAPE HINT may be provided, but re-read the brief and trust the brief):\n` +
     `- "decision" — go/no-go, choose-between, "should we": the verdict chip carries it; emit {"kind": "decision"} with no other fields.\n` +
-    `- "price_range" — "what is it worth", fair price, valuation briefs: {"kind": "price_range", "low": N, "high": N, "point": N, "walk_away_value": N, "walk_away_label": "WALK AWAY ABOVE $X", "basis": "the methods triangulated (sales comparison, residual land value, income cap)"}. Numbers are PLAIN NUMBERS in dollars (4200000, never "4.2M"). Commit to the range the transcript defends.\n` +
-    `- "approval_odds" — rezonings, entitlements, hearings, "will the council/neighbors allow it": {"kind": "approval_odds", "odds": 0-100, "drivers": ["the 2-3 things that move the odds"]}. Commit to a number — 50 is a finding only when the transcript is genuinely split.\n` +
+    `- "price_range" — "what is it worth", fair price, valuation briefs: {"kind": "price_range", "low": N, "high": N, "point": N, "walk_away_value": N, "basis": "the methods triangulated (sales comparison, residual land value, income cap)"}. Numbers are PLAIN NUMBERS in dollars (4200000, never "4.2M"). Commit to the range the transcript defends.\n` +
+    `- "approval_odds" — rezonings, entitlements, hearings, "will the council/neighbors allow it": {"kind": "approval_odds", "odds": 0-100, "basis": "the 2-3 things that move the odds, joined with ' · '"}. Commit to a number — 50 is a finding only when the transcript is genuinely split.\n` +
     `- "key_finding" — EVERYTHING ELSE (market simulations, "what happens if", diagnostics, open research): {"kind": "key_finding", "finding": "the single most important conclusion, committed — a claim someone could disagree with", "so_what": "one line: what to do with it"}. Never generic ("the market is complex" is a failure).\n` +
     `Non-negotiable rules:\n` +
     `- COMMIT TO AN ANSWER. The user ran this simulation to resolve a hard question, and hedging is a product failure. When the brief or success criteria ask for a definitive recommendation ("which option", "tell me whether", "a definitive answer"), the verdict label and headline MUST pick one — use tone "go" for the chosen path (or "no-go" when the answer is don't). Execution caveats belong in risks and tripwires, never in the verdict.\n` +

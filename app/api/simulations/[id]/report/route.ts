@@ -5,7 +5,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
-import { REPORT_DIRECTOR_SCHEMA, REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, REPORT_BLOCKS_SCHEMA, blocksSpecFor, blocksSynthSystem, clipText, judgePatchSystem, middleClip, judgeSystem, mergePatchedBlocks, mergePatchedSections, normalizeBlocks, parseJudgeVerdict, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, sectionWorkerSystem, synthBudgetFor, synthesizePlain, verifierSystem, filterCites, factGate, reportVerifierSystem } from "@/lib/report";
+import { REPORT_DIRECTOR_SCHEMA, REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, REPORT_BLOCKS_SCHEMA, blocksSpecFor, blocksSynthSystem, clipText, judgePatchSystem, middleClip, judgeSystem, mergePatchedBlocks, mergePatchedSections, normalizeBlocks, parseJudgeVerdict, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, sectionWorkerSystem, synthBudgetFor, synthesizePlain, verifierSystem, filterCites, factGate, oddsDriversFromBasis, reportVerifierSystem } from "@/lib/report";
 import { BriefContract } from "@/lib/understand";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { normalizeEnabledTools } from "@/lib/tools";
@@ -400,6 +400,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         }
 
         const budgets = [...new Set([synthBudget, Math.min(synthBudget * 2, 48_000), 48_000])];
+        // GRAMMAR-BUDGET FALLBACK (smoke-caught): if the API rejects the
+        // report schema outright ("compiled grammar is too large"), the next
+        // attempt runs WITHOUT structured outputs — the loose parser + the
+        // completeness gate already handle prose-wrapped JSON. A schema
+        // regression must degrade a guarantee, never kill every report.
+        let useSchema = true;
         for (let attempt = 0; attempt < budgets.length && !raw; attempt++) {
           const t0 = Date.now();
           try {
@@ -410,7 +416,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               messages: [{ role: "user", content: `${briefText}\nTRANSCRIPT:\n${middleClip(transcript, 160_000)}` }],
               // structured outputs pin the reply to the report schema — a
               // prose-wrapped response killed a live synthesis ("unparseable")
-              output_config: { format: { type: "json_schema", schema: REPORT_JSON_SCHEMA } },
+              ...(useSchema ? { output_config: { format: { type: "json_schema", schema: REPORT_JSON_SCHEMA } } } : {}),
             });
             // the ticker (PR-B): the draft streams schema-shaped JSON, so the
             // buffer itself says where the director is — "✓ SUMMARY · WRITING
@@ -449,7 +455,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             raw = parsed;
           } catch (e) {
             lastErr = e instanceof Error ? e.message : "synthesis failed";
-            await logCall("report.synthesize", synthModel, null, t0, lastErr);
+            await logCall("report.synthesize", synthModel, null, t0, lastErr, useSchema ? undefined : { schema: "off" });
+            if (useSchema && /grammar is too large|schema is too complex/i.test(lastErr)) {
+              useSchema = false;
+              attempt -= 1; // same budget, schema off — the failure spent no tokens
+              send({ type: "stage", value: "compile", note: "REPORT SCHEMA HIT THE API'S GRAMMAR CEILING — RECOMPILING WITHOUT IT…" });
+            }
           }
         }
         if (!raw) throw new Error(`Report synthesis failed — ${lastErr}`);
@@ -548,13 +559,18 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
                 : undefined,
               currency: "$",
               low: numOr(l.low), high: numOr(l.high), point: numOr(l.point),
-              walk_away: waVal ? { value: waVal, label: String(l.walk_away_label ?? `Walk away at ${waVal}`).slice(0, 80) } : undefined,
-              basis: l.basis ? String(l.basis).slice(0, 220) : undefined,
+              // GRAMMAR BUDGET (smoke-caught 400): walk_away_label and drivers
+              // left the schema — the label is fixed here, odds drivers split
+              // back out of the " · "-joined basis
+              walk_away: waVal ? { value: waVal, label: String(l.walk_away_label ?? "WALK AWAY").slice(0, 80) } : undefined,
+              basis: kind === "approval_odds" ? undefined : (l.basis ? String(l.basis).slice(0, 220) : undefined),
               odds,
               band: kind === "approval_odds" && odds !== undefined
                 ? (odds >= 60 ? "likely" as const : odds <= 40 ? "unlikely" as const : "toss-up" as const)
                 : undefined,
-              drivers: Array.isArray(l.drivers) ? (l.drivers as unknown[]).slice(0, 4).map((d) => String(d).slice(0, 140)) : undefined,
+              drivers: Array.isArray(l.drivers)
+                ? (l.drivers as unknown[]).slice(0, 4).map((d) => String(d).slice(0, 140))
+                : (kind === "approval_odds" ? oddsDriversFromBasis(l.basis) : undefined),
             };
           })(),
           // 3a: THE BOTTOM LINE — three plain sentences, gate-enforced upstream
