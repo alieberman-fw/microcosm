@@ -444,7 +444,7 @@ export default function SimWorkspace({
                 {brief.questions.map((q) => (
                   <div key={q.label} style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
                     <span style={{ width: 208, flex: "none", display: "flex" }}>
-                      <span title={q.label} style={{ ...mono, fontSize: 10.5, padding: "6px 13px", borderRadius: 100, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span title={q.label} className="pchip" style={{ ...mono, fontSize: 10.5, padding: "6px 13px", borderRadius: 100, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {q.label}
                       </span>
                     </span>
@@ -455,7 +455,7 @@ export default function SimWorkspace({
             ) : (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
                 {brief.questions.map((q) => (
-                  <span key={q.label} style={{ ...mono, fontSize: 11, padding: "7px 14px", borderRadius: 100, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)" }}>
+                  <span key={q.label} className="pchip" style={{ ...mono, fontSize: 11, padding: "7px 14px", borderRadius: 100, background: "var(--acc-dim)", border: "1px solid var(--acc)", color: "var(--acc)" }}>
                     {q.label}
                   </span>
                 ))}

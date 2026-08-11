@@ -39,7 +39,7 @@ export default function ThemePref() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16, maxWidth: 380 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, maxWidth: 380 }}>
         <span aria-hidden style={{ fontSize: 16, color: theme === "light" ? "var(--acc)" : "var(--t6)", flex: "none", lineHeight: 1 }}>☀</span>
         <input
           type="range"

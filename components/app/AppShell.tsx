@@ -10,6 +10,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Logo } from "@/components/Nav";
 import ReportsBadge from "@/components/app/ReportsBadge";
+import { applyFinish, readFinish } from "@/lib/finish";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 
@@ -83,13 +84,16 @@ export default function AppShell({
       const t = (localStorage.getItem("mc-theme") as "dark" | "gray" | "fog" | "light") || "dark";
       setTheme(t);
       document.documentElement.dataset.theme = t;
+      applyFinish(readFinish()); // premium skin heals on the same paths as theme
     };
     read();
-    // the Settings → Appearance slider broadcasts changes here
+    // the Settings → Appearance controls broadcast changes here
     window.addEventListener("mc-theme-changed", read);
+    window.addEventListener("mc-finish-changed", read);
     window.addEventListener("pageshow", read);
     return () => {
       window.removeEventListener("mc-theme-changed", read);
+      window.removeEventListener("mc-finish-changed", read);
       window.removeEventListener("pageshow", read);
     };
   }, []);

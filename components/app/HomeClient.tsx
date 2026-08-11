@@ -247,7 +247,7 @@ export default function HomeClient({
           {tiles.map((t) => (
             <Link key={t.label} href={t.href} className="card cardHoverQuiet" style={{ padding: "16px 18px", display: "block" }}>
               <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".1em", color: "var(--t6)" }}>{t.label}</div>
-              <div style={{ ...mono, fontSize: 26, color: "var(--t0)", marginTop: 6 }}>{t.value}</div>
+              <div className="pnum" style={{ ...mono, fontSize: 26, color: "var(--t0)", marginTop: 6 }}>{t.value}</div>
               <div style={{ ...mono, fontSize: 8, letterSpacing: ".06em", color: "var(--t7)", marginTop: 4 }}>{t.sub}</div>
             </Link>
           ))}
@@ -510,7 +510,7 @@ export default function HomeClient({
               </p>
             )}
             {reports.map((r, i) => (
-              <Link key={`${r.sim_id}-${i}`} href={`/sim/${r.sim_id}/report`} style={{ display: "block", padding: "12px 0", borderBottom: "1px solid var(--ln2)", minWidth: 0 }}>
+              <Link key={`${r.sim_id}-${i}`} href={`/sim/${r.sim_id}/report`} className="prow" style={{ display: "block", padding: "12px 0", borderBottom: "1px solid var(--ln2)", minWidth: 0 }}>
                 <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                   <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", padding: "3px 10px", borderRadius: 100, border: `1px solid ${toneColor(r.tone)}`, color: toneColor(r.tone), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
                     {r.label}
@@ -536,7 +536,7 @@ export default function HomeClient({
               </p>
             )}
             {personas.map((p) => (
-              <Link key={p.id} href={`/conversations?with=${p.id}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--ln2)", minWidth: 0 }}>
+              <Link key={p.id} href={`/conversations?with=${p.id}`} className="prow" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--ln2)", minWidth: 0 }}>
                 <span style={{ ...mono, width: 28, height: 28, borderRadius: "50%", flex: "none", background: "var(--acc-dim)", border: "1px solid var(--acc)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9.5, color: "var(--acc)" }}>
                   {p.spec.initials}
                 </span>
@@ -561,7 +561,7 @@ export default function HomeClient({
               </p>
             )}
             {conversations.map((c) => (
-              <Link key={c.id} href={`/conversations?open=${c.id}`} style={{ display: "block", padding: "11px 0", borderBottom: "1px solid var(--ln2)", minWidth: 0 }}>
+              <Link key={c.id} href={`/conversations?open=${c.id}`} className="prow" style={{ display: "block", padding: "11px 0", borderBottom: "1px solid var(--ln2)", minWidth: 0 }}>
                 <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {c.title}
                 </span>

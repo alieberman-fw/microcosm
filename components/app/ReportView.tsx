@@ -441,7 +441,7 @@ function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
     <>
       {/* the answer IS the headline */}
       <div style={{ marginTop: 22 }}>
-        <span style={{ ...mono, fontSize: 11, letterSpacing: ".1em", padding: "7px 16px", borderRadius: 100, border: `1px solid ${v.color}`, background: v.bg, color: v.color }}>
+        <span className="pverdict" style={{ ...mono, fontSize: 11, letterSpacing: ".1em", padding: "7px 16px", borderRadius: 100, border: `1px solid ${v.color}`, background: v.bg, color: v.color }}>
           {spec.verdict.label}
         </span>
         <h1 style={{ fontSize: "clamp(22px, 2.8vw, 30px)", fontWeight: 600, letterSpacing: "-.025em", lineHeight: 1.35, margin: "16px 0 0", maxWidth: 840 }}>
@@ -967,7 +967,7 @@ export default function ReportView({
             if (kind === "decision") {
               return (
                 <div style={{ marginTop: 22 }}>
-                  <span style={{ ...mono, fontSize: 11, letterSpacing: ".1em", padding: "7px 16px", borderRadius: 100, border: `1px solid ${v.color}`, background: v.bg, color: v.color }}>
+                  <span className="pverdict" style={{ ...mono, fontSize: 11, letterSpacing: ".1em", padding: "7px 16px", borderRadius: 100, border: `1px solid ${v.color}`, background: v.bg, color: v.color }}>
                     {spec.verdict.label}
                   </span>
                   <h1 style={{ fontSize: "clamp(22px, 2.8vw, 32px)", fontWeight: 600, letterSpacing: "-.025em", lineHeight: 1.25, margin: "16px 0 0", maxWidth: 860 }}>

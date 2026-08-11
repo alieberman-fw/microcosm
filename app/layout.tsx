@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     "Microcosm seeds thousands of persona-grounded AI agents — buyers, renters, neighbors, lenders, investors — that react, debate, and change their minds. Then it hands you the report, before a single dollar of capital is committed.",
 };
 
-const themeInit = `try{var t=localStorage.getItem("mc-theme")||"dark";document.documentElement.dataset.theme=t}catch(e){}`;
+const themeInit = `try{var t=localStorage.getItem("mc-theme")||"dark";document.documentElement.dataset.theme=t;if(localStorage.getItem("mc-finish")==="premium")document.documentElement.dataset.finish="premium"}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

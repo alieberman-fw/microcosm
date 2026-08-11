@@ -29,9 +29,9 @@ export default function OrbInkPref() {
   };
 
   return (
-    <div style={{ marginTop: 18 }}>
-      <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".1em", color: "var(--t6)" }}>LOADING ORBS</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12, marginTop: 12, maxWidth: 640 }}>
+    <div>
+      {/* the section label lives in the Settings page's Setting wrapper */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12, maxWidth: 640 }}>
         {OPTIONS.map((o) => {
           const on = ink === o.ink;
           return (
