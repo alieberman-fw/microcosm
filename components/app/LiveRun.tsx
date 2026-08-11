@@ -71,6 +71,9 @@ export interface LiveSentiment {
    *  sell" instead of SUPPORT); absent = classic phrasing */
   labels?: Record<string, string>;
   ballots?: { name: string; stance: string }[]; // C2: every individual answer (older runs pre-date it)
+  /** Wave 5a poll integrity: a deadline-truncated poll ships flagged (the
+   *  next slice re-polls in full and its event replaces this card) */
+  partial?: boolean;
 }
 
 /** poll bar colors: classic keeps its stance semantics (support=accent,
@@ -106,7 +109,9 @@ export interface LiveTool {
   round: number;
 }
 
-type Item = { kind: "post"; post: LivePost } | { kind: "sentiment"; s: LiveSentiment } | { kind: "tool"; t: LiveTool };
+type Item = { kind: "post"; post: LivePost } | { kind: "sentiment"; s: LiveSentiment } | { kind: "tool"; t: LiveTool }
+  // Wave 5a (audit E-G1): a skipped turn leaves a visible trace in the feed
+  | { kind: "skip"; k: { name: string; round: number; tag: string } };
 
 interface Node { x: number; y: number; label?: string; adversarial?: boolean; key?: string }
 
@@ -201,8 +206,10 @@ export default function LiveRun({
     }
     merged.splice(at, 0, { kind: "tool", t });
   }
-  // weave persisted sentiment cards after their round's posts
-  for (const s of initialSentiments) {
+  // weave persisted sentiment cards after their round's posts — one card per
+  // round, last event wins (Wave 5a: a full re-poll supersedes its partial)
+  const sentimentByRound = [...new Map(initialSentiments.map((s) => [s.round, s])).values()];
+  for (const s of sentimentByRound) {
     let at = merged.length;
     for (let i = merged.length - 1; i >= 0; i--) {
       const it = merged[i];
@@ -266,6 +273,7 @@ export default function LiveRun({
   // dedupe across sources (stream ↔ observer handoff must never double-apply)
   const appliedSeq = useRef<Set<number>>(new Set(initialPosts.map((p) => p.seq)));
   const appliedPolls = useRef<Set<number>>(new Set(initialSentiments.map((s) => s.round)));
+  const appliedSkips = useRef<Set<string>>(new Set());
   const appliedVotes = useRef<Set<string>>(new Set(initialVotes.map((v) => `${v.seq}:${v.voter_key}`)));
   const appliedTools = useRef<Set<string>>(new Set(initialTools.map((t) => `${t.agent_key}:${t.round}:${t.query}`)));
 
@@ -539,10 +547,18 @@ export default function LiveRun({
       polling.current = { t0: performance.now(), n: Number(evt.count) || crowdCount };
     } else if (evt.type === "sentiment") {
       const s = evt as unknown as LiveSentiment;
-      if (appliedPolls.current.has(s.round)) return null;
+      const seen = appliedPolls.current.has(s.round);
+      // Wave 5a (E-C7): a round can carry a partial tally then a full re-poll —
+      // the full event REPLACES the partial card; a second partial never
+      // downgrades what's already shown
+      if (seen && s.partial) return null;
       appliedPolls.current.add(s.round);
       polling.current = null;
-      setItems((prev) => [...prev, { kind: "sentiment", s }]);
+      setItems((prev) => {
+        const at = prev.findIndex((it) => it.kind === "sentiment" && it.s.round === s.round);
+        if (at >= 0) { const nx = [...prev]; nx[at] = { kind: "sentiment", s }; return nx; }
+        return [...prev, { kind: "sentiment", s }];
+      });
       // canvas: the crowd lights up and pulses inward while the poll lands
       pollWave.current = performance.now();
       const ring = crowdRef.current;
@@ -551,6 +567,13 @@ export default function LiveRun({
       for (let i = 0; i < ring.length; i += Math.max(1, Math.floor(ring.length / 14))) {
         pulses.current.push({ a: ring[i], b: { x: cx, y: cy }, t0: now + (i % 7) * 120, dur: 2200, strong: false });
       }
+    } else if (evt.type === "skip") {
+      // E-G1: the hole is visible — one quiet marker per skipped turn
+      const k = { name: String(evt.name ?? "A panelist"), round: Number(evt.round) || 0, tag: String(evt.tag ?? "") };
+      const key = `${k.name}:${k.round}:${k.tag}`;
+      if (appliedSkips.current.has(key)) return null;
+      appliedSkips.current.add(key);
+      setItems((prev) => [...prev, { kind: "skip", k }]);
     } else if (evt.type === "coverage") {
       // latest tracker pass wins — the strip always shows current resolution
       const scores = (evt as unknown as { scores?: { id: string; ask: string; score: number; missing: string }[] }).scores;
@@ -737,7 +760,7 @@ export default function LiveRun({
         const [postsQ, evQ, simQ] = await Promise.all([
           supa.from("posts").select("seq, agent_key, author, thread, reply_to, tag, content, cites")
             .eq("sim_id", simId).gt("seq", maxSeq).order("seq", { ascending: true }).limit(200),
-          supa.from("events").select("type, payload").eq("sim_id", simId).in("type", ["sentiment", "votes", "tool", "coverage", "agenda"]),
+          supa.from("events").select("type, payload").eq("sim_id", simId).in("type", ["sentiment", "votes", "tool", "coverage", "agenda", "skip"]),
           supa.from("simulations").select("status, config").eq("id", simId).maybeSingle(),
         ]);
         const rows = (postsQ.data ?? []) as Record<string, unknown>[];
@@ -750,7 +773,7 @@ export default function LiveRun({
           handleEvt(postRowToEvt(r));
         }
         for (const e of (evQ.data ?? []) as { payload: Record<string, unknown> }[]) {
-          if (["sentiment", "votes", "tool", "coverage", "agenda"].includes(String(e.payload?.type))) handleEvt(e.payload);
+          if (["sentiment", "votes", "tool", "coverage", "agenda", "skip"].includes(String(e.payload?.type))) handleEvt(e.payload);
         }
         const st = (simQ.data?.status as string | undefined) ?? "";
         const cfg2 = (simQ.data?.config ?? {}) as { run_state?: { heartbeat_at?: string | null }; run_result?: { stop?: string } };
@@ -1285,6 +1308,17 @@ export default function LiveRun({
               </div>
             )}
             {items.map((it, idx) => {
+              if (it.kind === "skip") {
+                return (
+                  <div key={`k${idx}`} style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
+                    <span style={{ flex: 1, height: 1, background: "var(--ln2)" }} />
+                    <span style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t7)" }}>
+                      {it.k.name.toUpperCase()} SKIPPED A TURN · R{it.k.round}
+                    </span>
+                    <span style={{ flex: 1, height: 1, background: "var(--ln2)" }} />
+                  </div>
+                );
+              }
               if (it.kind === "tool") {
                 // searches ride INSIDE their author's post as dropdowns (field
                 // report) — a standalone card renders only when no post by
@@ -1327,7 +1361,7 @@ export default function LiveRun({
                   <div key={`s${idx}`} style={{ margin: "16px 0", border: "1px solid var(--ln3)", borderRadius: 12, background: "var(--sf2)", padding: "12px 16px", cursor: "pointer" }}
                     onClick={() => setExpanded((prev) => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n; })}>
                     <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>
-                      CROWD POLL · ROUND {it.s.round} · {it.s.polled} POLLED — CLICK TO {open ? "COLLAPSE" : "EXPAND"}
+                      CROWD POLL · ROUND {it.s.round} · {it.s.polled} POLLED{it.s.partial && <span style={{ color: "var(--warn)" }}> · PARTIAL — RE-POLLS ON THE NEXT SLICE</span>} — CLICK TO {open ? "COLLAPSE" : "EXPAND"}
                     </div>
                     {it.s.question && (
                       <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--t3)", marginTop: 6 }}>

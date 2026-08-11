@@ -116,6 +116,7 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
     // 3d — the shared factbase survives slice handoffs: rebuild it from the
     // persisted tool events so slice 2's agents see slice 1's searches
     const pulledFacts: { query: string; results: { title: string; url: string }[] }[] = [];
+    const priorVoteEvents: NonNullable<EngineContext["priorVoteEvents"]> = [];
     let resume: RunResume | undefined;
     const { data: prevPosts } = await db.from("posts")
       .select("seq, agent_key, tag, content, cites, reply_to").eq("sim_id", simId).order("seq", { ascending: true });
@@ -133,9 +134,16 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
           continue;
         }
         const round = Number((e.payload as { round?: number }).round ?? 0);
-        if (e.type === "sentiment") polledRounds.add(round);
+        if (e.type === "sentiment") {
+          // Wave 5a (E-C7): a partial tally does NOT close the round — this
+          // slice re-polls it in full and the complete event supersedes
+          if (!(e.payload as { partial?: boolean }).partial) polledRounds.add(round);
+        }
         else if (e.type === "coverage") {
-          // 6-PR3 resume: the latest persisted scores seed the next agenda
+          // 6-PR3 resume: the latest persisted scores seed the next agenda.
+          // Wave 5a (E-G10): a STALE re-emit is a failure marker, not a pass —
+          // it neither closes the round nor moves the seeded scores
+          if ((e.payload as { stale?: boolean }).stale) continue;
           trackedRounds.add(round);
           if (round >= latestCoverageRound) {
             latestCoverageRound = round;
@@ -143,7 +151,20 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
             if (Array.isArray(scores)) coverage = scores;
           }
         }
-        else votedRounds.add(round);
+        else {
+          votedRounds.add(round);
+          // Wave 5a (E-G7): earlier slices' votes seed pair-dedupe, budgets,
+          // and the ▲/▼ overlay — a boundary used to reset all three
+          const vs = (e.payload as { votes?: { seq?: number; voter_key?: string; vote?: number }[] }).votes;
+          if (Array.isArray(vs)) {
+            priorVoteEvents.push({
+              round,
+              votes: vs
+                .filter((v) => Number.isFinite(Number(v.seq)) && v.voter_key)
+                .map((v) => ({ seq: Number(v.seq), voter_key: String(v.voter_key), vote: (Number(v.vote) === -1 ? -1 : 1) as 1 | -1 })),
+            });
+          }
+        }
       }
       resume = { posts: recs, seq: recs.reduce((m, r) => Math.max(m, r.seq), 0), round: runState.round ?? Math.max(1, ...recs.map((r) => r.round)), stableStreak: runState.stable_streak ?? 0 };
     }
@@ -225,7 +246,7 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
       // outlast the longest single call (field-observed: 137s web-search turn)
       deadline: Date.now() + (Number(process.env.ENGINE_CHUNK_MS) || SLICE_BUDGET_MS),
       polledRounds, votedRounds,
-      subAsks, pollPlan, coverage, trackedRounds,
+      subAsks, pollPlan, coverage, trackedRounds, priorVoteEvents,
       emit, logCall,
       // client disconnects NEVER cancel a run (3c); stop is graceful, below.
       // The ONE cancellation is usurpation: another chain CAS-claimed the run,

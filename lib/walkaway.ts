@@ -84,10 +84,15 @@ export function heartbeatFresh(runState: RunState | null | undefined, nowMs: num
  *  field incident was two chains each trusting their own set). Votes events
  *  stay unkeyed on purpose: micro-passes legitimately repeat within a round
  *  and the vote data itself dedupes in post_votes (sim, seq, voter). */
-export function eventDedupeKey(e: { type: string; round?: unknown; angle?: unknown }): string | null {
+export function eventDedupeKey(e: { type: string; round?: unknown; angle?: unknown; partial?: unknown; stale?: unknown }): string | null {
   const round = typeof e.round === "number" && Number.isFinite(e.round) ? e.round : null;
   if (round === null) return null;
-  if (e.type === "sentiment") return `sentiment:${round}:${typeof e.angle === "string" ? e.angle : ""}`;
+  // Wave 5a (audit E-C7): a PARTIAL poll keys separately — the next slice's
+  // full re-poll must land beside it, not be dropped as a duplicate (readers
+  // keep the last event per round, so the complete tally supersedes)
+  if (e.type === "sentiment") return `sentiment:${round}:${typeof e.angle === "string" ? e.angle : ""}${e.partial ? ":partial" : ""}`;
+  // E-G10: a stale re-emit must not consume the round's one coverage slot
+  if (e.type === "coverage" && e.stale) return `coverage:${round}:stale`;
   if (e.type === "coverage") return `coverage:${round}`;
   if (e.type === "agenda") return `agenda:${round}`;
   return null;
