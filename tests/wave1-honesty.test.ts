@@ -65,3 +65,22 @@ describe("modeFitFlags (E-B4) — Tribunal states its stop-rule honestly", () =>
     expect(modeFitFlags({ ...base, convergence: "fixed" as const })).toEqual([]);
   });
 });
+
+describe("castingPlanSystem (Wave 2a) — an explicit mode is a design constraint", () => {
+  it("forced mode overrides the mode guide and reaches the prompt", async () => {
+    const { castingPlanSystem } = await import("@/lib/casting");
+    const sys = castingPlanSystem(undefined, undefined, "Tribunal");
+    expect(sys).toContain('THE USER REQUIRES interaction mode "Tribunal"');
+    expect(sys).toContain("design the seats FOR this choreography");
+    expect(sys).toContain("your recommendation OR the user requirement");
+  });
+  it("AUTO (no mode) keeps the prompt unconstrained", async () => {
+    const { castingPlanSystem } = await import("@/lib/casting");
+    expect(castingPlanSystem()).not.toContain("THE USER REQUIRES interaction mode");
+  });
+  it("generation prompt teaches genuine bench convictions", async () => {
+    const { castingGenerateSystem } = await import("@/lib/casting");
+    expect(castingGenerateSystem()).toContain('tribunal bench: CON');
+    expect(castingGenerateSystem()).toContain("GENUINELY oppose the thesis");
+  });
+});
