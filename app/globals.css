@@ -199,8 +199,8 @@ button { font-family: var(--font-grotesk), sans-serif; }
    PREMIUM FINISH — Settings → Appearance → Finish.
    Every rule is scoped under html[data-finish="premium"]; with the
    attribute absent the app is byte-identical to the shipped design.
-   Tokens (--edge-top/--sheen/--shadow-*/--row-hover/--focus-ring/--spring)
-   are defined per theme above, so the skin holds on light · fog · gray ·
+   Tokens (--edge-top, --sheen, the --shadow set, --row-hover, --focus-ring,
+   --spring) are defined per theme above, so the skin holds on light · fog · gray ·
    dark. Hook classes (.pbtn .pchip .pnum .prow .pverdict .pcard) carry ZERO
    rules outside this block — adding them to a component cannot change
    normal mode. Orbs read --acc/--acc-c, which premium never touches.
