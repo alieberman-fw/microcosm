@@ -46,6 +46,8 @@ export default function RunConfigStage({
   leads,
   expertSide,
   residentSide,
+  benchPro,
+  benchCon,
   crowd,
   initialRun,
   initialTools = null,
@@ -58,6 +60,9 @@ export default function RunConfigStage({
   leads: number;
   expertSide: number;
   residentSide: number;
+  /** the engine's actual Tribunal benches (explicit seat.side, else kinds) */
+  benchPro?: number;
+  benchCon?: number;
   crowd: number;
   initialRun?: Partial<RunConfig> | null;
   /** 3d — the saved agent-tools allowlist (config.tools; empty = all off) */
@@ -138,7 +143,7 @@ export default function RunConfigStage({
   };
 
   const est = useMemo(() => estimateRunCost({ leads, crowd, cfg, mode }), [leads, crowd, cfg, mode]);
-  const flags = useMemo(() => modeFitFlags({ mode, leads, expertSide, residentSide, crowd }), [mode, leads, expertSide, residentSide, crowd]);
+  const flags = useMemo(() => modeFitFlags({ mode, leads, expertSide, residentSide, crowd, benchPro, benchCon }), [mode, leads, expertSide, residentSide, crowd, benchPro, benchCon]);
   const fixedShape = isFixedShape(mode);
 
   const label: CSSProperties = { ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)", width: 110, flex: "none", paddingTop: 6 };

@@ -43,6 +43,11 @@ export interface CastSeat {
   discipline: string;          // drives graph clustering ("POWER")
   why: string;                 // one line: why this seat exists for this brief
   query: string;               // 2-4 keyword library-search terms
+  /** Tribunal benches, made structural: when the plan recommends Tribunal,
+   *  every seat carries the bench its stances genuinely argue — the engine
+   *  seats benches from this instead of guessing by kind (field fix:
+   *  "sides split 10 vs 0" on a director-recommended Tribunal) */
+  side?: "pro" | "con";
 }
 
 export interface CastPlan {
@@ -72,7 +77,7 @@ export function castingPlanSystem(targetSeats?: number, composition?: "experts" 
     `"scale": {"experts": N, "residents": N}, ` +
     `"mode": "Agora|Roundtable|Tribunal|Chamber|Jury|Desk|Expedition", "mode_rationale": "your full reasoning", ` +
     `"mode_summary": "ONE plain sentence — why this discussion format fits", ` +
-    `"seats": [{"role": "...", "kind": "expert|consumer|resident|stakeholder|adversarial", "discipline": "...", "why": "...", "query": "..."}]}\n` +
+    `"seats": [{"role": "...", "kind": "expert|consumer|resident|stakeholder|adversarial", "discipline": "...", "why": "...", "query": "...", "side": "pro|con (Tribunal ONLY — omit otherwise)"}]}\n` +
     `The two *_summary fields are USER-FACING: crisp, concrete, no hedging, and never reference these rules or instructions.\n\n` +
     `Composition rules (non-negotiable):\n` +
     `- Feasibility / engineering / underwriting / legal questions → experts only.\n` +
@@ -88,7 +93,7 @@ export function castingPlanSystem(targetSeats?: number, composition?: "experts" 
     `- query: 2-4 lowercase keywords to find this person in a persona library (e.g. "grid interconnection utility").\n` +
     `- Keep the seat list TIGHT so it always completes: no prose outside the JSON.\n` +
     `Mode guide: Agora = open deliberation (default); Roundtable = equals, every voice each round; Tribunal = genuinely two-sided dispute; ` +
-    `Chamber = independent takes then blind peer review; Jury = independent scored verdicts; Desk = research memo; Expedition = deep background research.\nIf you recommend Tribunal, the seats MUST form two real benches: at least two seats whose stances argue FOR the thesis and at least two AGAINST (the adversarial seat counts as against).`
+    `Chamber = independent takes then blind peer review; Jury = independent scored verdicts; Desk = research memo; Expedition = deep background research.\nIf you recommend Tribunal, the seats MUST form two real benches: EVERY seat carries "side": "pro" or "con", the split is balanced (never more lopsided than 60/40), each seat's "why" argues ITS side genuinely (a cost estimator who has seen conversions fail belongs con; a precedent-focused market seat belongs pro), and the adversarial seat is always con. For every other mode, omit "side" entirely.`
   );
 }
 
@@ -160,6 +165,8 @@ export interface SeatMeta {
   /** leads deliberate in the forum; crowd members are the §4.1 full-run
    * population — sampled as interjectors and polled for sentiment (§5) */
   tier?: "lead" | "crowd";
+  /** genuine Tribunal bench, assigned at cast time (see CastSeat.side) */
+  side?: "pro" | "con";
 }
 
 export type FrozenSpec = PersonaSpec & { seat: SeatMeta };

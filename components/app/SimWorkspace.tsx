@@ -589,6 +589,13 @@ export default function SimWorkspace({
         const expertSide = initialSeats.length - residentSide;
         const scale = initialCasting?.scale ?? { experts: expertSide, residents: residentSide };
         const crowd = Math.max(scale.experts - expertSide, 0) + Math.max(scale.residents - residentSide, 0);
+        // Tribunal benches exactly as the engine will seat them: explicit
+        // seat.side when the cast carries it, the kind heuristic otherwise
+        const sided = initialSeats.some((x) => x.spec.seat?.side === "pro" || x.spec.seat?.side === "con");
+        const benchCon = sided
+          ? initialSeats.filter((x) => x.spec.seat?.side === "con" || (!x.spec.seat?.side && x.spec.seat?.adversarial)).length
+          : initialSeats.filter((x) => x.spec.kind === "consumer" || x.spec.kind === "resident" || x.spec.seat?.adversarial).length;
+        const benchPro = initialSeats.length - benchCon;
         return (
           // the whole workspace is already dimmed while a run is live (the
           // wrapper above); the server-side 409 remains the hard gate
@@ -600,6 +607,8 @@ export default function SimWorkspace({
             leads={initialSeats.length}
             expertSide={expertSide}
             residentSide={residentSide}
+            benchPro={benchPro}
+            benchCon={benchCon}
             crowd={crowd}
             initialRun={initialRun}
             initialTools={initialTools}

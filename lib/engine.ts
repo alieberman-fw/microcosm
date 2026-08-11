@@ -153,6 +153,18 @@ export function textSimilarity(a: string, b: string): number {
 }
 
 /** models love opening with "**Their Name.**" — strip any self-prefix */
+/** models occasionally leak reasoning as LITERAL text — field report: a
+ *  Tribunal post opened "<thinking> This is a roleplay as Grigor Petrosyan…".
+ *  Closed blocks are removed wherever they sit; an UNCLOSED opening tag means
+ *  everything after it is reasoning, so it all goes. An empty result rides
+ *  the existing empty-draft retry/skip machinery in speak(). */
+export function stripThinking(text: string): string {
+  let out = text.replace(/<\s*(thinking|think|reasoning|scratchpad|reflection)\s*>[\s\S]*?<\s*\/\s*\1\s*>/gi, " ");
+  const open = out.match(/<\s*(thinking|think|reasoning|scratchpad|reflection)\s*>/i);
+  if (open) out = out.slice(0, open.index);
+  return out.replace(/[ \t]{3,}/g, " ").trim();
+}
+
 export function stripSelfPrefix(text: string, name: string): string {
   const first = name.split(/\s+/)[0];
   return text
@@ -258,7 +270,7 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
     // broken — stop with the real API error instead of littering the feed with
     // skipped posts (the escalation makes thinking-drain effectively impossible)
     if (!text) throw new Error(`${lead.spec.name}'s turn failed ${budgets.length} times — ${lastErr}`);
-    return { text, cites };
+    return { text: stripThinking(text), cites };
   };
 
   let { text, cites } = await attempt();
@@ -987,9 +999,14 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       }
     }
   } else if (ctx.mode === "Tribunal") {
-    // benches by kind first, then AUTO-BALANCE: a 7-v-1 cast still gets a
-    // real contest — the skeptic plus the nearest leads move to the thin side
-    const con = ctx.leads.filter((l) => l.spec.kind === "consumer" || l.spec.kind === "resident" || l.spec.seat?.adversarial);
+    // benches: EXPLICIT seat.side first (the Casting Director assigns genuine
+    // benches when it recommends Tribunal — field fix "sides split 10 vs 0"),
+    // falling back to the kind heuristic for casts made without sides; then
+    // AUTO-BALANCE so a 7-v-1 cast still gets a real contest
+    const hasSides = ctx.leads.some((l) => l.spec.seat?.side === "pro" || l.spec.seat?.side === "con");
+    const con = hasSides
+      ? ctx.leads.filter((l) => l.spec.seat?.side === "con" || (!l.spec.seat?.side && l.spec.seat?.adversarial))
+      : ctx.leads.filter((l) => l.spec.kind === "consumer" || l.spec.kind === "resident" || l.spec.seat?.adversarial);
     const pro = ctx.leads.filter((l) => !con.includes(l));
     if (ctx.leads.length >= 4) {
       while (con.length < 2 && pro.length > 2) con.push(pro.pop()!);
