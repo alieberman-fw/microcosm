@@ -28,7 +28,7 @@ export class FakeClock {
 
 /* ---------------------------- call classification ------------------------ */
 
-export type CallKind = "turn" | "poll" | "pollx" | "pollq" | "router" | "judge" | "burst" | "votes" | "tracker" | "census" | "unknown";
+export type CallKind = "turn" | "poll" | "pollx" | "pollq" | "router" | "judge" | "burst" | "votes" | "tracker" | "census" | "digest" | "unknown";
 
 export function classify(system: string): CallKind {
   if (system.includes("Forum rules")) return "turn";
@@ -41,6 +41,7 @@ export function classify(system: string): CallKind {
   if (system.includes('"stable" or "moving"')) return "judge";
   if (system.includes("audit a deliberation transcript")) return "tracker";
   if (system.includes("closing position census")) return "census";
+  if (system.includes("position ledger")) return "digest";
   return "unknown";
 }
 
@@ -51,6 +52,8 @@ export interface FakeOptions {
   tickMs?: number;
   /** closing position census reply (audit E-B6); default = everyone aligned */
   census?: (call: FakeCall) => string;
+  /** position-ledger reply (audit E-A4); default = empty (no ledger) */
+  digest?: (call: FakeCall) => string;
   /** stability judge script: verdict for the Nth judge call (1-based); default all "moving" */
   judgeScript?: (n: number) => "stable" | "moving";
   /** 3e — override the votes responder (e.g. a greedy voter who blows past
@@ -144,6 +147,8 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
       text = (opts.judgeScript?.(judgeN) ?? "moving");
     } else if (kind === "census") {
       text = opts.census?.(call) ?? '{"dissenters": []}';
+    } else if (kind === "digest") {
+      text = opts.digest?.(call) ?? "";
     } else {
       // turn — jury verdicts get scripted scores, everything else prose.
       // Round comes from the Jury INSTRUCTION ("Deliberation round N of M"),

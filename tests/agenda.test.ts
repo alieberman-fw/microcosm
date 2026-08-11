@@ -30,10 +30,10 @@ describe("pollAngleForRound — the adaptive schedule", () => {
     expect(seq).toEqual(["Gut read", "Gut read", "Gut read", "Category pick", "Category pick", "Category pick", "Back the pick", "Back the pick"]);
   });
 
-  it("a short run drops trailing angles rather than flickering (3 rounds → only the early angle)", () => {
+  it("the default 3-round run gets TWO angles (Wave 3, audit E-C1 — the plan used to be inert)", () => {
     const seq = [1, 2, 3].map((r) => pollAngleForRound(ANGLES, r, 3)!.angle);
-    expect(seq).toEqual(["Gut read", "Gut read", "Gut read"]);
-    // 4-5 rounds afford two angles
+    expect(seq).toEqual(["Gut read", "Gut read", "Category pick"]);
+    // 4 rounds still afford exactly two angles
     expect([1, 2, 3, 4].map((r) => pollAngleForRound(ANGLES, r, 4)!.angle)).toEqual(["Gut read", "Gut read", "Category pick", "Category pick"]);
   });
 

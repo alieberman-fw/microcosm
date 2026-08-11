@@ -113,3 +113,28 @@ describe("compilePersonaPrompt (Wave 2b) — personas know their world", () => {
     expect(sys).not.toContain("Constraints in play");
   });
 });
+
+describe("Wave 3 — feedback loops", () => {
+  it("windowOf overlays net votes on transcript lines", async () => {
+    const { windowOf } = await import("@/lib/engine");
+    const posts = [
+      { name: "Ana R.", role: "Zoning", content: "The variance holds.", tag: "POST", seq: 1 },
+      { name: "Bo L.", role: "Planner", content: "It does not.", tag: "REPLY", seq: 2 },
+    ];
+    const w = windowOf(posts, 16, new Map([[1, 3], [2, -1]]));
+    expect(w).toContain("[▲3]");
+    expect(w).toContain("[▼1]");
+    expect(windowOf(posts)).not.toContain("▲"); // no votes → unchanged
+  });
+  it("pickReplyTarget weights endorsed posts up", async () => {
+    const { pickReplyTarget } = await import("@/lib/engine");
+    const posts = [
+      { seq: 1, round: 1, tag: "POST", agentKey: "a", name: "A", content: "Argument one, quiet.", replyTo: null },
+      { seq: 2, round: 1, tag: "POST", agentKey: "b", name: "B", content: "Argument two, heavily endorsed.", replyTo: null },
+    ];
+    // recency favors seq 2 already; flip it: votes on seq 1 must overcome
+    const votes = new Map([[1, 3]]);
+    const withVotes = pickReplyTarget(posts, 1, 0, undefined, "focused", votes);
+    expect(withVotes?.seq).toBe(1);
+  });
+});

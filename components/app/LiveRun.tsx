@@ -1413,7 +1413,10 @@ export default function LiveRun({
                     </div>
                   )}
                   <div style={{
-                    marginTop: isInterjection ? 8 : 14,
+                    // field fix: replies under a post that ends in a search
+                    // card + cite chips sat visually flush — depth > 0 gets
+                    // more air than root posts
+                    marginTop: isInterjection ? 8 : depth > 0 ? 20 : 14,
                     // reddit-style nesting: indent per reply depth (visual cap 5), chain line in --ln3
                     marginLeft: (viewMode === "Tribunal" && p.side === "con" ? 20 : 0) + depth * 18,
                     paddingLeft: depth > 0 ? 12 : 0,
