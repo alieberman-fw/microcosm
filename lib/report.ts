@@ -749,3 +749,15 @@ export function filterCites(cites: unknown, valid: Set<number>): number[] {
     .filter((c) => c > 0 && valid.has(c))
     .slice(0, 8);
 }
+
+
+/** audit R-H9: transcript slices were HEAD-first — on long runs the FINAL
+ *  rounds (convergence, flips, closing positions) were silently the first
+ *  content dropped. Middle-clip keeps the opening AND the close, with the
+ *  same honest marker the analyst uses. */
+export function middleClip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const head = Math.floor(max * 0.55);
+  const tail = max - head;
+  return `${text.slice(0, head)}\n\n[… TRANSCRIPT CLIPPED FOR LENGTH — ${text.length - max} CHARACTERS FROM THE MIDDLE OMITTED; THE OPENING AND THE CLOSING ROUNDS ARE INTACT …]\n\n${text.slice(-tail)}`;
+}

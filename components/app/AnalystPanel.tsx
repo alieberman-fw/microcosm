@@ -31,6 +31,16 @@ const DEFAULT_W = 460;
 /** [seq] citations render as INLINE chips via the cite-aware Markdown —
  *  splitting the text around chips at the block level broke paragraphs
  *  (orphaned commas, chips on their own lines — field report) */
+/** field report: artifact documents render [N] cite pills that did nothing —
+ *  the viewer iframe is script-dead by design. This injects ONE bridge script
+ *  (the sandbox stays same-origin-less, so it can only postMessage) that makes
+ *  .cite pills clickable and reports the seq to the parent, which drives the
+ *  same transcript jump the chat's chips use. */
+function injectCiteBridge(html: string): string {
+  const bridge = `<style>.cite{cursor:pointer}</style><script>document.addEventListener("click",function(e){var el=e.target&&e.target.closest?e.target.closest(".cite"):null;if(!el)return;var n=parseInt((el.textContent||"").replace(/[^0-9]/g,""),10);if(n>0)parent.postMessage({__mc_cite:n},"*");});</scr` + `ipt>`;
+  return html.includes("</body>") ? html.replace("</body>", `${bridge}</body>`) : html + bridge;
+}
+
 function CitedText({ content, onCite }: { content: string; onCite: (seq: number) => void }) {
   return <Markdown text={content} onCite={onCite} />;
 }
@@ -60,6 +70,15 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
   const [docsOpen, setDocsOpen] = useState(false);
   const [viewing, setViewing] = useState<ArtifactMeta | null>(null);
   const [viewDoc, setViewDoc] = useState<string | null>(null);
+  // artifact cite pills bridge here (see injectCiteBridge)
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const seq = (e.data as { __mc_cite?: unknown } | null)?.__mc_cite;
+      if (typeof seq === "number" && seq > 0) onCite(seq);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [onCite]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState("");
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
@@ -139,7 +158,7 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
         setError(res.status === 404 ? "That document was deleted" : "Could not open the document");
         return;
       }
-      setViewDoc(await res.text());
+      setViewDoc(injectCiteBridge(await res.text()));
     } catch {
       setViewing(null);
       setError("Could not open the document");
@@ -424,7 +443,7 @@ export default function AnalystDock({ simId, onWidthChange, onCite }: {
             </button>
           </div>
           {viewDoc ? (
-            <iframe title={viewing.name} srcDoc={viewDoc} sandbox="" style={{ flex: 1, width: "100%", border: "none", background: "var(--bg)" }} />
+            <iframe title={viewing.name} srcDoc={viewDoc} sandbox="allow-scripts" style={{ flex: 1, width: "100%", border: "none", background: "var(--bg)" }} />
           ) : (
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <Orb state="working" size={20} tone="quiet" aria-label="Opening the document" />

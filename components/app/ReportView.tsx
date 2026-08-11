@@ -1309,7 +1309,7 @@ export default function ReportView({
                     return (
                       <div key={p.seq}>
                         {divider && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "18px 0 4px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0 12px" }}>
                             <span style={{ flex: 1, height: 1, background: "var(--ln2)" }} />
                             <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>ROUND {p.round}</span>
                             <span style={{ flex: 1, height: 1, background: "var(--ln2)" }} />
