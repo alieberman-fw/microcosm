@@ -227,18 +227,24 @@ export async function POST(request: Request) {
           // tool-use loop: artifact ops execute between hops; plain replies
           // exit on the first pass (stop_reason end_turn)
           for (let hop = 0; hop < MAX_TOOL_HOPS; hop++) {
-            const res = await anthropic.messages.create({
+            // beta namespace + files-api beta: the substrate carries the corpus
+            // as document blocks with source {type:"file"} — the plain
+            // namespace 400s on them (field report: analyst broke on any sim
+            // with parsed documents). Same pattern as /ask and the engine.
+            const res = await anthropic.beta.messages.create({
               model: replyModel,
               max_tokens: artifactRt ? ANALYST_MAX_TOKENS : REPLY_MAX_TOKENS,
               system,
+              betas: ["files-api-2025-04-14"],
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               tools: tools.length ? (tools as any) : undefined,
-              messages,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              messages: messages as any,
             });
             inTok += res.usage?.input_tokens ?? 0;
             outTok += res.usage?.output_tokens ?? 0;
-            text += res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-            const toolUses = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+            text += res.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text").map((b) => b.text).join("");
+            const toolUses = res.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
             if (res.stop_reason !== "tool_use" || toolUses.length === 0 || !artifactRt) break;
             messages.push({ role: "assistant", content: res.content });
             const results = [];
