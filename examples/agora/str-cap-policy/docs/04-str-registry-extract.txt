@@ -1,0 +1,43 @@
+TOWN OF HARBORVIEW — STR LICENSE REGISTRY, ANNUAL EXTRACT
+Town Clerk / Code Enforcement · All data synthetic/demonstration
+
+ACTIVE LICENSES
+- Whole-home licenses: 1,058 (18.9% of 5,600 dwelling units)
+- Home-share licenses: 214 (exempt from proposed cap)
+
+OWNERSHIP PROFILE (whole-home licenses)
+- Owner domicile: 42% in-county · 58% OUT-OF-COUNTY (of which 23%
+  out-of-state). Entity ownership (LLC/LP/trust): 61% of licenses.
+- Concentration: top 10 owners hold 328 licenses (31%); top 50 hold 512
+  (48%). 411 owners (39% of licenses) hold exactly one.
+- Licenses on properties purchased within the last 5 years: 54%.
+- Licenses on properties that had a residential utility account in the
+  owner's or a tenant's name for 9+ months/year at any point since 2019:
+  57% (the town's best single proxy for "was recently year-round housing").
+
+OPERATIONS (trailing 12 months, platform-monitoring contractor data)
+- Median nights booked: 118/year (occupancy ~61% of available nights;
+  median availability 194 nights)
+- Average daily rate: $286 peak season · $151 shoulder
+- Whole-home listings active 240+ nights/year (business-pattern operation):
+  37% of licenses
+- Listings active fewer than 60 nights/year: 18%
+
+BY NEIGHBORHOOD (whole-home licenses / share of housing stock)
+- Harbor District: 342 / 31% · Eastport: 261 / 24% · The Bluffs: 176 / 19%
+- Midtown: 141 / 9% · West End: 86 / 6% · Salt Marsh: 52 / 4%
+
+ENFORCEMENT (trailing 24 months)
+- Complaints: 486 (noise 41%, parking 27%, trash 17%, occupancy 15%)
+- Sustained violations: 133 across 97 properties; 9 properties account for
+  61 sustained violations. Revocations under current code: 0.
+- Estimated unlicensed listings detected by contractor: 60–75 at any time.
+
+TURNOVER
+- Licensed properties sold in the last 12 months: 64 (6.0% turnover).
+  Under Ordinance 26-04 Section 3(b), each sale would retire a license
+  while the count exceeds the cap.
+
+CLERK'S NOTE
+This extract is produced annually for the Council. It reports registry
+facts only and takes no position on Ordinance 26-04.

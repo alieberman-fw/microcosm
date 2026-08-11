@@ -1,7 +1,8 @@
 # Demo examples — one flagship use case per interaction mode
 
-Seven copy-paste-ready real-estate simulations, each built to show a specific
-interaction mode at its best. Every example folder contains:
+Ten copy-paste-ready real-estate simulations — one flagship per interaction
+mode, plus three extra Agora scenarios (the flagship mode carries the deepest
+bench). Every example folder contains:
 
 - **`BRIEF.md`** — the problem statement, questions-to-resolve, and success
   criteria, formatted as paste-ready blocks for the brief composer (`/sim/new`).
@@ -16,6 +17,9 @@ interaction mode at its best. Every example folder contains:
 | Mode | Example | The question | Built to show |
 |---|---|---|---|
 | **Agora** | [`agora/mall-redevelopment`](agora/mall-redevelopment) | Redevelop a dying regional mall into a mixed-use district? | The full open-forum grammar: threads, reply chains, crowd interjections, votes, Take the Floor |
+| **Agora** | [`agora/data-center-campus`](agora/data-center-campus) | Exercise a $18M option on 190 acres for a 250MW data center campus? | The Site 47-A shape run live: power vs. water vs. abatement politics, a broker timeline the utility's own study contradicts |
+| **Agora** | [`agora/office-to-resi`](agora/office-to-resi) | Buy a 71%-vacant office tower at $45/SF and convert to 240 units? | Numeric contradictions end to end — teaser vs. feasibility vs. market vs. the incentive fine print; the verifier's showcase |
+| **Agora** | [`agora/str-cap-policy`](agora/str-cap-policy) | Should a coastal town cap short-term rentals at 12% of dwellings? | The policy-impact shape with the biggest crowd (400 residents): dueling studies, per-round sentiment shift, a whip-count consent map |
 | **Roundtable** | [`roundtable/unit-mix-workshop`](roundtable/unit-mix-workshop) | Which of three unit-mix schemes for a 280-unit project? | Every voice each round + the CROSSFIRE half-round at bustling density |
 | **Tribunal** | [`tribunal/rezoning-rehearsal`](tribunal/rezoning-rehearsal) | Will the 380-unit rezoning survive the council hearing? | Two benches, COUNTER volleys, the judge's round-by-round scale, approval-odds framing |
 | **Chamber** | [`chamber/parcel-valuation`](chamber/parcel-valuation) | What is a fair price for a 38-acre industrial parcel asking $12.5M? | Blind independent valuations (no anchoring) → peer review → a defended price range — the flagship §2 valuation use case |

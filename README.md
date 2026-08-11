@@ -313,7 +313,7 @@ Working in **Claude Code**? A preview config ships in [`.claude/launch.json`](.c
 ├── components/             # Nav, Hero, app shell, Conversations, PersonaManager, RunScreen…
 ├── lib/                    # personas + prompt compiler, chat model tiers, supabase clients, event schema, fixtures
 ├── engine/                 # Python FastAPI + swarms simulation service (skeleton)
-├── examples/               # 7 demo-ready simulations, one per mode: paste-ready briefs, uploadable diligence docs, run configs (examples/README.md)
+├── examples/               # 10 demo-ready simulations — one per mode + 3 extra Agora scenarios: paste-ready briefs, uploadable diligence docs, run configs (examples/README.md)
 ├── scripts/                # generate-personas.mjs (persona foundry)
 ├── supabase/migrations/    # schema, RLS, conversations, monitoring, library search, model overrides
 ├── docs/                   # persona taxonomy (~1,100 base personas), speaker script
