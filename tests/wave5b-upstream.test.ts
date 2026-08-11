@@ -108,3 +108,26 @@ describe("nextKeyOffset (U-H35) — keys never collide after a deletion", () => 
     expect(nextKeyOffset([])).toBe(0);
   });
 });
+
+describe("report schema grammar budget (smoke-caught 400)", () => {
+  it("the lead keeps the fact-gate cites but NOT walk_away_label/drivers — the bisected fit", async () => {
+    const { REPORT_JSON_SCHEMA } = await import("@/lib/report");
+    const lead = (REPORT_JSON_SCHEMA as { properties: { lead: { properties: Record<string, unknown> } } }).properties.lead.properties;
+    // the fact gate's cites stay
+    expect(lead.cites).toBeDefined();
+    // the two fields cut to fit the structured-outputs grammar ceiling —
+    // re-adding EITHER requires re-running the live grammar bisect first
+    expect(lead.walk_away_label).toBeUndefined();
+    expect(lead.drivers).toBeUndefined();
+  });
+
+  it("oddsDriversFromBasis: drivers travel ' · '-joined inside basis", async () => {
+    const { oddsDriversFromBasis } = await import("@/lib/report");
+    expect(oddsDriversFromBasis("council calendar · organized opposition · staff report tone"))
+      .toEqual(["council calendar", "organized opposition", "staff report tone"]);
+    expect(oddsDriversFromBasis("single driver")).toEqual(["single driver"]);
+    expect(oddsDriversFromBasis("a · b · c · d · e")).toHaveLength(4); // capped
+    expect(oddsDriversFromBasis("")).toBeUndefined();
+    expect(oddsDriversFromBasis(undefined)).toBeUndefined();
+  });
+});
