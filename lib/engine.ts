@@ -475,11 +475,16 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
   if (ctx.polledRounds.has(round)) return null; // already polled before a suspension
   // 6-PR3 adaptive polling (§6d): the contract's poll PLAN supersedes the
   // single launch-derived instrument — each round asks the angle matched to
-  // its place in the run's arc. An EMPTY plan is a decision: this brief has
-  // no sentiment surface, so no poll card exists at all (interjections and
-  // votes still run). pollPlan null = legacy contract-less path, unchanged.
-  const angle = ctx.pollPlan === null ? null : pollAngleForRound(ctx.pollPlan, round, ctx.cfg.rounds);
-  if (ctx.pollPlan !== null && !angle) return null;
+  // its place in the run's arc. An EMPTY plan is a decision ("this brief has
+  // no sentiment surface") — but a MATERIALIZED CROWD is the newer, more
+  // explicit decision (field report: 113 residents ringed the canvas and
+  // were never asked anything). When the population includes a crowd, an
+  // empty plan falls back to the launch-derived classic instrument instead
+  // of silencing the crowd entirely; with no crowd the guard above already
+  // returned. pollPlan null = legacy contract-less path, unchanged.
+  const plan = ctx.pollPlan !== null && ctx.pollPlan.length === 0 ? null : ctx.pollPlan;
+  const angle = plan === null ? null : pollAngleForRound(plan, round, ctx.cfg.rounds);
+  if (plan !== null && !angle) return null;
   const pollQ = angle?.question ?? ctx.pollQuestion;
   const pollOpts = angle ? (angle.options ?? []) : ctx.pollOptions;
   // question-matched answer labels (poll-language fix): the members are polled

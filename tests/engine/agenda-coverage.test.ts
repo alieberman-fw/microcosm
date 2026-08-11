@@ -122,14 +122,25 @@ describe("the adaptive poll plan", () => {
     expect(Object.keys(sents[3].dist)).toEqual(expect.arrayContaining(["kitchens", "charging"]));
   });
 
-  it("an EMPTY plan polls not at all — votes and interjections still run", async () => {
+  it("an EMPTY plan with a MATERIALIZED CROWD falls back to the classic instrument (field report: 113 residents, zero polls)", async () => {
     const h = makeHarness({
       mode: "Agora", leads: makeLeads(3), crowd: makeCrowd(8), cfg: { rounds: 2, convergence: "fixed", density: "lively" },
       subAsks: ASKS, pollPlan: [],
     });
     await runMode(h.ctx);
-    expect(h.events.some((e) => e.type === "sentiment")).toBe(false);
+    const sents = h.events.filter((e): e is Extract<typeof h.events[number], { type: "sentiment" }> => e.type === "sentiment");
+    expect(sents.length).toBe(2); // the crowd exists to be polled — every round, launch question
+    for (const s2 of sents) expect(s2.question).toBe("Should the builder spend the leftover budget on the pool?");
     expect(h.events.some((e) => e.type === "votes")).toBe(true);
+  });
+
+  it("an EMPTY plan with NO crowd stays silent — the decision stands where there is nobody to poll", async () => {
+    const h = makeHarness({
+      mode: "Agora", leads: makeLeads(3), cfg: { rounds: 2, convergence: "fixed" },
+      subAsks: ASKS, pollPlan: [],
+    });
+    await runMode(h.ctx);
+    expect(h.events.some((e) => e.type === "sentiment")).toBe(false);
   });
 
   it("no plan (legacy contract or none) → the single launch-derived instrument, every round", async () => {
