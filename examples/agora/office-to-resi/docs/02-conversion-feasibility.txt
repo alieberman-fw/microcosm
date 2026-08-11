@@ -1,0 +1,42 @@
+MERIDIAN TOWER — CONVERSION FEASIBILITY STUDY (EXECUTIVE SUMMARY)
+Halbrook Architecture + Corrigan Construction Group · For: Riverport Conversion LLC
+All information synthetic/demonstration
+
+1. FLOOR PLATE ANALYSIS
+- Typical tower floor (floors 13–22): 13,400 SF, 42-ft core-to-window depth.
+  Converts cleanly: 11 units/floor, 82% efficiency. GOOD.
+- Podium floors (4–12): 15,900 SF with a 78-FT core-to-window depth on the
+  north and east faces (1986 expansion added deep bays for trading floors).
+  At code-required light and ventilation, 18–22% of each podium floor cannot
+  be a bedroom or living room without cutting a LIGHT WELL (structural scope,
+  est. $4.6–5.8M total) or accepting interior "flex" space with no window.
+- Achievable unit count without light wells: 214 units (not 240).
+  With light wells: 236 units, at the cost above and 9 months of schedule.
+
+2. BUILDING SYSTEMS
+- Window system: original 1986 non-operable single-glaze curtain wall.
+  Residential code requires operables in sleeping rooms; full replacement is
+  the only practical path. Est. $28/SF of facade → $8.7M.
+- Risers: two wet stacks serve the core; residential distribution requires
+  6 new risers and full horizontal re-pipe. Est. $19.40/SF.
+- Elevators: two cabs still original (1986); modernization required for
+  residential service levels. Est. $2.3M.
+- ACM: encapsulated fireproofing on floors 4–9 becomes disturbance scope
+  during riser and light-well work; abatement allowance $3.1M.
+
+3. COST CONCLUSION
+Published per-SF figures from 2021–2023 conversions (the teaser's basis) are
+NOT REPRESENTATIVE of this building: none had deep-bay podium floors, all
+pre-dated 2024–2026 facade and MEP escalation, and two were gut-lite hotel
+conversions. Our estimate for Meridian, 240-unit scheme with light wells:
+
+  HARD COST: $242–265/SF of building area ($75.0M–$82.2M)
+  plus soft costs, financing, and contingency typically adding 22–28%.
+
+A $185/SF all-in execution of this scope is not supported by any line-item
+path we can construct.
+
+4. SCHEDULE
+Design + permits 10 months; construction 22–26 months (light-well scheme).
+Vacant-possession requirement: three office tenants hold leases past 2027;
+buyout allowance recommended at $1.9M.

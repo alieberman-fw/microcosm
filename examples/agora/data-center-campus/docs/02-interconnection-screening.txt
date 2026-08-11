@@ -1,0 +1,43 @@
+PVEC LARGE LOAD INTERCONNECTION — PRELIMINARY SCREENING STUDY (EXCERPTS)
+Pedernales Valley Electric Cooperative · Study LL-2026-014 · Requested load: 250MW
+All information synthetic/demonstration
+
+1. REQUEST SUMMARY
+Applicant requests 250MW of firm delivery to a proposed data center campus at
+FM 1854 / CR 227. This screening is PRELIMINARY and does not reserve capacity;
+reservation occurs only upon an executed interconnection agreement and posted
+security, following the full study sequence below.
+
+2. EXISTING SYSTEM CAPABILITY
+- The Lockhart Ridge 138kV circuit serving the area has a normal-condition
+  headroom of 71MW at the nearest tap; accounting for committed queue-ahead
+  load, deliverable headroom to this site is 58–62MW.
+- Conclusion: the existing system supports an initial tranche of
+  approximately 60MW ("bridge service") with a new customer substation and
+  a 0.7-mile 138kV tap. Estimated bridge availability: 20–24 months from
+  agreement, subject to transformer procurement.
+
+3. FULL REQUEST (250MW)
+- Service above ~62MW requires a new 345/138kV source substation at or near
+  Bastrop Junction and a 6.2-mile 345kV radial, plus upstream network
+  upgrades identified by ERCOT's large-load study process.
+- The request has been assigned to the 2026-B large-load study cluster.
+  Cluster study results are expected in Q1 2027; facilities study to follow.
+- Assuming timely execution and current equipment lead times (345kV
+  transformers: 28–34 months), the cooperative's planning estimate for full
+  250MW energization is 48–60 MONTHS from the date of this study.
+- The applicant may elect to fund the source substation under a
+  contribution-in-aid arrangement; preliminary estimate $46–58M. Self-funding
+  compresses the facilities phase by an estimated 8–12 months but does not
+  bypass the cluster study.
+
+4. QUEUE CONTEXT
+Eleven large-load applications totaling 2,940MW are active in this planning
+area. Two applications ahead of this request share the same source
+limitation. Withdrawal rates in recent clusters have averaged 40%; the
+cooperative does not advise counting on attrition for schedule purposes.
+
+5. DISCLAIMER
+No statement in this study constitutes a reservation of capacity or a
+commitment to a schedule. Marketing representations of "reserved" capacity
+prior to an executed agreement are not made by, or on behalf of, PVEC.

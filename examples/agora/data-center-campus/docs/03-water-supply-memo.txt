@@ -1,0 +1,44 @@
+CITY OF LOCKHART RIDGE — RECLAIMED WATER SERVICE ASSESSMENT (STAFF MEMO)
+Public Works & Utilities Dept · Memo to City Manager · All information synthetic/demonstration
+
+RE: Requested reclaimed-water service, proposed data center campus, FM 1854
+
+1. SYSTEM CAPACITY
+- The Southside Water Reclamation Facility currently treats an annual average
+  of 6.8 MGD and is permitted to 9.5 MGD.
+- Existing reuse commitments (golf, municipal irrigation, one industrial
+  customer): 3.4 MGD contract maximum.
+- Firm UNCOMMITTED reuse capacity available today: 2.1 MGD annual average.
+  Peak-month availability is lower: 1.4 MGD, driven by summer irrigation
+  draw from existing contract holders.
+
+2. THE REQUEST, AS RECEIVED
+The applicant's inquiry describes an "air-cooled campus" requiring
+approximately 0.35 MGD for adiabatic assist and domestic use. Staff notes,
+however, that the tenant term sheet shared in the pre-application meeting
+specifies HYBRID COOLING with a peak-day demand of up to 1.8 MGD and an
+annual average of 0.9–1.1 MGD at full 250MW build-out. These are materially
+different systems from the city's planning perspective. The applicant should
+be required to state the cooling design before any commitment is sized.
+
+3. APPROVAL PATH
+- Reuse commitments above 1.0 MGD require CITY COUNCIL approval by ordinance,
+  including a drought curtailment schedule. Staff-level approval is limited
+  to 1.0 MGD and below.
+- The 2024 Reuse Master Plan identifies the FM 1854 corridor as a candidate
+  service area; it does not commit capacity to any customer. A 3.1-mile
+  16-inch purple-pipe extension is estimated at $7.2M, customer-funded.
+- Council has directed staff to prioritize reuse for projects with permanent
+  employment above 100 FTE per MGD; a data center at 0.9–1.1 MGD average and
+  ~90 permanent FTE would score below that threshold as drafted.
+
+4. DROUGHT POSTURE
+The region entered Stage 2 drought restrictions twice in the last four years.
+Any reuse contract will carry curtailment provisions; the applicant's
+resilience plan (on-site storage, air-side economizer fallback) should be
+required as a condition of service.
+
+RECOMMENDATION
+Do not represent reuse capacity as committed. Require the applicant to
+declare cooling design, fund the extension, and accept curtailment terms;
+route any commitment above 1.0 MGD to Council with a public hearing.
