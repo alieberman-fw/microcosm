@@ -312,7 +312,9 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
 
       // 5 · cast — the classic casting-theater swarm plays while seats land
       setStage("cast", "active");
-      const cres = await fetch(`/api/simulations/${id}/cast`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      // Wave 2a: the composer's mode pick (null = AUTO) reaches CASTING, so
+      // the panel is designed for the chosen choreography, not just run in it
+      const cres = await fetch(`/api/simulations/${id}/cast`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mode ? { interaction_mode: mode } : {}) });
       if (!cres.ok || !cres.body) {
         const d = await cres.json().catch(() => ({}));
         throw new Error((d as { error?: string }).error ?? "Casting failed — RUN again to retry");

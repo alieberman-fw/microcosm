@@ -61,15 +61,23 @@ export interface CastPlan {
   seats: CastSeat[];
 }
 
-export function castingPlanSystem(targetSeats?: number, composition?: "experts" | "consumers" | "mixed"): string {
+export function castingPlanSystem(targetSeats?: number, composition?: "experts" | "consumers" | "mixed", interactionMode?: (typeof SIM_MODES)[number]): string {
   const seatCount = targetSeats
     ? `EXACTLY ${Math.min(Math.max(targetSeats, 4), MAX_SEATS)} seats (the user chose this panel size — hit it).`
     : `6-${MAX_SEATS} seats.`;
   const compLine = composition
     ? `THE USER REQUIRES composition "${composition}" — set composition to exactly this value and choose seat kinds accordingly. This overrides the composition rules below.\n`
     : "";
+  // Wave 2a: an explicit mode is a design CONSTRAINT, not a suggestion — the
+  // panel must be built for that choreography (benches for Tribunal, breadth
+  // of independent judgment for Jury, section owners for Desk, scouts for
+  // Expedition, resident weight for a community-facing Agora)
+  const modeLine = interactionMode
+    ? `THE USER REQUIRES interaction mode "${interactionMode}" — set mode to exactly this value and design the seats FOR this choreography. This overrides the mode guide below.\n`
+    : "";
   return (
     compLine +
+    modeLine +
     `You are the Casting Director for Microcosm, an agent-swarm simulation platform for real estate decisions. ` +
     `Given a research brief and the diligence corpus inventory, design the ideal panel. Reply with ONLY a JSON object:\n` +
     `{"composition": "experts|consumers|mixed", "rationale": "your full reasoning, 2-4 sentences", ` +
@@ -93,7 +101,7 @@ export function castingPlanSystem(targetSeats?: number, composition?: "experts" 
     `- query: 2-4 lowercase keywords to find this person in a persona library (e.g. "grid interconnection utility").\n` +
     `- Keep the seat list TIGHT so it always completes: no prose outside the JSON.\n` +
     `Mode guide: Agora = open deliberation (default); Roundtable = equals, every voice each round; Tribunal = genuinely two-sided dispute; ` +
-    `Chamber = independent takes then blind peer review; Jury = independent scored verdicts; Desk = research memo; Expedition = deep background research.\nIf you recommend Tribunal, the seats MUST form two real benches: EVERY seat carries "side": "pro" or "con", the split is balanced (never more lopsided than 60/40), each seat's "why" argues ITS side genuinely (a cost estimator who has seen conversions fail belongs con; a precedent-focused market seat belongs pro), and the adversarial seat is always con. For every other mode, omit "side" entirely.`
+    `Chamber = independent takes then blind peer review; Jury = independent scored verdicts; Desk = research memo; Expedition = deep background research.\nIf the mode is Tribunal (your recommendation OR the user requirement above), the seats MUST form two real benches: EVERY seat carries "side": "pro" or "con", the split is balanced (never more lopsided than 60/40), each seat's "why" argues ITS side genuinely (a cost estimator who has seen conversions fail belongs con; a precedent-focused market seat belongs pro), and the adversarial seat is always con. For every other mode, omit "side" entirely.`
   );
 }
 
@@ -121,7 +129,7 @@ export function castingGenerateSystem(): string {
     `"traits": {"risk_tolerance": 0.0-1.0, "agreeableness": 0.0-1.0, "verbosity": 0.0-1.0}, ` +
     `"demographics": {"age": N, "metro": "City", "state": "ST", "years_experience": N, "credentials": "...", "occupation": "...", "income_band": "$X–YK", "tenure": "owner|renter", "household": "..."}}]\n` +
     `Rules: every persona is a synthetic composite — never a real person. Full names must be distinct from each other and from the avoid-list. ` +
-    `Ground each persona in the geography and asset type of the brief. Adversarial seats get stances that genuinely attack the thesis with professional credibility, not strawmen. ` +
+    `Ground each persona in the geography and asset type of the brief. A seat line marked "tribunal bench: CON" gets stances that GENUINELY oppose the thesis from its professional experience (not assigned contrarianism); a PRO bench seat genuinely supports it. Adversarial seats get stances that genuinely attack the thesis with professional credibility, not strawmen. ` +
     `Ages, experience, income, credentials must be mutually coherent.`
   );
 }

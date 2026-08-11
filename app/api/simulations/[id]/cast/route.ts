@@ -31,7 +31,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
   }
 
-  let body: { guidance?: string; mode?: string; seats?: number; composition?: string };
+  let body: { guidance?: string; mode?: string; seats?: number; composition?: string; interaction_mode?: string };
   try {
     body = await request.json();
   } catch {
@@ -41,6 +41,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const addMode = body.mode === "add";
   const targetSeats = typeof body.seats === "number" ? Math.min(Math.max(Math.round(body.seats), 4), MAX_SEATS) : undefined;
   const compOverride = (["experts", "consumers", "mixed"] as const).find((c) => c === body.composition);
+  // Wave 2a: an explicit user mode (AUTO omits it) becomes a plan CONSTRAINT —
+  // the director designs the seats FOR the chosen choreography
+  const forcedMode = SIM_MODES.find((m) => m === body.interaction_mode);
   if (addMode && !guidance) return NextResponse.json({ error: "Describe who to add" }, { status: 400 });
 
   const { data: userRow } = await supabase.from("users").select("org_id").eq("id", user.id).single();
@@ -74,9 +77,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const questions = normalizeQuestions(brief.questions);
   const success = normalizeSuccess(brief.success);
+  // Wave 2a (audit U-H1/H2): the understanding contract reaches casting.
+  // QuickRun briefs carry EMPTY questions — the decomposed sub-asks are the
+  // real ask list, so they back-fill whenever brief.questions is empty.
+  const contract = brief.contract;
+  const subAskLines = (contract?.sub_asks ?? []).map((a) => `- [${a.id}] ${a.ask}`);
+  const entityLine = (contract?.entities ?? []).length ? `SUBJECTS THE PANEL MUST COVER: ${contract!.entities!.join(" · ")}\n` : "";
+  const docRoleLines = (contract?.doc_roles ?? []).length
+    ? `DOCUMENT ROLES:\n${contract!.doc_roles!.map((r) => `- ${r.name}: ${r.role}${r.role === "framework" ? " (its standards BIND the panel — seat someone who can apply them)" : ""}`).join("\n")}\n`
+    : "";
+  const resolvedLines = (contract?.flags ?? []).filter((f) => f.answer)
+    .map((f) => `- ${f.question} → ${f.answer}`);
   const briefText =
     `PROBLEM: ${brief.problem}\n` +
     (questions.length ? `QUESTIONS TO RESOLVE:\n${questions.map((q) => `- ${q.label}${q.detail ? ` — ${q.detail}` : ""}`).join("\n")}\n` : "") +
+    (subAskLines.length ? `SUB-ASKS THE PANEL MUST OWN (from the understanding pass)${questions.length ? "" : " — these ARE the question list"}:\n${subAskLines.join("\n")}\n` : "") +
+    entityLine +
+    docRoleLines +
+    (resolvedLines.length ? `RESOLVED AMBIGUITIES (the user answered these — honor them):\n${resolvedLines.join("\n")}\n` : "") +
     (success.length ? `SUCCESS CRITERIA:\n${success.map((s) => `- ${s}`).join("\n")}\n` : "") +
     (brief.template && brief.template !== "Custom" ? `DECISION SHAPE (internal classification): ${brief.template}\n` : "") +
     (docLines.length ? `DILIGENCE CORPUS:\n${docLines.join("\n")}\n` : "DILIGENCE CORPUS: none uploaded yet\n") +
@@ -129,7 +147,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           const planRes = await anthropic.messages.create({
             model: CASTING_MODEL,
             max_tokens: 9000, // 20 seats + reasoning + summaries with adaptive-thinking headroom
-            system: addMode ? castingAddSystem(existingRoles, maxNew) : castingPlanSystem(targetSeats, compOverride),
+            system: addMode ? castingAddSystem(existingRoles, maxNew) : castingPlanSystem(targetSeats, compOverride, forcedMode),
             messages: [{ role: "user", content: briefText }],
           });
           await logCall("casting.plan", CASTING_MODEL, planRes.usage, t0, undefined, {
@@ -199,7 +217,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             experts: Math.min(Math.max(Number(raw.scale?.experts) || seats.length, 4), 500),
             residents: Math.min(Math.max(Number(raw.scale?.residents) || 0, 0), 1000),
           },
-          mode: SIM_MODES.find((m) => m === raw.mode) ?? "Agora",
+          mode: forcedMode ?? SIM_MODES.find((m) => m === raw.mode) ?? "Agora",
           modeRationale: clip(raw.mode_rationale, 900),
           modeSummary: clip((raw as { mode_summary?: unknown }).mode_summary ?? raw.mode_rationale, 260),
           seats,
@@ -331,7 +349,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                   role: "user",
                   content:
                     `BRIEF CONTEXT:\n${briefText}\nAVOID THESE NAMES: ${[...usedNames].slice(0, 60).join(", ") || "none"}\n\nSEATS TO CREATE:\n` +
-                    chunk.map((s) => `- seat_key ${s.key}: ${s.role} (kind ${s.kind}, discipline ${s.discipline}) — ${s.why}`).join("\n"),
+                    chunk.map((s) => `- seat_key ${s.key}: ${s.role} (kind ${s.kind}, discipline ${s.discipline}${s.side ? `, tribunal bench: ${s.side === "con" ? "CON — genuinely opposes the thesis" : "PRO — genuinely supports the thesis"}` : ""}) — ${s.why}`).join("\n"),
                 }],
               });
               await logCall("casting.generate", CASTING_MODEL, genRes.usage, t1, undefined, { seats: chunk.length, attempt });
