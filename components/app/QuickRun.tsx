@@ -49,6 +49,8 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
   const router = useRouter();
   const [problem, setProblem] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  // files added AT the review checkpoint — uploaded immediately, chip per file
+  const [lateDocs, setLateDocs] = useState<{ name: string; state: "up" | "ok" | "fail" }[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [mode, setMode] = useState<string | null>(null); // null = AUTO, the director decides
   const [rounds, setRounds] = useState(RUN_DEFAULTS.rounds);
@@ -95,14 +97,45 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
   useEffect(autosize, [problem]);
 
   const addFiles = (list: FileList | File[]) => {
+    const valid: File[] = [];
+    for (const f of Array.from(list)) {
+      if (f.size > MAX_DOC_BYTES) { setError(`Over the 50MB limit: ${f.name}`); continue; }
+      valid.push(f);
+    }
+    // at the review checkpoint the sim already exists — files upload NOW
+    // (field fix: the zone used to vanish here, stranding late diligence)
+    if (reviewing && createdId.current) { void uploadNow(valid); return; }
     setFiles((prev) => {
       const merged = [...prev];
-      for (const f of Array.from(list)) {
-        if (f.size > MAX_DOC_BYTES) { setError(`Over the 50MB limit: ${f.name}`); continue; }
+      for (const f of valid) {
         if (!merged.some((x) => x.name === f.name && x.size === f.size)) merged.push(f);
       }
       return merged.slice(0, 12);
     });
+  };
+
+  // review-checkpoint uploads: straight into the created sim's corpus, chip
+  // per file (uploading → in the corpus / failed), same 3-wide worker pool
+  const uploadNow = async (list: File[]) => {
+    const id = createdId.current;
+    if (!id || !list.length) return;
+    const fresh = list.filter((f) => !lateDocs.some((d) => d.name === f.name && d.state !== "fail"));
+    if (!fresh.length) return;
+    setLateDocs((prev) => [...prev.filter((d) => d.state !== "fail" || !fresh.some((f) => f.name === d.name)), ...fresh.map((f) => ({ name: f.name, state: "up" as const }))]);
+    const queue = [...fresh];
+    let next = 0;
+    const worker = async () => {
+      while (next < queue.length) {
+        const f = queue[next++];
+        const form = new FormData();
+        form.set("simId", id);
+        form.set("file", f);
+        let ok = false;
+        try { ok = (await fetch("/api/documents", { method: "POST", body: form })).ok; } catch { /* fail chip */ }
+        setLateDocs((prev) => prev.map((d) => (d.name === f.name ? { ...d, state: ok ? "ok" : "fail" } : d)));
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
   };
 
   // the no-surprise-bills rule: the estimate rides ON the run button.
@@ -124,6 +157,7 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
     setCrowd(null);
     setContract(null);
     setReviewing(false);
+    setLateDocs([]);
     setStages([
       { key: "create", label: files.length ? `UPLOADING ${files.length} FILE${files.length > 1 ? "S" : ""}` : "CREATING THE SIMULATION", state: "active" },
       { key: "understand", label: "UNDERSTANDING YOUR BRIEF", state: "pending" },
@@ -226,6 +260,8 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
 
   // the prompt was edited during review → the contract no longer matches
   const dirty = reviewing && problem.trim() !== reviewedProblem.current;
+  // checkpoint uploads still in flight → CAST & RUN waits for the corpus
+  const uploadingDocs = lateDocs.some((d) => d.state === "up");
 
   // re-derive: persist the edited brief, then run the understanding pass again
   const rederive = async () => {
@@ -352,7 +388,14 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
   });
 
   return (
-    <div style={{ animation: "fadeUp .5s ease both" }}>
+    // the WHOLE composer is a drop target (field fix: drops on the grown
+    // textarea used to hit the browser default and go nowhere)
+    <div
+      style={{ animation: "fadeUp .5s ease both" }}
+      onDragOver={(e) => { if (!running) { e.preventDefault(); setDragOver(true); } }}
+      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
+      onDrop={(e) => { if (!running) { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); } }}
+    >
       <div style={{ ...mono, fontSize: 12, letterSpacing: ".14em", color: "var(--acc)", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 2.2s infinite" }} />
         Quick run · one box, straight to the simulation
@@ -382,9 +425,10 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
         }}
       />
 
-      {/* files ride with the prompt (hidden during review — files upload in
-          phase 1; adding one here would silently miss the corpus) */}
-      {!running && !reviewing && (
+      {/* files ride with the prompt; at the review checkpoint the zone stays
+          (field fix: it used to vanish — "not letting me upload") and files
+          added there stream straight into the created sim's corpus */}
+      {!running && (
         <div
           onClick={() => pickRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -393,12 +437,12 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
           style={{
             marginTop: 12, border: `1px dashed ${dragOver ? "var(--acc)" : "var(--ln4)"}`,
             background: dragOver ? "var(--acc-dim)" : "transparent",
-            borderRadius: 10, padding: files.length ? "10px 14px" : "12px 16px", cursor: "pointer", transition: "all .15s",
+            borderRadius: 10, padding: files.length || lateDocs.length ? "10px 14px" : "12px 16px", cursor: "pointer", transition: "all .15s",
           }}
         >
-          {files.length === 0 ? (
+          {files.length === 0 && lateDocs.length === 0 ? (
             <div style={{ ...mono, fontSize: 9.5, letterSpacing: ".07em", color: dragOver ? "var(--acc)" : "var(--t7)", textAlign: "center" }}>
-              + DROP DILIGENCE FILES WITH THE PROMPT (OPTIONAL)
+              {reviewing ? "+ ADD DILIGENCE FILES — THEY JOIN THE CORPUS BEFORE CASTING" : "+ DROP DILIGENCE FILES WITH THE PROMPT (OPTIONAL)"}
             </div>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
@@ -406,6 +450,13 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
                 <span key={`${f.name}-${f.size}`} onClick={(e) => e.stopPropagation()} style={{ ...mono, display: "inline-flex", alignItems: "center", gap: 7, fontSize: 9.5, padding: "4px 11px", borderRadius: 100, border: "1px solid var(--ln5)", color: "var(--t3)" }}>
                   📄 {f.name.length > 30 ? `${f.name.slice(0, 28)}…` : f.name}
                   <button onClick={(e) => { e.stopPropagation(); setFiles((prev) => prev.filter((x) => !(x.name === f.name && x.size === f.size))); }} aria-label={`Remove ${f.name}`} style={{ background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0, fontSize: 12, lineHeight: 1 }}>×</button>
+                </span>
+              ))}
+              {lateDocs.map((d) => (
+                <span key={`late-${d.name}`} onClick={(e) => e.stopPropagation()} style={{ ...mono, display: "inline-flex", alignItems: "center", gap: 7, fontSize: 9.5, padding: "4px 11px", borderRadius: 100, border: `1px solid ${d.state === "fail" ? "var(--warn)" : d.state === "ok" ? "var(--acc)" : "var(--ln5)"}`, color: d.state === "fail" ? "var(--warn)" : d.state === "ok" ? "var(--acc)" : "var(--t3)" }}>
+                  {d.state === "up" && <Orb state="working" size={20} tone="quiet" aria-label="uploading" />}
+                  📄 {d.name.length > 30 ? `${d.name.slice(0, 28)}…` : d.name}
+                  {d.state === "ok" ? " · IN THE CORPUS" : d.state === "fail" ? " · FAILED — RE-ADD TO RETRY" : ""}
                 </span>
               ))}
               <span style={{ ...mono, fontSize: 9, letterSpacing: ".05em", color: "var(--t6)" }}>+ ADD MORE</span>
@@ -688,6 +739,16 @@ export default function QuickRun({ onClassic }: { onClassic: () => void }) {
                           ↻ Prompt changed — re-derive
                         </button>
                         <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--warn)" }}>THE READING ABOVE IS FROM YOUR EARLIER PROMPT</span>
+                      </>
+                    ) : uploadingDocs ? (
+                      <>
+                        <button
+                          disabled
+                          style={{ display: "inline-flex", alignItems: "center", gap: 9, background: "var(--sf2)", color: "var(--t5)", fontWeight: 600, fontSize: 13, padding: "10px 22px", borderRadius: 100, border: "1px solid var(--ln4)", cursor: "wait", fontFamily: "var(--font-sans), sans-serif" }}
+                        >
+                          <Orb state="working" size={20} tone="quiet" aria-label="uploading documents" /> Uploading your documents…
+                        </button>
+                        <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--t6)" }}>CAST &amp; RUN UNLOCKS WHEN THE CORPUS HAS THEM</span>
                       </>
                     ) : (
                       <>
