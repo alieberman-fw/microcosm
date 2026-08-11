@@ -74,7 +74,7 @@ describe("the resolution tracker", () => {
     expect(r2opener!.user).toContain("nobody named a single player");
   });
 
-  it("a garbage tracker reply keeps the previous coverage and never crashes the round", async () => {
+  it("a garbage tracker reply keeps the previous coverage — re-emitted FLAGGED stale (Wave 5a, E-G10)", async () => {
     let n = 0;
     const h = makeHarness({
       mode: "Agora", leads: makeLeads(3), cfg: { rounds: 2, convergence: "fixed" }, subAsks: ASKS,
@@ -82,8 +82,13 @@ describe("the resolution tracker", () => {
     });
     const result = await runMode(h.ctx);
     expect(result.stopReason).toBe("rounds");
-    const cov = h.events.filter((e) => e.type === "coverage");
-    expect(cov.length).toBe(1); // round 2's failed pass ships nothing new
+    const cov = h.events.filter((e): e is Extract<typeof e, { type: "coverage" }> => e.type === "coverage");
+    // round 1 ships fresh scores; round 2's failed pass re-emits them STALE
+    // instead of freezing the strip unmarked
+    expect(cov.length).toBe(2);
+    expect(cov[0].stale).toBeUndefined();
+    expect(cov[1].stale).toBe(true);
+    expect(cov[1].scores).toEqual(cov[0].scores);
   });
 
   it("resume never re-tracks a completed round", async () => {

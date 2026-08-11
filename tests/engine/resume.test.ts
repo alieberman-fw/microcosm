@@ -57,7 +57,7 @@ describe("suspend/resume", () => {
     expect(new Set(all).size).toBe(all.length);
   });
 
-  it("mid-poll deadline: emits the partial tally honestly and marks the round polled", async () => {
+  it("mid-poll deadline: partial tally ships FLAGGED and the round stays unmarked for a re-poll (Wave 5a, E-C7)", async () => {
     // 120 crowd = 6 batches; deadline lets ~2 batches through before workers stop
     const h = makeHarness({ mode: "Roundtable", leads: makeLeads(2), crowd: makeCrowd(120), cfg: { rounds: 1, convergence: "fixed" }, deadlineInMs: 3500 });
     await runMode(h.ctx);
@@ -65,7 +65,17 @@ describe("suspend/resume", () => {
     expect(sentiments).toHaveLength(1);
     expect(sentiments[0].polled).toBeGreaterThan(0);
     expect(sentiments[0].polled).toBeLessThan(120); // partial, not fabricated-full
-    expect(h.ctx.polledRounds.has(1)).toBe(true);   // won't re-poll on resume
+    expect(sentiments[0].partial).toBe(true);       // the truncation is VISIBLE on the event
+    expect(h.ctx.polledRounds.has(1)).toBe(false);  // unmarked → the next slice re-polls in full
+  });
+
+  it("a COMPLETE poll carries no partial flag and marks the round polled", async () => {
+    const h = makeHarness({ mode: "Roundtable", leads: makeLeads(2), crowd: makeCrowd(20), cfg: { rounds: 1, convergence: "fixed" } });
+    await runMode(h.ctx);
+    const s = h.events.filter((e): e is Extract<typeof e, { type: "sentiment" }> => e.type === "sentiment")[0];
+    expect(s.partial).toBeUndefined();
+    expect(s.polled).toBe(20);
+    expect(h.ctx.polledRounds.has(1)).toBe(true);
   });
 
   it("polledRounds: an already-polled round is never re-polled on resume", async () => {

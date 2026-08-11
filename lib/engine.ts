@@ -37,13 +37,16 @@ export type EngineEvent =
   | { type: "tool"; agent_key: string; name: string; tool: string; query: string; results: { title: string; url: string }[]; round: number }
   | { type: "presence"; agent_key: string; name: string; state: "thinking" | "speaking" | "idle" }
   | { type: "polling"; round: number; count: number }
-  | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[]; question?: string; options?: string[]; ballots?: { name: string; stance: string }[]; angle?: string }
+  | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[]; question?: string; options?: string[]; ballots?: { name: string; stance: string }[]; angle?: string; coerced?: number; dropped?: number; partial?: boolean }
   | { type: "votes"; round: number; votes: { seq: number; voter_key: string; voter_name: string; voter_role: string; vote: 1 | -1 }[] }
   | { type: "convergence"; aligned: number; total: number; dissents: number; dissenters?: string[]; measured?: boolean }
   // 6-PR3 — rounds that walk the brief (§6c): the round's agenda label and
   // the resolution tracker's per-sub-ask scores (the COVERAGE strip)
   | { type: "agenda"; round: number; label: string; detail: string }
-  | { type: "coverage"; round: number; scores: CoverageScore[] };
+  | { type: "coverage"; round: number; scores: CoverageScore[]; stale?: boolean }
+  // Wave 5a (audit E-G1): a skipped turn leaves a TRACE — the feed and the
+  // telemetry both see the hole instead of silently reflowing around it
+  | { type: "skip"; agent_key: string; name: string; round: number; tag: string };
 
 export interface EngineContext {
   /** Wave 2b (E-F1): the brief contract's success criteria + constraints —
@@ -86,6 +89,10 @@ export interface EngineContext {
    *  coverage events on resume) */
   coverage: CoverageScore[];
   trackedRounds: Set<number>;                           // tracker passes already run (resume safety)
+  /** Wave 5a (audit E-G7): votes cast in EARLIER slices — rebuilt from the
+   *  persisted votes events so pair-dedupe, per-voter budgets, and the ▲/▼
+   *  net overlay survive a slice boundary instead of double-counting */
+  priorVoteEvents?: { round: number; votes: { seq: number; voter_key: string; vote: 1 | -1 }[] }[];
   emit: (e: EngineEvent) => Promise<void>;              // persists + streams
   logCall: (surface: string, model: string, usage: { input_tokens: number; output_tokens: number } | null, t0: number, error?: string, detail?: Record<string, unknown>) => Promise<void>;
   isCancelled: () => boolean;
@@ -156,14 +163,16 @@ export const clampWords = (s: string, max = 220) => {
 };
 
 /** cheap token-overlap similarity (0–1) — the duplicate-post detector.
- *  Exported PURE so tests pin the threshold behavior. */
+ *  Wave 5a (audit E-D2): JACCARD, not min-denominator — a short post whose
+ *  words all appear inside a long one used to score 1.0 (containment) and
+ *  trigger false do-not-restate retries. Exported PURE so tests pin it. */
 export function textSimilarity(a: string, b: string): number {
   const tok = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2));
   const A = tok(a), B = tok(b);
   if (A.size === 0 || B.size === 0) return 0;
   let inter = 0;
   for (const w of A) if (B.has(w)) inter += 1;
-  return inter / Math.min(A.size, B.size);
+  return inter / (A.size + B.size - inter);
 }
 
 /** models love opening with "**Their Name.**" — strip any self-prefix */
@@ -191,8 +200,9 @@ export function stripSelfPrefix(text: string, name: string): string {
 async function speak(ctx: EngineContext, lead: EngineLead, opts: {
   seq: number; round: number; thread: string; tag: string; reply_to?: number | null;
   instruction: string; transcript: string; phase?: string; side?: string; maxTokens?: number;
-  /** this speaker's earlier posts this round — a near-duplicate draft gets ONE
-   *  do-not-restate retry (the "Benjamin K. said it twice" fix) */
+  /** posts the draft must not restate — the speaker's own recent posts
+   *  (all rounds) plus the panel's latest (audit E-D1); a near-duplicate
+   *  draft gets ONE do-not-restate retry (the "Benjamin K. twice" fix) */
   dedupeAgainst?: string[];
   /** 3e parallel waves: generate WITHOUT emitting the post — the caller emits
    *  the returned event in slot order so the feed stays seq-ordered even
@@ -295,7 +305,7 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
   if (opts.dedupeAgainst?.some((prev) => textSimilarity(text, prev) >= 0.8)) {
     try {
       const redo = await attempt(
-        "IMPORTANT: Your draft repeated a post you already made this round. Do NOT restate it — " +
+        "IMPORTANT: Your draft substantially repeats a point already on the record (yours or a colleague's). Do NOT restate it — " +
         "contribute a NEW argument, a NEW number, or engage a DIFFERENT colleague's point directly."
       );
       text = redo.text;
@@ -322,6 +332,8 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
     await ctx.logCall("engine.turn", model, null, Date.now(), "empty post after strip — skipped",
       { agent: lead.spec.name, mode: ctx.mode, round: opts.round, tag: opts.tag });
     await ctx.emit({ type: "presence", agent_key: lead.key, name: lead.spec.name, state: "idle" });
+    // audit E-G1: the hole is VISIBLE — a persisted marker instead of a silent reflow
+    await ctx.emit({ type: "skip", agent_key: lead.key, name: lead.spec.name, round: opts.round, tag: opts.tag });
     return { seq: opts.seq, text: "" };
   }
   // 3d — every search this turn ran becomes a shared panel fact and a feed
@@ -340,6 +352,9 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
     thread: opts.thread, reply_to: opts.reply_to ?? null, tag: opts.tag, content: text,
     cites: dedupeCites(cites).slice(0, 4), round: opts.round, phase: opts.phase, side: opts.side,
   };
+  // audit E-G2: the node stops pulsing when its turn lands — success used to
+  // leave the speaker in "thinking" forever
+  await ctx.emit({ type: "presence", agent_key: lead.key, name: lead.spec.name, state: "idle" });
   if (opts.deferEmit) return { seq: opts.seq, text, post: postEvt };
   await ctx.emit(postEvt);
   return { seq: opts.seq, text };
@@ -483,6 +498,14 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
   const ballots: { name: string; stance: string }[] = [];
   const batches: EngineCrowdMember[][] = [];
   for (let i = 0; i < ctx.crowd.length; i += BATCH) batches.push(ctx.crowd.slice(i, i + BATCH));
+  // Wave 5a poll integrity (audit E-C5/C6/C7): ballots validate against the
+  // roster (phantom names and duplicate answers are DROPPED, not counted),
+  // coerced answers ride the event, and a deadline-truncated poll ships
+  // flagged partial instead of passing as the round's sentiment
+  const answered = new Set<string>();     // member keys that already cast a ballot
+  let totalCoerced = 0;
+  let totalDropped = 0;
+  let batchesDone = 0;
   let next = 0;
   const worker = async () => {
     while (next < batches.length) {
@@ -519,7 +542,14 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
         const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
         const rows = (parseLooseArray(text) ?? []) as { name?: string; stance?: string; choice?: string; quote?: string }[];
         let coerced = 0;
+        let dropped = 0;
         for (const r of rows) {
+          // audit E-C6: a ballot counts ONLY for a real roster member, once —
+          // model-invented names and duplicate answers used to inflate the tally
+          const member = batch.find((m) => m.spec.name === r.name)
+            ?? batch.find((m) => r.name && m.spec.name.startsWith(String(r.name).split(" ")[0]));
+          if (!member || answered.has(member.key)) { dropped += 1; continue; }
+          answered.add(member.key);
           let stance: string;
           if (choice) {
             const norm = normalizeChoice(r.choice ?? r.stance, pollOpts);
@@ -532,10 +562,13 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
             if (!norm) coerced += 1;
           }
           dist[stance] += 1;
-          ballots.push({ name: String(r.name ?? "Crowd member").slice(0, 60), stance });
-          if (r.quote && quotes.length < 6) quotes.push({ name: String(r.name ?? "Crowd member"), stance, quote: String(r.quote).slice(0, 160) });
+          ballots.push({ name: member.spec.name.slice(0, 60), stance });
+          if (r.quote && quotes.length < 6) quotes.push({ name: member.spec.name, stance, quote: String(r.quote).slice(0, 160) });
         }
-        if (coerced > 0) await ctx.logCall("engine.poll", model, null, t0, undefined, { note: "unrecognized stances coerced", coerced, round });
+        totalCoerced += coerced;
+        totalDropped += dropped;
+        batchesDone += 1;
+        if (coerced > 0 || dropped > 0) await ctx.logCall("engine.poll", model, null, t0, undefined, { note: "ballot integrity", coerced, dropped, round });
       } catch (e) {
         await ctx.logCall("engine.poll", model, null, t0, e instanceof Error ? e.message : "poll failed");
       }
@@ -543,11 +576,13 @@ async function pollCrowd(ctx: EngineContext, round: number, digest?: string): Pr
   };
   await Promise.all(Array.from({ length: Math.min(3, batches.length) }, worker));
   const polled = Object.values(dist).reduce((a, b) => a + b, 0);
-  // the round counts as polled only once results actually shipped — an
-  // aborted poll gets re-run in full on the next slice
+  // audit E-C7: a deadline-truncated poll ships FLAGGED partial and the round
+  // stays unmarked — the next slice re-polls in full and its complete event
+  // supersedes this one (readers keep the last event per round)
+  const partial = batchesDone < batches.length;
   if (polled > 0) {
-    ctx.polledRounds.add(round);
-    await ctx.emit({ type: "sentiment", round, polled, dist, quotes, question: pollQ, ballots, ...(choice ? { options: pollOpts } : {}), ...(!choice && labels ? { labels } : {}), ...(angle ? { angle: angle.angle } : {}) });
+    if (!partial) ctx.polledRounds.add(round);
+    await ctx.emit({ type: "sentiment", round, polled, dist, quotes, question: pollQ, ballots, ...(choice ? { options: pollOpts } : {}), ...(!choice && labels ? { labels } : {}), ...(angle ? { angle: angle.angle } : {}), ...(totalCoerced > 0 ? { coerced: totalCoerced } : {}), ...(totalDropped > 0 ? { dropped: totalDropped } : {}), ...(partial ? { partial: true } : {}) });
     // Wave 3 (audit E-A1): the crowd's read RETURNS to the panel — the next
     // round's speakers see what the population they're arguing about thinks
     const share = (n: number) => `${Math.round((n / polled) * 100)}%`;
@@ -833,6 +868,30 @@ export function pickReplyTarget(
 
 /** why the run stopped — the UI and the report must never claim convergence
  *  for a mode that simply finished its fixed choreography */
+/** audit E-D4: Chamber's anti-mold opening angles — 12 deep so big panels
+ *  don't recycle, offset per problem so runs don't share molds. Exported
+ *  PURE so tests pin the count and the offset determinism. */
+export const chamberAngles = [
+  "Open with the single most decisive NUMBER from your domain and build from it.",
+  "Open with a specific place, project, or deal you know first-hand and what it proves here.",
+  "Open with the failure mode you'd bet on — what breaks first, and at what threshold.",
+  "Open with the question the brief should have asked but didn't, then answer it.",
+  "Open with the strongest point AGAINST your own instinct, then say why you still land where you land.",
+  "Open with a timeline — what has to happen by when, and where the calendar kills the plan.",
+  "Open with the one comparable everyone will cite and why it does (or does not) transfer here.",
+  "Open with who bears the downside if this goes wrong, and what that does to the decision.",
+  "Open with the cheapest test that would settle the biggest unknown before committing.",
+  "Open with the regulatory or approval step most likely to move the calendar, and its real odds.",
+  "Open with what the money has to believe — the underwriting assumption doing the most work.",
+  "Open with the second-order effect nobody prices — what this decision sets in motion.",
+] as const;
+
+export function chamberAngleOffset(problem: string): number {
+  let h = 0;
+  for (let i = 0; i < problem.length; i++) h = (h * 31 + problem.charCodeAt(i)) >>> 0;
+  return h % chamberAngles.length;
+}
+
 export type StopReason = "stability" | "rounds" | "budget" | "choreography";
 
 /** the seven §5 choreographies over shared primitives */
@@ -862,10 +921,14 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
     const { transcript, ...rest } = o;
     currentRound = o.round;
     seq += 1;
-    // the speaker's own earlier posts this round feed the anti-repeat check
-    const dedupeAgainst = posts
-      .filter((p) => p.agentKey === lead.key && p.round === o.round)
-      .map((p) => p.content);
+    // audit E-D1: the anti-repeat check sees the speaker's own posts across
+    // ALL rounds (last 4) plus the panel's most recent 6 substantive posts —
+    // a cross-round or cross-speaker restatement used to pass, then read as
+    // "stable" to the convergence judge
+    const dedupeAgainst = [
+      ...posts.filter((p) => p.agentKey === lead.key).slice(-4).map((p) => p.content),
+      ...posts.filter((p) => p.agentKey !== lead.key && p.tag !== "INTERJECTION" && p.tag !== "TALLY").slice(-6).map((p) => p.content),
+    ];
     const r = await speak(ctx, lead, { seq, transcript: transcript ?? windowOf(posts, 16, voteNet), dedupeAgainst, ...rest });
     // ghost-post guard: a skipped (empty) turn records nothing — the seq gap
     // is harmless, an empty PostRec would poison every later transcript
@@ -912,10 +975,16 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
       const rows = (parseLooseArray(text) ?? []) as { name?: string; seq?: number; reaction?: string }[];
       const valid = new Set(roundPosts.map((p) => p.seq));
+      let retargeted = 0;
+      let droppedRows = 0;
       for (const r of rows) {
         const member = members.find((m) => m.spec.name === r.name) ?? members.find((m) => r.name && m.spec.name.startsWith(String(r.name).split(" ")[0]));
-        if (!member || !r.reaction) continue;
-        const target = valid.has(Number(r.seq)) ? Number(r.seq) : roundPosts[roundPosts.length - 1].seq;
+        if (!member || !r.reaction) { droppedRows += 1; continue; }
+        // audit E-G9: a bad seq still lands on the round's last post, but the
+        // retarget is COUNTED now instead of silently rewriting the thread
+        const onTarget = valid.has(Number(r.seq));
+        if (!onTarget) retargeted += 1;
+        const target = onTarget ? Number(r.seq) : roundPosts[roundPosts.length - 1].seq;
         currentRound = round;
         seq += 1;
         const content = String(r.reaction).slice(0, 400);
@@ -925,6 +994,9 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
           thread: "CROWD", reply_to: target, tag: "INTERJECTION", content, cites: [], round,
         });
         posts.push({ name: member.spec.name, role: member.spec.seat?.role ?? member.spec.role, content, tag: "INTERJECTION", seq, agentKey: member.key, round, replyTo: target });
+      }
+      if (retargeted > 0 || droppedRows > 0) {
+        await ctx.logCall("engine.burst", model, null, t0, undefined, { note: "burst integrity", retargeted, dropped: droppedRows, round });
       }
     } catch (e) {
       await ctx.logCall("engine.burst", model, null, t0, e instanceof Error ? e.message : "burst failed");
@@ -1053,15 +1125,28 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       await ctx.logCall("engine.tracker", model, res.usage, t0, undefined, { mode: ctx.mode, round, sub_asks: ctx.subAsks.length });
       const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
       const scores = parseCoverage(parseLooseArray(text) ?? [], ctx.subAsks);
-      if (!scores) return;
-      // merge latest-wins per sub-ask, keeping sub-ask order
+      if (!scores) {
+        // audit E-G10: an unparseable tracker reply used to freeze the
+        // COVERAGE strip at stale values with no mark — re-emit them flagged
+        if (ctx.coverage.length) await ctx.emit({ type: "coverage", round, scores: ctx.coverage, stale: true });
+        return;
+      }
+      // merge latest-wins per sub-ask, keeping sub-ask order — EXCEPT settled
+      // asks (audit E-G8): once a sub-ask scores ≥85 it never drops (the
+      // tracker's sliding window forgets old rounds, and a forgotten-resolved
+      // ask used to send the panel back to re-litigate it)
       const byId = new Map(ctx.coverage.map((c) => [c.id, c]));
-      for (const s of scores) byId.set(s.id, s);
+      for (const s of scores) {
+        const prev = byId.get(s.id);
+        byId.set(s.id, prev && prev.score >= 85 && s.score < prev.score ? prev : s);
+      }
       ctx.coverage = ctx.subAsks.map((s) => byId.get(s.id)).filter((x): x is CoverageScore => Boolean(x));
       ctx.trackedRounds.add(round);
       await ctx.emit({ type: "coverage", round, scores: ctx.coverage });
     } catch (e) {
       await ctx.logCall("engine.tracker", model, null, t0, e instanceof Error ? e.message : "tracker failed");
+      // E-G10: same stale re-emit on a thrown tracker call
+      if (ctx.coverage.length) await ctx.emit({ type: "coverage", round, scores: ctx.coverage, stale: true });
     }
   };
   // Wave 3 feedback loops: the crowd's read and the position ledger flow
@@ -1071,6 +1156,23 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
   // Wave 3 (audit E-A3): running net endorsement per post — rendered into
   // every transcript window and weighted into reply targeting
   const voteNet = new Map<number, number>();
+  // audit E-G7: earlier slices' votes seed the pair-dedupe, the budgets, and
+  // the ▲/▼ net overlay — a slice boundary used to reset all three, so a
+  // resumed round could re-cast the same votes and double-count the feed
+  for (const ev of ctx.priorVoteEvents ?? []) {
+    const pairs = votedPairs.get(ev.round) ?? new Set<string>();
+    votedPairs.set(ev.round, pairs);
+    const budgets = voteBudget.get(ev.round) ?? new Map<string, { up: number; down: number }>();
+    voteBudget.set(ev.round, budgets);
+    for (const v of ev.votes) {
+      if (pairs.has(`${v.seq}:${v.voter_key}`)) continue;
+      pairs.add(`${v.seq}:${v.voter_key}`);
+      const b = budgets.get(v.voter_key) ?? { up: 0, down: 0 };
+      budgets.set(v.voter_key, b);
+      if (v.vote === -1) b.down += 1; else b.up += 1;
+      voteNet.set(v.seq, (voteNet.get(v.seq) ?? 0) + v.vote);
+    }
+  }
   const roundClose = async (round: number) => {
     const read = await pollCrowd(ctx, round, roundDigest(round));
     if (read) lastCrowdRead = read;
@@ -1211,7 +1313,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         currentRound = round;
         seq += 1;
         const jr = await speak(ctx, judge, { seq, round, thread: "TRIBUNAL", tag: "JUDGE'S NOTE", instruction: `As presiding judge, weigh THIS round only: who carried it and on what evidence? End with the scale: "Round to <side>, <x>–<y>".`, transcript: windowOf(posts), maxTokens: 800 });
-        record(judge, "JUDGE'S NOTE", jr.text);
+        if (jr.text) record(judge, "JUDGE'S NOTE", jr.text); // E-G5: an empty note must not poison did() or the window
       }
       // suspend at the round boundary rather than start a poll the slice can't finish
       if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
@@ -1220,14 +1322,10 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
   } else if (ctx.mode === "Chamber") {
     // blind takes drift into ONE rhetorical mold ("Everybody's chasing…" ×10)
     // when every prompt is identical — rotate the opening angle per seat
-    const angles = [
-      "Open with the single most decisive NUMBER from your domain and build from it.",
-      "Open with a specific place, project, or deal you know first-hand and what it proves here.",
-      "Open with the failure mode you'd bet on — what breaks first, and at what threshold.",
-      "Open with the question the brief should have asked but didn't, then answer it.",
-      "Open with the strongest point AGAINST your own instinct, then say why you still land where you land.",
-      "Open with a timeline — what has to happen by when, and where the calendar kills the plan.",
-    ];
+    // audit E-D4: 12 angles (panels over 6 used to recycle) with a seeded,
+    // resume-stable offset so two runs of the same panel don't share molds
+    const angles = chamberAngles;
+    const angleOff = chamberAngleOffset(ctx.problem);
     for (let li = 0; li < ctx.leads.length; li++) {
       const lead = ctx.leads[li];
       if (!budget()) break;
@@ -1235,13 +1333,15 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 1 };
       currentRound = 1;
       seq += 1;
-      const r = await speak(ctx, lead, { seq, round: 1, thread: "CHAMBER", tag: "INDEPENDENT TAKE", phase: "takes", instruction: `Write your INDEPENDENT take — you have NOT seen anyone else's. ${angles[li % angles.length]} ${q}`, transcript: "" });
-      record(lead, "INDEPENDENT TAKE", r.text);
+      const r = await speak(ctx, lead, { seq, round: 1, thread: "CHAMBER", tag: "INDEPENDENT TAKE", phase: "takes", instruction: `Write your INDEPENDENT take — you have NOT seen anyone else's. ${angles[(angleOff + li) % angles.length]} ${q}`, transcript: "" });
+      if (r.text) record(lead, "INDEPENDENT TAKE", r.text); // E-G5
     }
     if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 1 };
     await roundClose(1); // crowd reacts to the raw takes (poll + interjections + votes)
-    const takes = posts.filter((p) => p.tag === "INDEPENDENT TAKE");
-    for (let i = 0; i < ctx.leads.length && budget(); i++) {
+    const takes = posts.filter((p) => p.tag === "INDEPENDENT TAKE" && p.content.trim());
+    // E-G5: with zero surviving takes there is nothing to review — the loop
+    // used to peer-review an empty string (and % 0 would NaN the index)
+    for (let i = 0; i < ctx.leads.length && budget() && takes.length > 0; i++) {
       const reviewer = ctx.leads[i];
       if (did(reviewer.spec.name, "BLIND REVIEW")) continue;
       if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 2 };
@@ -1249,14 +1349,17 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       const target = takes[(i + 1) % takes.length];
       seq += 1;
       const r = await speak(ctx, reviewer, { seq, round: 2, thread: "CHAMBER", tag: "BLIND REVIEW", phase: "review", instruction: `Peer-review this ANONYMIZED take (author hidden): "${target.content}" — what holds, what breaks, what's missing?`, transcript: "" });
-      record(reviewer, "BLIND REVIEW", r.text);
+      if (r.text) record(reviewer, "BLIND REVIEW", r.text);
     }
     const chair = ctx.leads[0];
     if (outOfTime() && !did(chair.spec.name, "CHAIR SYNTHESIS")) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 3 };
-    currentRound = 3;
-    seq += 1;
-    const r = await speak(ctx, chair, { seq, round: 3, thread: "CHAMBER", tag: "CHAIR SYNTHESIS", phase: "synthesis", instruction: `As chair, synthesize the takes and reviews into the panel's position: points of consensus, live disagreements, and the recommendation.`, transcript: windowOf(posts, 24), maxTokens: 1400 });
-    record(chair, "CHAIR SYNTHESIS", r.text);
+    // E-G6: a resumed run whose synthesis already landed must not re-run it
+    if (!did(chair.spec.name, "CHAIR SYNTHESIS")) {
+      currentRound = 3;
+      seq += 1;
+      const r = await speak(ctx, chair, { seq, round: 3, thread: "CHAMBER", tag: "CHAIR SYNTHESIS", phase: "synthesis", instruction: `As chair, synthesize the takes and reviews into the panel's position: points of consensus, live disagreements, and the recommendation.`, transcript: windowOf(posts, 24), maxTokens: 1400 });
+      if (r.text) record(chair, "CHAIR SYNTHESIS", r.text);
+    }
     if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: 3 };
     await roundClose(3); // and to the chair's recommendation
     stopReason = "choreography"; // fixed shape complete — NOT convergence
@@ -1350,10 +1453,13 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
   } else if (ctx.mode === "Desk") {
     const director = ctx.leads[0];
     const workers = ctx.leads.slice(1);
-    currentRound = 1;
-    seq += 1;
-    const outline = await speak(ctx, director, { seq, round: 1, thread: "DESK", tag: "ASSIGNMENT", phase: "outline", instruction: `As desk director, assign one memo section to each analyst by name: ${workers.map((w) => w.spec.name).join(", ")}. One line per assignment. ${q}`, transcript: "" });
-    record(director, "ASSIGNMENT", outline.text);
+    // E-G6: the assignment used to re-run on every resumed slice
+    if (!did(director.spec.name, "ASSIGNMENT")) {
+      currentRound = 1;
+      seq += 1;
+      const outline = await speak(ctx, director, { seq, round: 1, thread: "DESK", tag: "ASSIGNMENT", phase: "outline", instruction: `As desk director, assign one memo section to each analyst by name: ${workers.map((w) => w.spec.name).join(", ")}. One line per assignment. ${q}`, transcript: "" });
+      if (outline.text) record(director, "ASSIGNMENT", outline.text);
+    }
     for (const w of workers) {
       if (!budget()) break;
       if (did(w.spec.name, "SECTION DRAFT")) continue;
@@ -1361,11 +1467,15 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       currentRound = 2;
       seq += 1;
       const r = await speak(ctx, w, { seq, round: 2, thread: "DESK", tag: "SECTION DRAFT", phase: "draft", instruction: `Draft YOUR assigned memo section per the director's assignment — findings first, evidence cited by document name.`, transcript: windowOf(posts, 6) });
-      record(w, "SECTION DRAFT", r.text);
+      if (r.text) record(w, "SECTION DRAFT", r.text);
     }
-    seq += 1;
-    const merge = await speak(ctx, director, { seq, round: 3, thread: "DESK", tag: "DIRECTOR'S MEMO", phase: "merge", instruction: `Merge the sections into the memo's executive summary: verdict, the three numbers that matter, and open risks.`, transcript: windowOf(posts, 20), maxTokens: 1400 });
-    record(director, "DIRECTOR'S MEMO", merge.text);
+    // E-G6: the memo used to re-run on every resumed slice
+    if (!did(director.spec.name, "DIRECTOR'S MEMO")) {
+      currentRound = 3;
+      seq += 1;
+      const merge = await speak(ctx, director, { seq, round: 3, thread: "DESK", tag: "DIRECTOR'S MEMO", phase: "merge", instruction: `Merge the sections into the memo's executive summary: verdict, the three numbers that matter, and open risks.`, transcript: windowOf(posts, 20), maxTokens: 1400 });
+      if (merge.text) record(director, "DIRECTOR'S MEMO", merge.text);
+    }
     stopReason = "choreography";
   } else if (ctx.mode === "Expedition") {
     const phases: { name: string; instruction: string }[] = [
@@ -1387,7 +1497,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         currentRound = pi + 1;
         seq += 1;
         const r = await speak(ctx, s, { seq, round: pi + 1, thread: "EXPEDITION", tag: ph.name, phase: ph.name, instruction: `${ph.instruction} ${pi === 0 ? q : ""}`, transcript: windowOf(posts, 10) });
-        record(s, ph.name, r.text);
+        if (r.text) record(s, ph.name, r.text); // E-G5
       }
     }
     stopReason = "choreography";
@@ -1413,7 +1523,11 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         const name = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
         const pick = ctx.leads.find((l) => name.includes(l.spec.name.split(" ")[0]) && l.key !== last.agentKey);
         if (pick) return { lead: pick, replyTo: last.seq };
-      } catch { /* fall through */ }
+      } catch (e) {
+        // audit E-G4: a 100%-failing router silently degraded Agora to
+        // round-robin with zero trace in monitoring
+        await ctx.logCall("engine.router", model, null, t0, e instanceof Error ? e.message : "router failed", { mode: ctx.mode });
+      }
       return { lead: ctx.leads[posts.length % ctx.leads.length], replyTo: last.seq };
     };
 
@@ -1491,7 +1605,15 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         const results = await Promise.all(wave.map((a) => speak(ctx, a.lead, {
           seq: a.mySeq, round, thread: a.lead.spec.seat?.discipline || "AGORA", tag: "REPLY", reply_to: a.target.seq,
           transcript: snapWindow,
-          dedupeAgainst: snapshot.filter((p) => p.agentKey === a.lead.key && p.round === round).map((p) => p.content),
+          // E-D1 + E-D3: own posts (all rounds) + the panel's recent posts +
+          // every post being replied to IN THIS WAVE — parallel wave-mates
+          // share a snapshot, so a reply that merely restates any wave
+          // target would otherwise land as an undetectable twin
+          dedupeAgainst: [
+            ...snapshot.filter((p) => p.agentKey === a.lead.key).slice(-4).map((p) => p.content),
+            ...snapshot.filter((p) => p.agentKey !== a.lead.key && p.tag !== "INTERJECTION" && p.tag !== "TALLY").slice(-6).map((p) => p.content),
+            ...wave.map((w2) => w2.target.content),
+          ],
           instruction:
             `${anchor(a.target)} Reply to it directly — agree with evidence, refute with specifics, or redirect to what actually matters. If you're changing your position, open with "Changing my position:".` +
             (a.target.round < round

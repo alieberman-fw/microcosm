@@ -72,6 +72,9 @@ export interface FakeOptions {
   /** 6-PR3 — the resolution tracker's reply; default scores every listed
    *  sub-ask (id, round-scaled) so coverage events flow in integration tests */
   trackerText?: (call: FakeCall, n: number) => string | undefined;
+  /** Wave 5a — override the sentiment-poll reply (ballot-integrity tests
+   *  script phantom names, duplicates, and unparseable stances) */
+  pollText?: (call: FakeCall, n: number) => string | undefined;
 }
 
 /* ------------------------------ the fake --------------------------------- */
@@ -103,8 +106,9 @@ export function makeFakeAnthropic(clock: FakeClock, opts: FakeOptions = {}) {
       text = "not json at all {{{";
     } else if (kind === "poll") {
       // answer AS each listed member, echoing their names back
+      const scripted = opts.pollText?.(call, n);
       const names = user.split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).split(":")[0]);
-      text = JSON.stringify(names.map((name, i) => ({
+      text = scripted ?? JSON.stringify(names.map((name, i) => ({
         name, stance: ["support", "conditional", "oppose", "disengaged"][i % 4], quote: `as ${name} says`,
       })));
     } else if (kind === "pollx") {
