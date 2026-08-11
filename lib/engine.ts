@@ -17,7 +17,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { CoverageScore, PollAngle, StanceLabels, SubAskLite, agendaForRound, coverageSystem, normalizeStanceLabels, parseCoverage, pollAngleForRound } from "@/lib/agenda";
 import { FrozenSpec } from "@/lib/casting";
 import { RunConfig, TIER_MODELS, agoraReplies, burstSize, counterSlots, crossfireSlots, dedupeCites, waveWidth as waveWidthOf } from "@/lib/run";
-import { parseLooseArray } from "@/lib/llm-json";
+import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { toolBlocksFor, toolPromptAddendum } from "@/lib/tools";
 
 export interface EngineLead {
@@ -39,7 +39,7 @@ export type EngineEvent =
   | { type: "polling"; round: number; count: number }
   | { type: "sentiment"; round: number; polled: number; dist: Record<string, number>; quotes: { name: string; stance: string; quote: string }[]; question?: string; options?: string[]; ballots?: { name: string; stance: string }[]; angle?: string }
   | { type: "votes"; round: number; votes: { seq: number; voter_key: string; voter_name: string; voter_role: string; vote: 1 | -1 }[] }
-  | { type: "convergence"; aligned: number; total: number; dissents: number }
+  | { type: "convergence"; aligned: number; total: number; dissents: number; dissenters?: string[]; measured?: boolean }
   // 6-PR3 — rounds that walk the brief (§6c): the round's agenda label and
   // the resolution tracker's per-sub-ask scores (the COVERAGE strip)
   | { type: "agenda"; round: number; label: string; detail: string }
@@ -553,9 +553,75 @@ async function stabilityCheck(ctx: EngineContext, transcript: string): Promise<b
     });
     await ctx.logCall("engine.converge", model, res.usage, t0, undefined, { mode: ctx.mode, check: "stability judge" });
     const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-    return text.toLowerCase().includes("stable");
-  } catch {
+    return parseStabilityVerdict(text);
+  } catch (e) {
+    // a failing judge must be visible in monitoring — it is NOT "moving"
+    await ctx.logCall("engine.converge", model, null, t0, e instanceof Error ? e.message : "stability judge failed", { mode: ctx.mode, check: "stability judge" });
     return false;
+  }
+}
+
+/** audit E-F7: a neutral Presiding Judge spec — carries NONE of the base
+ *  lead's backstory or standing stances; only an explicit impartiality
+ *  mandate. The base spec supplies nothing but structural defaults. */
+export function neutralJudgeSpec(base: FrozenSpec): FrozenSpec {
+  return {
+    ...base,
+    name: "The Judge",
+    initials: "JD",
+    role: "Presiding judge",
+    tagline: "Impartial adjudicator — no stake in the outcome",
+    backstory: "A neutral presiding judge appointed for this tribunal. You have argued for neither side and hold no position on the thesis.",
+    stances: [
+      "JUDICIAL MANDATE: weigh ONLY the evidence and arguments made in this tribunal — you have no standing positions of your own.",
+      "Rule each round for whichever bench carried it on the merits, and say exactly why.",
+    ],
+    skills: [],
+    traits: { risk_tolerance: 0.5, agreeableness: 0.5, verbosity: 0.4 },
+    seat: {
+      role: "Presiding judge", why: "rules each round on the merits", discipline: "TRIBUNAL",
+      adversarial: false, provenance: "generated",
+    },
+  };
+}
+
+/** audit E-B1: `includes("stable")` matched "unstable" / "not yet stable" and
+ *  could end a run early stamped CONVERGED. The verdict must BE the word:
+ *  the last non-empty line, exactly "stable" (punctuation tolerated). */
+export function parseStabilityVerdict(text: string): boolean {
+  const lines = stripThinking(text).split("\n").map((l) => l.trim()).filter(Boolean);
+  const last = (lines[lines.length - 1] ?? "").toLowerCase();
+  return /^\W*stable\W*$/.test(last);
+}
+
+/** the closing position census (audit E-B6): who actually dissents at the
+ *  end, by name — matched against the real roster so hallucinated names
+ *  never count. Null = the call failed; caller falls back, marked unmeasured. */
+async function positionCensus(ctx: EngineContext, posts: PostRec[]): Promise<{ aligned: number; dissenters: string[] } | null> {
+  if (ctx.leads.length === 0) return null;
+  const model = TIER_MODELS[ctx.cfg.tier].crowd;
+  const t0 = Date.now();
+  try {
+    const res = await ctx.anthropic.messages.create({
+      model, max_tokens: 500,
+      system:
+        `You take the closing position census of a deliberation panel. From the transcript's FINAL posts, ` +
+        `identify which panelists still DISSENT from the panel's emerging conclusion (disagree with the majority ` +
+        `direction, maintain an unresolved objection, or explicitly refuse the consensus). ` +
+        `Reply ONLY JSON: {"dissenters": ["Exact Name", ...]} — empty array if the panel closed aligned. ` +
+        `Use ONLY names from the roster. Do not include panelists who merely raised risks but accept the conclusion.`,
+      messages: [{ role: "user", content: `ROSTER: ${ctx.leads.map((l) => l.spec.name).join(" · ")}\n\n${windowOf(posts, 30).slice(-12000)}` }],
+    });
+    const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+    await ctx.logCall("engine.converge", model, res.usage, t0, undefined, { mode: ctx.mode, check: "position census" });
+    const parsed = parseLooseObject(text);
+    if (!parsed || !Array.isArray(parsed.dissenters)) return null;
+    const roster = new Set(ctx.leads.map((l) => l.spec.name));
+    const dissenters = [...new Set(parsed.dissenters.map((d) => String(d)).filter((n) => roster.has(n)))];
+    return { aligned: ctx.leads.length - dissenters.length, dissenters };
+  } catch (e) {
+    await ctx.logCall("engine.converge", model, null, t0, e instanceof Error ? e.message : "census failed", { mode: ctx.mode, check: "position census" });
+    return null;
   }
 }
 
@@ -719,9 +785,9 @@ export function pickReplyTarget(
 export type StopReason = "stability" | "rounds" | "budget" | "choreography";
 
 /** the seven §5 choreographies over shared primitives */
-export interface RunResume { posts: PostRec[]; seq: number; round: number }
+export interface RunResume { posts: PostRec[]; seq: number; round: number; stableStreak?: number }
 
-export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{ posts: number; converged: boolean; stopReason: StopReason; suspendedAtRound?: number }> {
+export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{ posts: number; converged: boolean; stopReason: StopReason; suspendedAtRound?: number; stableStreak?: number }> {
   const posts: PostRec[] = resume?.posts ? [...resume.posts] : [];
   let seq = resume?.seq ?? 0;
   let currentRound = 0;
@@ -736,7 +802,10 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
   const q = ctx.questions.length ? `Key questions: ${ctx.questions.join(" · ")}.` : "";
   let converged = false;
   let stopReason: StopReason = "rounds";
-  let stableStreak = 0; // stop only after TWO consecutive stable rounds (round ≥ 3)
+  // stop only after TWO consecutive stable rounds (round ≥ 3). Seeded from
+  // the resume state (audit E-B5: a slice boundary between two stable rounds
+  // used to reset the streak and keep the run going)
+  let stableStreak = resume?.stableStreak ?? 0;
 
   const turn = async (lead: EngineLead, o: { round: number; thread: string; tag: string; reply_to?: number | null; instruction: string; phase?: string; side?: string; transcript?: string }) => {
     const { transcript, ...rest } = o;
@@ -967,7 +1036,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       for (const lead of ctx.leads) {
         if (!budget()) break;
         if (did(lead.spec.name, `ROUND ${round}`, round)) continue; // resumed mid-round
-        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
         await turn(lead, {
           round, thread: "ROUNDTABLE", tag: `ROUND ${round}`,
           instruction: round === 1
@@ -982,7 +1051,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       for (const speaker of xfireSpeakers) {
         if (!budget()) break;
         if (did(speaker.spec.name, "CROSSFIRE", round)) continue;
-        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
         const target = pickReplyTarget(posts, round, posts.length, speaker.key, ctx.cfg.density);
         if (!target) break;
         await turn(speaker, {
@@ -991,7 +1060,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         });
       }
       // suspend at the round boundary rather than start a poll the slice can't finish
-      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
       await roundClose(round);
       if (ctx.cfg.convergence === "stability" && round >= 3) {
         stableStreak = (await stabilityCheck(ctx, windowOf(posts, 30))) ? stableStreak + 1 : 0;
@@ -1020,19 +1089,23 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       const start = ((round - 1) * size) % arr.length;
       return [...arr.slice(start), ...arr.slice(0, start)].slice(0, size);
     };
-    const judgeLead = proSide[0] ?? ctx.leads[0]; // strongest available voice chairs
-    const judge: EngineLead = { key: `${judgeLead.key}-judge`, spec: { ...judgeLead.spec, name: "The Judge", initials: "JD", role: "Presiding judge", seat: { ...(judgeLead.spec.seat ?? { role: "", why: "", discipline: "", adversarial: false, provenance: "generated" as const }), role: "Presiding judge" } } };
+    // audit E-F7: the judge used to be a CLONE of the pro bench's first lead —
+    // backstory and standing stances included — a structural pro-side bias in
+    // every round verdict. The judge is now a neutral spec with an explicit
+    // impartiality mandate and no inherited positions.
+    const judgeLead = proSide[0] ?? ctx.leads[0]; // anchor key only (stable resume identity)
+    const judge: EngineLead = { key: `${judgeLead.key}-judge`, spec: neutralJudgeSpec(judgeLead.spec) };
     for (let round = startRound; round <= ctx.cfg.rounds && budget(); round++) {
       for (const lead of bench(proSide, round)) {
         if (!budget()) break;
         if (did(lead.spec.name, "ARGUMENT", round)) continue;
-        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
         await turn(lead, { round, thread: "TRIBUNAL", tag: "ARGUMENT", side: "pro", instruction: `Round ${round}: argue FOR the thesis with your strongest specific evidence. ${q}` });
       }
       for (const lead of bench(residentSide, round)) {
         if (!budget()) break;
         if (did(lead.spec.name, "REBUTTAL", round)) continue;
-        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
         await turn(lead, { round, thread: "TRIBUNAL", tag: "REBUTTAL", side: "con", instruction: `Round ${round}: rebut the arguments just made — attack the weakest link with specifics.` });
       }
       // §2a counter-volley: density-scaled COUNTER slots alternating benches
@@ -1044,7 +1117,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         const benchArr = bench(side === "pro" ? proSide : residentSide, round);
         const speaker = benchArr[Math.floor(cvi / 2) % benchArr.length];
         if (did(speaker.spec.name, "COUNTER", round)) continue;
-        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
         // counter the OTHER side's latest volley
         const oppTags = side === "pro" ? ["REBUTTAL", "COUNTER"] : ["ARGUMENT", "COUNTER"];
         const opp = [...posts].reverse().find((p) => p.round === round && oppTags.includes(p.tag) && p.agentKey !== speaker.key);
@@ -1063,7 +1136,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         record(judge, "JUDGE'S NOTE", jr.text);
       }
       // suspend at the round boundary rather than start a poll the slice can't finish
-      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
       await roundClose(round);
     }
   } else if (ctx.mode === "Chamber") {
@@ -1134,7 +1207,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         // serial: jurors react to the tally and each other.
         const pending = ctx.leads.filter((lead) => !did(lead.spec.name, "VERDICT", 1));
         if (pending.length > 0 && budget()) {
-          if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+          if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
           const slots = pending.slice(0, Math.max(ctx.cfg.max_posts - posts.length, 1)).map((lead) => { seq += 1; return { lead, mySeq: seq }; });
           const results = await Promise.all(slots.map((s) => speak(ctx, s.lead, {
             seq: s.mySeq, round: 1, thread: "JURY", tag: "VERDICT", transcript: "",
@@ -1152,7 +1225,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         for (const lead of ctx.leads) {
           if (!budget()) break;
           if (did(lead.spec.name, "VERDICT", round)) continue;
-          if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+          if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
           await turn(lead, {
             round, thread: "JURY", tag: "VERDICT",
             transcript: windowOf(posts, ctx.leads.length + 3),
@@ -1179,7 +1252,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         posts.push({ name: "The Tally", role: "Score aggregation", content, tag: "TALLY", seq, agentKey: "__tally", round });
       }
       // suspend at the round boundary rather than start a poll the slice can't finish
-      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
       await roundClose(round);
       if (ctx.cfg.convergence === "stability" && round >= 2) {
         if (choice) {
@@ -1272,7 +1345,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       const inRound = posts.filter((p) => p.round === round && (p.tag.startsWith("POST") || p.tag === "REPLY")).length;
       const opener = ctx.leads[(round - 1) % ctx.leads.length];
       const postNo = posts.filter((p) => p.tag.startsWith("POST")).length + 1;
-      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
       // §6c: the agenda rides in the OPENER instruction — round 1 opens the
       // full brief, middle rounds chase the least-resolved sub-asks by name,
       // the final round forces synthesis. Choreography untouched.
@@ -1300,7 +1373,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
       const waveWidth = waveWidthOf(ctx.cfg.density, ctx.cfg.tier);
       let i = Math.max(inRound - 1, 0);
       while (i < repliesPerRound && budget()) {
-        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+        if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
         // a wave can NEVER exceed the distinct voices available (leads minus
         // the previous speaker) — wider than that and the guardrail's
         // fallback pool empties, handing the mic back to a taken voice inside
@@ -1362,7 +1435,7 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
         i += wave.length;
       }
       // suspend at the round boundary rather than start a poll the slice can't finish
-      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round };
+      if (outOfTime()) return { posts: posts.length, converged: false, stopReason, suspendedAtRound: round, stableStreak };
       await roundClose(round);
       if (ctx.cfg.convergence === "stability" && round >= 3) {
         stableStreak = (await stabilityCheck(ctx, windowOf(posts, 30))) ? stableStreak + 1 : 0;
@@ -1374,9 +1447,17 @@ export async function runMode(ctx: EngineContext, resume?: RunResume): Promise<{
   // budget cap beats "rounds" as the honest label when it actually bit
   if (!converged && stopReason === "rounds" && posts.length >= ctx.cfg.max_posts) stopReason = "budget";
 
-  // convergence readout (§6.2): quick position census over the leads
-  const aligned = Math.max(1, ctx.leads.length - (ctx.leads.some((l) => l.spec.seat?.adversarial) ? 1 : 0));
-  await ctx.emit({ type: "convergence", aligned, total: ctx.leads.length, dissents: ctx.leads.length - aligned });
+  // convergence readout (§6.2) — a REAL position census (audit E-B6: the old
+  // readout was computed from the cast, not from anyone's position). One
+  // crowd-tier call names the dissenters from the closing posts; on any
+  // failure we fall back to the cast heuristic, honestly marked unmeasured.
+  const census = await positionCensus(ctx, posts);
+  if (census) {
+    await ctx.emit({ type: "convergence", aligned: census.aligned, total: ctx.leads.length, dissents: census.dissenters.length, dissenters: census.dissenters, measured: true });
+  } else {
+    const aligned = Math.max(1, ctx.leads.length - (ctx.leads.some((l) => l.spec.seat?.adversarial) ? 1 : 0));
+    await ctx.emit({ type: "convergence", aligned, total: ctx.leads.length, dissents: ctx.leads.length - aligned, measured: false });
+  }
   return { posts: posts.length, converged, stopReason };
 }
 

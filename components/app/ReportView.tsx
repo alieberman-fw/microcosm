@@ -1261,6 +1261,11 @@ export default function ReportView({
               {m.mode} deliberation · {m.leads} leads + {m.crowd} crowd · {m.rounds} round cap · {m.posts} posts · {m.polls} member-polls · {m.tier} tier ({m.models.join(", ")}) ·
               {(m.tools?.length ?? 0) > 0 ? ` tools enabled: ${m.tools!.join(", ")} (${spec.tool_calls ?? 0} calls) · ` : " no agent tools enabled · "}
               {m.docs.length ? ` grounded in: ${m.docs.join(", ")} · ` : " no documents attached · "}
+              {/* audit R-H17: "verifier on, zero checks" used to render exactly
+                  like "verifier off" — the state is now always printed */}
+              {spec.run_config?.verifier
+                ? (spec.verification ? `verifier: on — ${spec.verification.checks} claims checked, ${spec.verification.contradicted} contradicted · ` : "verifier: on — skipped (no parsed documents) · ")
+                : "verifier: off · "}
               generated {new Date(m.generated_at).toLocaleString()}
             </p>
             {/* 6-PR4 — the completeness judge's receipt: an honest instrument

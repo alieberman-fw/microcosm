@@ -143,7 +143,7 @@ export default function RunConfigStage({
   };
 
   const est = useMemo(() => estimateRunCost({ leads, crowd, cfg, mode }), [leads, crowd, cfg, mode]);
-  const flags = useMemo(() => modeFitFlags({ mode, leads, expertSide, residentSide, crowd, benchPro, benchCon }), [mode, leads, expertSide, residentSide, crowd, benchPro, benchCon]);
+  const flags = useMemo(() => modeFitFlags({ mode, leads, expertSide, residentSide, crowd, benchPro, benchCon, convergence: cfg.convergence }), [mode, leads, expertSide, residentSide, crowd, benchPro, benchCon, cfg.convergence]);
   const fixedShape = isFixedShape(mode);
 
   const label: CSSProperties = { ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)", width: 110, flex: "none", paddingTop: 6 };

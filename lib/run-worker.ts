@@ -142,7 +142,7 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
         }
         else votedRounds.add(round);
       }
-      resume = { posts: recs, seq: recs.reduce((m, r) => Math.max(m, r.seq), 0), round: runState.round ?? Math.max(1, ...recs.map((r) => r.round)) };
+      resume = { posts: recs, seq: recs.reduce((m, r) => Math.max(m, r.seq), 0), round: runState.round ?? Math.max(1, ...recs.map((r) => r.round)), stableStreak: runState.stable_streak ?? 0 };
     }
 
     let evSeq = resume ? 1000 * (resume.round ?? 1) : 0; // coarse but monotonic across slices
@@ -276,7 +276,7 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
         // were usurped at the boundary — the other chain drives, we go quiet.
         // If the chain fetch never lands, the heartbeat goes stale and RESUME
         // reopens honestly.
-        if (await fenced({ round: result.suspendedAtRound, heartbeat_at: new Date().toISOString(), worker: CHAIN_PENDING }) !== "ok") return;
+        if (await fenced({ round: result.suspendedAtRound, stable_streak: result.stableStreak ?? 0, heartbeat_at: new Date().toISOString(), worker: CHAIN_PENDING }) !== "ok") return;
         try {
           const r = await fetch(`${origin}/api/simulations/${simId}/run/continue`, {
             method: "POST",
@@ -288,12 +288,12 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
           // the chain didn't take — reopen the handoff for a client resume.
           // Expected is CHAIN_PENDING (we just set it); if a racing continue
           // already claimed it, IT drives and this write correctly no-ops.
-          await fenced({ round: result.suspendedAtRound, heartbeat_at: null, worker: null }, "running", {}, CHAIN_PENDING);
+          await fenced({ round: result.suspendedAtRound, stable_streak: result.stableStreak ?? 0, heartbeat_at: null, worker: null }, "running", {}, CHAIN_PENDING);
         }
       } else {
         // legacy handoff (no service key): null heartbeat so the client's
         // immediate reconnect can claim without waiting out staleness
-        if (await fenced({ round: result.suspendedAtRound, heartbeat_at: null, worker: null }) !== "ok") return;
+        if (await fenced({ round: result.suspendedAtRound, stable_streak: result.stableStreak ?? 0, heartbeat_at: null, worker: null }) !== "ok") return;
       }
       send({ type: "continue", round: result.suspendedAtRound, posts: result.posts, chained });
     } else if (stopRequested) {

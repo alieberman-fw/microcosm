@@ -5,7 +5,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
-import { REPORT_DIRECTOR_SCHEMA, REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, REPORT_BLOCKS_SCHEMA, blocksSpecFor, blocksSynthSystem, clipText, judgePatchSystem, judgeSystem, mergePatchedBlocks, mergePatchedSections, normalizeBlocks, parseJudgeVerdict, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, sectionWorkerSystem, synthBudgetFor, synthesizePlain, verifierSystem } from "@/lib/report";
+import { REPORT_DIRECTOR_SCHEMA, REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, REPORT_BLOCKS_SCHEMA, blocksSpecFor, blocksSynthSystem, clipText, judgePatchSystem, judgeSystem, mergePatchedBlocks, mergePatchedSections, normalizeBlocks, parseJudgeVerdict, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, sectionWorkerSystem, synthBudgetFor, synthesizePlain, verifierSystem, filterCites } from "@/lib/report";
 import { BriefContract } from "@/lib/understand";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { normalizeEnabledTools } from "@/lib/tools";
@@ -50,6 +50,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const { data: postRows } = await supabase.from("posts")
     .select("seq, agent_key, tag, content, cites").eq("sim_id", id).order("seq", { ascending: true });
   if (!postRows?.length) return NextResponse.json({ error: "Run the simulation first — there is no transcript yet" }, { status: 400 });
+  // audit R-H2: every citation the assembly accepts must point at a REAL post
+  const validSeqs = new Set<number>(postRows.map((r) => r.seq as number));
 
   // ---- PR D (field-report 2): reports you can walk away from -------------
   // Synthesis used to live INSIDE the response stream — leave the page and
@@ -474,7 +476,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               // renders long entries as rows.
               numbers: (Array.isArray(x.numbers) ? x.numbers : []).slice(0, 16)
                 .map((n: { label?: unknown; value?: unknown }) => ({ label: String(n.label ?? "").slice(0, 40), value: clipText(String(n.value ?? ""), 220) })),
-              cites: (Array.isArray(x.cites) ? x.cites : []).map((c) => Number(c) || 0).filter(Boolean).slice(0, 8),
+              cites: filterCites(x.cites, validSeqs),
             }));
         const spec: ReportSpec = {
           version: REPORT_VERSION,
@@ -534,7 +536,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           risks: (Array.isArray(rawSpec.risks) ? rawSpec.risks : []).slice(0, 10)
             .map((r) => ({ risk: String(r.risk ?? "").slice(0, 220), severity: (["high", "medium", "low"] as const).find((sv) => sv === r.severity) ?? "medium", mitigation: String(r.mitigation ?? "").slice(0, 220), watch_signal: String(r.watch_signal ?? "").slice(0, 220) })),
           dissents: (Array.isArray(rawSpec.dissents) ? rawSpec.dissents : []).slice(0, 6)
-            .map((d) => ({ name: String(d.name ?? "").slice(0, 60), role: String(d.role ?? "").slice(0, 90), position: String(d.position ?? "").slice(0, 220), quote: String(d.quote ?? "").slice(0, 400), seq: Number(d.seq) || 0 })),
+            .map((d) => ({ name: String(d.name ?? "").slice(0, 60), role: String(d.role ?? "").slice(0, 90), position: String(d.position ?? "").slice(0, 220), quote: String(d.quote ?? "").slice(0, 400), seq: validSeqs.has(Number(d.seq)) ? Number(d.seq) : 0 })),
           tripwires: (Array.isArray(rawSpec.tripwires) ? rawSpec.tripwires : []).slice(0, 8).map((t) => String(t).slice(0, 220)),
           sentiment: sentiments,
           poll_question: pollQuestion ? String(pollQuestion).slice(0, 240) : undefined,
@@ -600,7 +602,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               if (bres.stop_reason === "max_tokens") continue; // escalate, never accept a partial artifact
               const btext = bres.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
               const parsed = parseLooseObject(btext) as { blocks?: unknown } | null;
-              const blocks = normalizeBlocks(parsed?.blocks);
+              const blocks = normalizeBlocks(parsed?.blocks, validSeqs);
               if (blocks.length) { spec.blocks = blocks; break; }
             } catch (e) {
               await logCall("report.blocks", synthModel, null, tb, e instanceof Error ? e.message : "blocks failed");
@@ -667,7 +669,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               const patch = parseLooseObject(ptext) as { sections?: unknown; blocks?: unknown } | null;
               if (patch) {
                 const pSections = normSections(patch.sections).filter((s) => s.question && s.finding);
-                const pBlocks = normalizeBlocks(patch.blocks);
+                const pBlocks = normalizeBlocks(patch.blocks, validSeqs);
                 if (pSections.length) spec.sections = mergePatchedSections(spec.sections, pSections);
                 if (pBlocks.length) spec.blocks = mergePatchedBlocks(spec.blocks ?? [], pBlocks);
                 fixed = pSections.length + pBlocks.length;

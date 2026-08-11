@@ -389,7 +389,7 @@ export function blocksSpecFor(
 }
 
 /** normalize + clip the synthesizer's blocks (word-boundary, never mid-word) */
-export function normalizeBlocks(raw: unknown): ReportBlock[] {
+export function normalizeBlocks(raw: unknown, validSeqs?: Set<number>): ReportBlock[] {
   if (!Array.isArray(raw)) return [];
   const out: ReportBlock[] = [];
   for (const b of raw) {
@@ -406,7 +406,7 @@ export function normalizeBlocks(raw: unknown): ReportBlock[] {
         label,
         cells: (Array.isArray(ro.cells) ? ro.cells : []).slice(0, 8).map((c) => clipText(String(c ?? ""), 240)),
         ...(ro.note ? { note: clipText(String(ro.note), 400) } : {}),
-        ...(Array.isArray(ro.cites) ? { cites: ro.cites.map((c) => Number(c) || 0).filter(Boolean).slice(0, 6) } : {}),
+        ...(Array.isArray(ro.cites) ? { cites: (validSeqs ? filterCites(ro.cites, validSeqs) : ro.cites.map((c) => Number(c) || 0).filter(Boolean)).slice(0, 6) } : {}),
       }];
     });
     if (!rows.length) continue;
@@ -739,3 +739,13 @@ export async function synthesizePlain(
  *  and stripping at render heals reports generated before the fix */
 export const stripCellMeta = (s: string | undefined | null): string =>
   (s ?? "").replace(/^\s*(COMMITTED|ANSWERED|DECIDED|DEFINITIVE)\s*[—:–-]\s*/, "");
+
+/** audit R-H2: report citations were never checked against the run's real
+ *  post seqs — a hallucinated seq rendered as a live chip whose click did
+ *  nothing. One gate, applied to every cite the assembly accepts. */
+export function filterCites(cites: unknown, valid: Set<number>): number[] {
+  return (Array.isArray(cites) ? cites : [])
+    .map((c) => Number(c) || 0)
+    .filter((c) => c > 0 && valid.has(c))
+    .slice(0, 8);
+}
