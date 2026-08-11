@@ -184,7 +184,7 @@ export interface FitFlag { level: "warn" | "info"; text: string }
  *  benchPro/benchCon are the ENGINE's actual Tribunal benches (explicit
  *  seat.side when the cast carries it, kind heuristic otherwise) — pass them
  *  so the flag judges what will really happen at launch. */
-export function modeFitFlags(args: { mode: string; leads: number; expertSide: number; residentSide: number; crowd: number; benchPro?: number; benchCon?: number }): FitFlag[] {
+export function modeFitFlags(args: { mode: string; leads: number; expertSide: number; residentSide: number; crowd: number; benchPro?: number; benchCon?: number; convergence?: RunConfig["convergence"] }): FitFlag[] {
   const { mode, leads, expertSide, residentSide, crowd } = args;
   const flags: FitFlag[] = [];
   if (mode === "Roundtable" && leads > 12) {
@@ -195,6 +195,11 @@ export function modeFitFlags(args: { mode: string; leads: number; expertSide: nu
     const con = args.benchCon ?? residentSide;
     if (pro < 2 || con < 2) {
       flags.push({ level: "warn", text: `TRIBUNAL SIDES SPLIT ${pro} vs ${con} — the engine auto-balances the benches at launch, but adding leads to the thin side (or RE-CASTING with Tribunal selected, which assigns genuine benches) makes the opposition real rather than assigned.` });
+    }
+    // audit E-B4: Tribunal is always adversarial by design — it never stops on
+    // stability. Say so instead of silently ignoring the selected rule.
+    if (args.convergence === "stability") {
+      flags.push({ level: "info", text: "TRIBUNAL NEVER STOPS ON STABILITY — benches argue to the rounds cap by design; the post budget is the only early stop." });
     }
   }
   if (mode === "Chamber" && leads > 16) {

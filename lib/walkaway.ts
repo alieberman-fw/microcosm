@@ -19,6 +19,9 @@ export interface RunState {
   /** the mode this run LAUNCHED under — every slice/reclaim honors it, so a
    *  config mutation mid-run can never flip a live run's choreography */
   mode?: string;
+  /** consecutive stable rounds so far (audit E-B5) — survives slice handoffs
+   *  so a boundary between two stable rounds can't reset convergence */
+  stable_streak?: number;
 }
 
 /** a suspending slice that has FIRED the chain marks the handoff with this
