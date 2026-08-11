@@ -14,6 +14,7 @@
 
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import ModeStage from "@/components/app/ModeStage";
 import PersonaProfile from "@/components/app/PersonaProfile";
 import CastingTheater, { CrowdBand, MiniSwarm } from "@/components/app/CastingTheater";
 import CrowdRoster from "@/components/app/CrowdRoster";
@@ -90,6 +91,8 @@ export default function PopulationStage({
   onCastingChange,
   onModeChange,
   onCrowdGenChange,
+  contractDirty = false,
+  onContractApplied,
 }: {
   simId: string;
   initialSeats: WorkspaceSeat[];
@@ -101,6 +104,10 @@ export default function PopulationStage({
   onModeChange?: (mode: string) => void;
   /** crowd generation in flight — the launch CTA locks on this (field fix) */
   onCrowdGenChange?: (busy: boolean) => void;
+  /** the WHAT I UNDERSTOOD contract was edited after this cast (field report) */
+  contractDirty?: boolean;
+  /** a fresh cast landed — upstream dirty flags clear */
+  onContractApplied?: () => void;
 }) {
   const router = useRouter();
   const [seats, setSeats] = useState<WorkspaceSeat[]>(initialSeats);
@@ -138,12 +145,15 @@ export default function PopulationStage({
   const [guidance, setGuidance] = useState("");
   const [guidanceMode, setGuidanceMode] = useState<"recast" | "add">("recast");
   const [panelSize, setPanelSize] = useState<number>(10);
-  // Wave 2a — mode-first casting: AUTO lets the director pick; an explicit
-  // mode becomes a plan constraint so the panel is DESIGNED for the
-  // choreography (benches, breadth, section owners). Post-cast, a material
-  // mode change offers a re-cast instead of silently mismatching.
-  const [preMode, setPreMode] = useState<string>("auto");
-  const [pendingMode, setPendingMode] = useState<string | null>(null);
+  // Mode-first casting (Adam's flow, field report on #115): the SIMULATION
+  // MODE stage above the population owns the choice — null = ✦ AUTO. Any
+  // change after a cast raises the RE-CAST chip instead of silently
+  // mismatching; an explicit mode is a plan constraint at cast time.
+  const [modeChoice, setModeChoice] = useState<string | null>(initialCasting?.user_set?.mode ? (initialCasting.mode ?? null) : null);
+  const [recastForMode, setRecastForMode] = useState(false);
+  // upfront crowd sizing (field report): blank = the director recommends
+  const [preExperts, setPreExperts] = useState<string>("");
+  const [preResidents, setPreResidents] = useState<string>("");
   const [preComp, setPreComp] = useState<"auto" | Composition>("auto");
   const [pendingComp, setPendingComp] = useState<Composition | null>(null);
   const [expertsDraft, setExpertsDraft] = useState<string | null>(null);
@@ -180,7 +190,8 @@ export default function PopulationStage({
           mode,
           seats: panelSize,
           ...(composition ? { composition } : {}),
-          ...((pendingMode ?? (preMode !== "auto" ? preMode : null)) ? { interaction_mode: pendingMode ?? preMode } : {}),
+          ...(modeChoice ? { interaction_mode: modeChoice } : {}),
+          ...((preExperts || preResidents) && seats.length === 0 ? { scale: { ...(preExperts ? { experts: Number(preExperts) } : {}), ...(preResidents ? { residents: Number(preResidents) } : {}) } } : {}),
         }),
       });
       if (!res.ok || !res.body) {
@@ -194,9 +205,10 @@ export default function PopulationStage({
         if (evt.type === "plan") {
           const p = evt as unknown as CastingInfo & { seats: PendingSeat[]; add?: boolean };
           if (!p.add) {
-            const forced = pendingMode ?? (preMode !== "auto" ? preMode : null);
+            const forced = modeChoice;
             setCastingInfo({ composition: p.composition, rationale: p.rationale, rationaleSummary: p.rationaleSummary, scale: p.scale, mode: p.mode, recommended_mode: forced ? undefined : p.mode, user_set: forced ? { mode: true } : undefined, modeRationale: p.modeRationale, modeSummary: p.modeSummary });
-            setPendingMode(null);
+            setRecastForMode(false);
+            onContractApplied?.();
             onModeChange?.(p.mode); // the run-config picker re-seeds to the director's pick
             setExpertsDraft(null);
             setResidentsDraft(null);
@@ -422,6 +434,45 @@ export default function PopulationStage({
   );
 
   return (
+    <>
+    <ModeStage
+      selected={modeChoice}
+      recommended={castingInfo?.recommended_mode ?? null}
+      onSelect={(m) => {
+        setModeChoice(m);
+        const effective = m ?? castingInfo?.recommended_mode ?? null;
+        if (castingInfo && effective && effective !== castingInfo.mode) {
+          // persist the choice now (the engine honors it even un-recast) and
+          // offer the re-cast — the cast was designed for the old mode
+          setCastingInfo((prev) => prev ? { ...prev, mode: effective, user_set: { ...(prev.user_set ?? {}), mode: !!m } } : prev);
+          onModeChange?.(effective);
+          setRecastForMode(true);
+          void fetch(`/api/simulations/${simId}/config`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: effective }) });
+        } else if (castingInfo && effective && effective === castingInfo.mode) {
+          setRecastForMode(false);
+        }
+      }}
+    />
+    {(recastForMode || (contractDirty && castingInfo)) && (
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+        {recastForMode && (
+          <button
+            onClick={() => void cast("recast")}
+            style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "6px 14px", borderRadius: 100, background: "var(--warn)", color: "var(--acc-c)", border: "none", cursor: "pointer" }}
+          >
+            {castingInfo?.mode === "Tribunal" ? "MODE CHANGED — RE-CAST TO ASSIGN GENUINE BENCHES →" : `MODE CHANGED TO ${(castingInfo?.mode ?? "").toUpperCase()} — RE-CAST SO THE PANEL IS DESIGNED FOR IT →`}
+          </button>
+        )}
+        {contractDirty && castingInfo && (
+          <button
+            onClick={() => void cast("recast")}
+            style={{ ...mono, fontSize: 9, letterSpacing: ".06em", padding: "6px 14px", borderRadius: 100, background: "var(--warn-dim)", color: "var(--warn)", border: "1px solid var(--warn)", cursor: "pointer" }}
+          >
+            UNDERSTANDING CHANGED — RE-CAST TO APPLY IT →
+          </button>
+        )}
+      </div>
+    )}
     <div id="stage-population" className="card" style={{ padding: "26px 30px", marginTop: 20, scrollMarginTop: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
         <div style={label}>
@@ -488,42 +539,6 @@ export default function PopulationStage({
       {/* the §3 composition + mode + crowd controls */}
       {castingInfo && hasCast && !showTheater && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16, padding: "14px 16px", border: "1px solid var(--ln2)", borderRadius: 12, background: "var(--sf2)" }}>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)", width: 92, flex: "none" }}>MODE</span>
-            {SIM_MODES.map((mk) => (
-              <FilterPill
-                key={mk}
-                on={(pendingMode ?? castingInfo.mode) === mk}
-                onClick={() => {
-                  if (mk === castingInfo.mode) { setPendingMode(null); return; }
-                  // material changes (benches, crowd relevance) earn a re-cast
-                  // offer; cosmetic ones persist directly, same as run config
-                  const material =
-                    (mk === "Tribunal" && !seats.some((x) => x.spec.seat?.side)) ||
-                    ((mk === "Desk" || mk === "Expedition") && crowd.length > 0) ||
-                    ((castingInfo.mode === "Desk" || castingInfo.mode === "Expedition") && mk !== "Desk" && mk !== "Expedition");
-                  if (material) { setPendingMode(mk); return; }
-                  setPendingMode(null);
-                  setCastingInfo((prev) => prev ? { ...prev, mode: mk, user_set: { ...(prev.user_set ?? {}), mode: true } } : prev);
-                  onModeChange?.(mk);
-                  void fetch(`/api/simulations/${simId}/config`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: mk }) });
-                }}
-              >
-                {mk.toUpperCase()}
-              </FilterPill>
-            ))}
-            {pendingMode && pendingMode !== castingInfo.mode && (
-              <button
-                onClick={() => void cast("recast")}
-                style={{
-                  ...mono, fontSize: 9, letterSpacing: ".06em", padding: "5px 12px", borderRadius: 100,
-                  background: "var(--warn)", color: "var(--acc-c)", border: "none", cursor: "pointer",
-                }}
-              >
-                {pendingMode === "Tribunal" ? "RE-CAST FOR TRIBUNAL — ASSIGNS GENUINE BENCHES →" : `RE-CAST FOR ${pendingMode.toUpperCase()} →`}
-              </button>
-            )}
-          </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t7)", width: 92, flex: "none" }}>COMPOSITION</span>
             {COMPOSITIONS.map((c) => (
@@ -615,25 +630,6 @@ export default function PopulationStage({
             {/* one visible line at normal widths — shorter labels + wider page;
                 wraps gracefully on narrow screens, NEVER a hidden scroll */}
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 14, alignItems: "center" }}>
-              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)", flex: "none" }}>MODE ·</span>
-              {(["auto", ...SIM_MODES] as string[]).map((mk) => (
-                <button
-                  key={mk}
-                  onClick={() => setPreMode(mk)}
-                  title={mk === "auto" ? "The director reads your brief and recommends the choreography" : `Design the panel FOR ${mk}`}
-                  style={{
-                    ...mono, fontSize: 8.5, letterSpacing: ".03em", padding: "4px 9px", borderRadius: 100,
-                    cursor: "pointer", whiteSpace: "nowrap", flex: "none",
-                    background: preMode === mk ? "var(--acc)" : "transparent",
-                    border: `1px solid ${preMode === mk ? "var(--acc)" : "var(--ln5)"}`,
-                    color: preMode === mk ? "var(--acc-c)" : "var(--t5)",
-                  }}
-                >
-                  {mk === "auto" ? "✦ AUTO" : mk.toUpperCase()}
-                </button>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
               <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)", flex: "none" }}>COMPOSITION ·</span>
               {([{ key: "auto", label: "AUTO" }, ...COMPOSITIONS] as { key: "auto" | Composition; label: string }[]).map((c) => (
                 <button
@@ -670,8 +666,23 @@ export default function PopulationStage({
                 </button>
               ))}
             </div>
-            <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t7)", marginTop: 8 }}>
-              LEADS ONLY — THE FULL-RUN CROWD IS SIZED BELOW ONCE CAST (EDITABLE, UP TO 500 + 1,000)
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
+              <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>CROWD ·</span>
+              {([["EXPERTS", preExperts, setPreExperts, "4-500"], ["RESIDENTS", preResidents, setPreResidents, "0-1,000"]] as const).map(([lbl, val, set, range]) => (
+                <label key={lbl} style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--t5)", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  {lbl}
+                  <input
+                    type="number"
+                    value={val}
+                    placeholder="AUTO"
+                    onChange={(e) => set(e.target.value)}
+                    onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                    title={`Total ${lbl.toLowerCase()} (${range}) — leads included; blank lets the director recommend`}
+                    style={{ ...mono, width: 58, padding: "4px 7px", fontSize: 10, background: "var(--sf)", border: `1px solid ${val ? "var(--acc)" : "var(--ln5)"}`, borderRadius: 8, color: "var(--t1)", outline: "none" }}
+                  />
+                </label>
+              ))}
+              <span style={{ ...mono, fontSize: 8, letterSpacing: ".05em", color: "var(--t7)" }}>BLANK = DIRECTOR RECOMMENDS · EDITABLE AFTER</span>
             </div>
             <button
               onClick={() => void cast("recast", preComp === "auto" ? undefined : preComp)}
@@ -1026,5 +1037,6 @@ export default function PopulationStage({
         />
       )}
     </div>
+    </>
   );
 }

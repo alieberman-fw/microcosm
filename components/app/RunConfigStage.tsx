@@ -10,22 +10,10 @@
 
 import { CSSProperties, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import ModeDiagram, { ModeKey } from "@/components/app/docs/ModeDiagram";
-import { SIM_MODES } from "@/lib/casting";
 import { RUN_DEFAULTS, RUN_RANGES, RunConfig, estimateRunCost, isFixedShape, modeFitFlags } from "@/lib/run";
 import { TOOL_RACK, availableToolKeys, normalizeEnabledTools } from "@/lib/tools";
 
 const mono: CSSProperties = { fontFamily: "var(--font-mono), monospace" };
-
-const MODE_HINTS: Record<string, string> = {
-  Agora: "Open forum — the default; threads form organically",
-  Roundtable: "Every lead speaks each round, in order",
-  Tribunal: "Two sides argue; a judge rules each round",
-  Chamber: "Independent takes → blind review → synthesis",
-  Jury: "Independent scored verdicts, aggregated",
-  Desk: "Director assigns memo sections to workers",
-  Expedition: "Phased background research, not deliberation",
-};
 
 const HELP: Record<string, string> = {
   rounds: "Full passes over the question. 1–3 quick reads · 10–30 contested · cost scales linearly",
@@ -71,7 +59,7 @@ export default function RunConfigStage({
   crowdBusy?: boolean;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<string>(initialMode ?? "Agora");
+  const [mode] = useState<string>(initialMode ?? "Agora");
   const [cfg, setCfg] = useState<RunConfig>({ ...RUN_DEFAULTS, ...(initialRun ?? {}) });
   const [tools, setTools] = useState<string[]>(normalizeEnabledTools(initialTools ?? []));
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -97,11 +85,6 @@ export default function RunConfigStage({
       persist(next);
       return next;
     });
-  };
-
-  const pickMode = (m: string) => {
-    setMode(m);
-    persist(cfg, m);
   };
 
   // 3d — tool toggles save immediately (discrete clicks, no debounce needed)
@@ -205,45 +188,20 @@ export default function RunConfigStage({
         </div>
         {saved && <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--acc)" }}>SAVED ✓</span>}
       </div>
-
-      {/* mode picker — the §5 animated diagrams as cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))", gap: 10, marginTop: 16 }}>
-        {SIM_MODES.map((m) => {
-          const on = mode === m;
-          return (
-            <button
-              key={m}
-              onClick={() => pickMode(m)}
-              style={{
-                textAlign: "left", border: `1px solid ${on ? "var(--acc)" : "var(--ln3)"}`, borderRadius: 12,
-                background: on ? "var(--acc-dim)" : "var(--sf)", cursor: "pointer", padding: "10px 12px 9px",
-                transition: "all .15s",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: on ? "var(--acc)" : "var(--t2)", fontFamily: "var(--font-sans), sans-serif" }}>{m}</span>
-                <span style={{ display: "inline-flex", gap: 6, alignItems: "baseline" }}>
-                  {/* the director's pick is a single ✦ — hover for the story */}
-                  {m === recommendedMode && (
-                    <span
-                      title="Director's pick — the Casting Director recommended this mode for your brief"
-                      style={{ fontSize: 13, lineHeight: 1, color: "var(--acc)", cursor: "help" }}
-                    >
-                      ✦
-                    </span>
-                  )}
-                  {on && <span style={{ ...mono, fontSize: 8, color: "var(--acc)" }}>SELECTED</span>}
-                </span>
-              </div>
-              <div style={{ borderRadius: 8, overflow: "hidden", background: "var(--sf2)", marginTop: 8 }}>
-                <ModeDiagram mode={m.toLowerCase() as ModeKey} height={64} />
-              </div>
-              <div style={{ fontSize: 10.5, lineHeight: 1.45, color: "var(--t6)", marginTop: 7, fontFamily: "var(--font-sans), sans-serif" }}>
-                {MODE_HINTS[m]}
-              </div>
-            </button>
-          );
-        })}
+      {/* the mode is CHOSEN on the SIMULATION MODE stage above (field report:
+          the duplicate picker here caused two sources of truth) — this line
+          just states it and links back */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+        <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".08em", color: "var(--t5)" }}>
+          MODE <span style={{ color: "var(--acc)" }}>{mode.toUpperCase()}</span>
+          {mode === recommendedMode ? " · ✦ DIRECTOR'S PICK" : ""}
+        </span>
+        <button
+          onClick={() => document.getElementById("stage-mode")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", background: "none", border: "none", color: "var(--t6)", cursor: "pointer", padding: 0, textDecoration: "underline", textUnderlineOffset: 3 }}
+        >
+          CHANGE IT IN SIMULATION MODE ↑
+        </button>
       </div>
 
       {/* fit flags — warns carry a jump to the population stage to fix the cast */}

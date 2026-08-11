@@ -96,6 +96,8 @@ export default function SimWorkspace({
   }, [synthesizing, router]);
   const [castingBusy, setCastingBusy] = useState(false);
   const [crowdBusy, setCrowdBusy] = useState(false); // crowd generating → launch locks
+  // field report: contract edits after a cast should surface a re-cast offer
+  const [contractDirty, setContractDirty] = useState(false);
   // the mode is CHOSEN in run config; a fresh cast re-seeds it to the director's pick
   const [modeSel, setModeSel] = useState<string | null>(initialCasting?.mode ?? null);
   const [docs, setDocs] = useState<DocRow[]>(initialDocs);
@@ -486,6 +488,7 @@ export default function SimWorkspace({
         initialContract={initialContract}
         parsedDocNames={parsedDocs.map((d) => d.name)}
         onPhase={setUnderstanding}
+        onEdited={() => setContractDirty(true)}
       />
 
       {/* field notes — a standalone editor (the diligence card is gone:
@@ -581,6 +584,8 @@ export default function SimWorkspace({
         onCastingChange={setCastingBusy}
         onModeChange={setModeSel}
         onCrowdGenChange={setCrowdBusy}
+        contractDirty={contractDirty}
+        onContractApplied={() => setContractDirty(false)}
       />
 
       {/* stage 4 — run configuration (§4.1); LAUNCH activates with the engine */}

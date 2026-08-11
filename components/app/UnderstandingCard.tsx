@@ -43,6 +43,7 @@ export default function UnderstandingCard({
   initialContract,
   parsedDocNames,
   onPhase,
+  onEdited,
 }: {
   simId: string;
   hasProblem: boolean;
@@ -50,6 +51,7 @@ export default function UnderstandingCard({
   parsedDocNames: string[];
   /** the workspace choreographs around the pass: population + run config
    *  reveal only after the contract lands (or the pass errors out) */
+  onEdited?: () => void;
   onPhase?: (phase: "idle" | "deriving" | "ready" | "error") => void;
 }) {
   const [contract, setContract] = useState<BriefContract | null>(initialContract);
@@ -115,6 +117,7 @@ export default function UnderstandingCard({
   }, []);
 
   const save = async (next: BriefContract) => {
+    onEdited?.();
     const prev = contract;
     setContract(next); // optimistic — the normalizer round-trip lands after
     try {
@@ -152,10 +155,10 @@ export default function UnderstandingCard({
         </div>
         {deriving && (
           <div style={{ marginTop: 18 }}>
-            {/* narrated progress: the shaping orb (brief → contract is a
+            {/* narrated progress: the solving orb (field report: the
                 translation) + the current step, with a stepped bar below */}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Orb state="shaping" size={20} aria-label="Reading your brief" />
+              <Orb state="solving" size={20} aria-label="Reading your brief" />
               <span key={scanStep} style={{ ...mono, fontSize: 10.5, letterSpacing: ".08em", color: "var(--t3)", animation: "fadeUp .3s ease both" }}>
                 {scanLines[scanStep]}
               </span>

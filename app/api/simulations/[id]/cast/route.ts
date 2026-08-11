@@ -31,7 +31,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
   }
 
-  let body: { guidance?: string; mode?: string; seats?: number; composition?: string; interaction_mode?: string };
+  let body: { guidance?: string; mode?: string; seats?: number; composition?: string; interaction_mode?: string; scale?: { experts?: number; residents?: number } };
   try {
     body = await request.json();
   } catch {
@@ -213,9 +213,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           composition: compOverride ?? (["experts", "consumers", "mixed"] as const).find((c) => c === raw.composition) ?? "mixed",
           rationale: clip(raw.rationale, 1200),
           rationaleSummary: clip((raw as { rationale_summary?: unknown }).rationale_summary ?? raw.rationale, 260),
+          // upfront crowd sizing (field report): the user's totals beat the plan's
           scale: {
-            experts: Math.min(Math.max(Number(raw.scale?.experts) || seats.length, 4), 500),
-            residents: Math.min(Math.max(Number(raw.scale?.residents) || 0, 0), 1000),
+            experts: Math.min(Math.max(Number(body.scale?.experts ?? 0) || Number(raw.scale?.experts) || seats.length, 4), 500),
+            residents: Math.min(Math.max(Number(body.scale?.residents ?? (Number(raw.scale?.residents) || 0)), 0), 1000),
           },
           mode: forcedMode ?? SIM_MODES.find((m) => m === raw.mode) ?? "Agora",
           modeRationale: clip(raw.mode_rationale, 900),
