@@ -560,7 +560,7 @@ export default function HomeClient({
                 Nothing yet — <Link href="/conversations/new" style={{ color: "var(--acc)" }}>build your first room</Link> and ask a hard question.
               </p>
             )}
-            {conversations.slice(0, 5).map((c) => (
+            {conversations.map((c) => (
               <Link key={c.id} href={`/conversations?open=${c.id}`} style={{ display: "block", padding: "11px 0", borderBottom: "1px solid var(--ln2)", minWidth: 0 }}>
                 <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--t2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {c.title}
