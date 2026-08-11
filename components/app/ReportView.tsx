@@ -430,8 +430,9 @@ function gradeOf(score: number): { word: string; color: string } {
 /** SIMPLIFY: a different page, not the expert page with softer words.
  *  Answer-first hero, Q&A cards, word grades, everyday crowd labels,
  *  card risks — nothing that needs a finance or engineering vocabulary. */
-function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
+function PlainBody({ spec, plain, problem, onExpert, onJump, mediaUrls = {} }: {
   spec: ReportSpec; plain: ReportPlain; problem: string; onExpert: () => void;
+  onJump?: (seq: number) => void;
   mediaUrls?: Record<string, string>;
 }) {
   const v = VERDICT_STYLE[spec.verdict.tone] ?? VERDICT_STYLE.split;
@@ -483,6 +484,7 @@ function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
             <div key={i} className="card" style={{ padding: "22px 26px" }}>
               <div style={{ ...mono, fontSize: 10, letterSpacing: ".08em", color: "var(--t6)" }}>
                 {String(i + 1).padStart(2, "0")} · {sct.question.toUpperCase()}
+                {onJump && (sct.cites?.length ?? 0) > 0 && <CiteChips cites={sct.cites!} onJump={onJump} />}
               </div>
               <p style={{ margin: "12px 0 0", fontSize: 16, lineHeight: 1.6, fontWeight: 600, color: "var(--t1)" }}>{sct.answer}</p>
               <p style={{ margin: "10px 0 0", fontSize: 14, lineHeight: 1.75, color: "var(--t4)" }}>{sct.explanation}</p>
@@ -511,6 +513,8 @@ function PlainBody({ spec, plain, problem, onExpert, mediaUrls = {} }: {
             {spec.dissents.length > 0
               ? ` ${spec.dissents.length} of them still disagreed with the final answer — their objections are below.`
               : " By the end, none of them held out against the final answer."}
+            {spec.fact_gate && spec.fact_gate.figures > 0 &&
+              ` ${spec.fact_gate.cited} of the ${spec.fact_gate.figures} key figures in this report trace back to specific things the panel said.`}
           </p>
         </div>
       )}
@@ -956,7 +960,7 @@ export default function ReportView({
       })()}
 
       {plainBusy ? null : showPlain ? (
-        <PlainBody spec={spec} plain={plain!} problem={problem} onExpert={() => setView("expert")} mediaUrls={mediaUrls} />
+        <PlainBody spec={spec} plain={plain!} problem={problem} onExpert={() => setView("expert")} onJump={jump} mediaUrls={mediaUrls} />
       ) : (
         <>
           {/* the lead — its kind matches the ask (3b); pre-3b reports and
@@ -1006,6 +1010,9 @@ export default function ReportView({
                 )}
                 {kind === "price_range" && <PriceBand lead={lead!} />}
                 {kind === "approval_odds" && <OddsMeter lead={lead!} />}
+                {(kind === "price_range" || kind === "approval_odds") && (lead?.cites?.length ?? 0) > 0 && (
+                  <div style={{ marginTop: 8, marginLeft: -8 }}><CiteChips cites={lead!.cites!} onJump={jump} /></div>
+                )}
                 <p style={{ margin: "10px 0 0", fontSize: 13, color: "var(--t6)" }}>{problem}</p>
               </div>
             );
@@ -1064,7 +1071,10 @@ export default function ReportView({
                     <div style={{ height: 6, borderRadius: 100, background: "var(--sf2)", marginTop: 6, overflow: "hidden" }}>
                       <div style={{ width: `${d.score * 10}%`, height: "100%", borderRadius: 100, background: d.score >= 7 ? "var(--acc)" : d.score <= 4 ? "var(--warn)" : "var(--t5)", animation: "grow .8s ease both", transformOrigin: "left" }} />
                     </div>
-                    <div style={{ fontSize: 11.5, color: "var(--t6)", marginTop: 4 }}>{d.note}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--t6)", marginTop: 4 }}>
+                      {d.note}
+                      {(d.cites?.length ?? 0) > 0 && <CiteChips cites={d.cites!} onJump={jump} />}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1096,8 +1106,19 @@ export default function ReportView({
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
                             {stats.map((n, ni) => (
                               <span key={ni} style={{ border: "1px solid var(--ln3)", borderRadius: 10, padding: "6px 12px", background: "var(--sf2)" }}>
-                                <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--t6)", display: "block" }}>{n.label.toUpperCase()}</span>
+                                <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--t6)", display: "block" }}>
+                                  {n.label.toUpperCase()}
+                                  {/* Wave 4b fact gate: a figure with no post source SAYS SO */}
+                                  {!!spec.fact_gate && !(n.cites?.length) && !sct.cites.length && <span style={{ color: "var(--warn)", marginLeft: 6 }}>· UNSOURCED</span>}
+                                </span>
                                 <span style={{ ...mono, fontSize: 13, color: "var(--t1)" }}>{n.value}</span>
+                                {(n.cites?.length ?? 0) > 0 && (
+                                  <span style={{ display: "block", marginTop: 3 }}>
+                                    {n.cites!.map((c) => (
+                                      <button key={c} onClick={() => jump(c)} style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", border: "none", background: "transparent", padding: 0, marginRight: 8, color: "var(--acc)", cursor: "pointer" }}>▸ POST {c}</button>
+                                    ))}
+                                  </span>
+                                )}
                               </span>
                             ))}
                           </div>
@@ -1108,6 +1129,8 @@ export default function ReportView({
                               <div key={ni} style={{ display: "flex", alignItems: "baseline", gap: 12, border: "1px solid var(--ln3)", borderRadius: 10, padding: "9px 14px", background: "var(--sf2)" }}>
                                 <span style={{ ...mono, fontSize: 9, letterSpacing: ".06em", color: "var(--acc)", flex: "none" }}>{n.label.toUpperCase()}</span>
                                 <span style={{ fontSize: 13, lineHeight: 1.55, color: "var(--t2)", minWidth: 0 }}>{n.value}</span>
+                                {(n.cites?.length ?? 0) > 0 && <CiteChips cites={n.cites!} onJump={jump} />}
+                                {!!spec.fact_gate && !(n.cites?.length) && !sct.cites.length && <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".08em", color: "var(--warn)", flex: "none" }}>UNSOURCED</span>}
                               </div>
                             ))}
                           </div>
@@ -1264,17 +1287,30 @@ export default function ReportView({
               {/* audit R-H17: "verifier on, zero checks" used to render exactly
                   like "verifier off" — the state is now always printed */}
               {spec.run_config?.verifier
-                ? (spec.verification ? `verifier: on — ${spec.verification.checks} claims checked, ${spec.verification.contradicted} contradicted · ` : "verifier: on — skipped (no parsed documents) · ")
+                ? (spec.verification ? `verifier: on — ${spec.verification.checks} claims checked, ${spec.verification.contradicted} contradicted${typeof spec.verification.report_checks === "number" ? `; report claims: ${spec.verification.report_checks} checked, ${spec.verification.report_contradicted ?? 0} contradicted` : ""} · ` : "verifier: on — skipped (no parsed documents) · ")
                 : "verifier: off · "}
               generated {new Date(m.generated_at).toLocaleString()}
             </p>
+            {/* Wave 4b — the fact gate's ledger: how many of the report's own
+                figures trace to a specific forum post */}
+            {spec.fact_gate && spec.fact_gate.figures > 0 && (
+              <p style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.7, color: spec.fact_gate.cited === spec.fact_gate.figures ? "var(--t5)" : "var(--warn)" }}>
+                <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>FACT GATE · </span>
+                {spec.fact_gate.cited} of {spec.fact_gate.figures} figures cited to forum posts
+                {spec.fact_gate.cited < spec.fact_gate.figures && " — uncited figures are marked UNSOURCED above"}
+              </p>
+            )}
             {/* 6-PR4 — the completeness judge's receipt: an honest instrument
                 says whether the answer was CHECKED against the brief */}
             {spec.judge && (
               <p style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.7, color: spec.judge.pass || spec.judge.fixed > 0 ? "var(--t5)" : "var(--warn)" }}>
                 <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".08em", color: "var(--t6)" }}>ANSWER-COMPLETENESS JUDGE · </span>
-                {spec.judge.pass
+                {spec.judge.pass && spec.judge.rejudged
+                  ? `flagged gaps, repaired ${spec.judge.fixed} piece${spec.judge.fixed > 1 ? "s" : ""}, and passed on re-judge`
+                  : spec.judge.pass
                   ? "passed — every sub-ask answered, every required artifact complete"
+                  : spec.judge.rejudged
+                  ? `repaired ${spec.judge.fixed} piece${spec.judge.fixed > 1 ? "s" : ""}, but the re-judge still flags: ${(spec.judge.notes ?? []).slice(0, 3).join("; ")}`
                   : spec.judge.fixed > 0
                   ? `flagged ${spec.judge.notes?.length ?? 0} gap${(spec.judge.notes?.length ?? 0) > 1 ? "s" : ""}; ${spec.judge.fixed} piece${spec.judge.fixed > 1 ? "s" : ""} repaired before delivery`
                   : `flagged gaps the repair pass could not close: ${(spec.judge.notes ?? []).slice(0, 3).join("; ")}`}

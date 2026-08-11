@@ -769,9 +769,10 @@ function ReportsAndTheAnalyst() {
       <Term term="The bottom line">Three lines before anything else: the answer, what would change it, what to do next.</Term>
       <Term term="Your questions, answered">Each question-to-resolve gets a direct answer before the supporting evidence — the report's structure comes from your brief, never a fixed template.</Term>
       <Term term="Findings with receipts">Every finding cites the posts behind it — click a citation and the transcript scrolls to the exact moment. Stat tiles trace to documents, tool calls, or ballots.</Term>
+      <Term term="The fact gate">Every figure in the report — the lead range, each dimension score, every stat — carries its own POST citations, and a figure with no source is marked UNSOURCED instead of passing as fact. Methodology prints the ledger: how many figures, how many cited.</Term>
       <Term term="Risks & tripwires">A risk register with mitigations and watch signals, and the tripwires — the specific facts that would flip the verdict.</Term>
       <Term term="Preserved dissents">The panelists who disagreed at the close, verbatim and attributed. Averaged-away disagreement is how blind spots ship; we print it instead.</Term>
-      <Term term="Methodology">Auto-generated honesty: cast, mode, rounds, stop reason, checks run, and every claim the verifier contradicted.</Term>
+      <Term term="Methodology">Auto-generated honesty: cast, mode, rounds, stop reason, checks run — the verifier audits the panel's claims during the run and the assembled report's own claims after it, and every contradiction is printed. The completeness judge grades the answer against your brief on every report, repairs only the failing pieces, then re-judges the repair; its receipt prints here too.</Term>
       <H>Two reads of the same report</H>
       <P><B>SIMPLIFY</B> turns the expert report into a different page, not the same page with softer words: the answer as the headline, your questions as plain Q&amp;A cards, word grades (STRONG / MIXED / WEAK) instead of decimal bars, the crowd poll in everyday labels, and a mini-glossary. Same answers, same numbers underneath — hand the simplified read to anyone.</P>
       <H>The crowd's numbers, inspectable</H>

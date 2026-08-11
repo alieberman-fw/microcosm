@@ -5,7 +5,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
-import { REPORT_DIRECTOR_SCHEMA, REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, REPORT_BLOCKS_SCHEMA, blocksSpecFor, blocksSynthSystem, clipText, judgePatchSystem, middleClip, judgeSystem, mergePatchedBlocks, mergePatchedSections, normalizeBlocks, parseJudgeVerdict, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, sectionWorkerSystem, synthBudgetFor, synthesizePlain, verifierSystem, filterCites } from "@/lib/report";
+import { REPORT_DIRECTOR_SCHEMA, REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, REPORT_BLOCKS_SCHEMA, blocksSpecFor, blocksSynthSystem, clipText, judgePatchSystem, middleClip, judgeSystem, mergePatchedBlocks, mergePatchedSections, normalizeBlocks, parseJudgeVerdict, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, sectionWorkerSystem, synthBudgetFor, synthesizePlain, verifierSystem, filterCites, factGate, reportVerifierSystem } from "@/lib/report";
 import { BriefContract } from "@/lib/understand";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { normalizeEnabledTools } from "@/lib/tools";
@@ -513,7 +513,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               // numbers entry — wide caps, word-boundary clipping; the view
               // renders long entries as rows.
               numbers: (Array.isArray(x.numbers) ? x.numbers : []).slice(0, 16)
-                .map((n: { label?: unknown; value?: unknown }) => ({ label: String(n.label ?? "").slice(0, 40), value: clipText(String(n.value ?? ""), 220) })),
+                .map((n: { label?: unknown; value?: unknown; cites?: unknown }) => ({ label: String(n.label ?? "").slice(0, 40), value: clipText(String(n.value ?? ""), 220), ...(Array.isArray(n.cites) && n.cites.length ? { cites: filterCites(n.cites, validSeqs) } : {}) })),
               cites: filterCites(x.cites, validSeqs),
             }));
         const spec: ReportSpec = {
@@ -537,6 +537,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             const firstNumbers = (rawSpec.sections?.[0]?.numbers ?? []) as { label?: unknown; value?: unknown }[];
             return {
               kind,
+              ...(Array.isArray(l.cites) && (l.cites as unknown[]).length ? { cites: filterCites(l.cites, validSeqs) } : {}),
               finding: l.finding ? String(l.finding).slice(0, 300) : undefined,
               so_what: l.so_what ? String(l.so_what).slice(0, 240) : undefined,
               // word-boundary clip, roomy cap: with a ranking section these are
@@ -564,7 +565,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           },
           executive_summary: String(rawSpec.executive_summary ?? "").slice(0, 3000),
           dimension_scores: (Array.isArray(rawSpec.dimension_scores) ? rawSpec.dimension_scores : []).slice(0, 8)
-            .map((d) => ({ name: String(d.name ?? "").slice(0, 60), score: num(d.score, 0, 10), note: String(d.note ?? "").slice(0, 200) })),
+            .map((d) => ({ name: String(d.name ?? "").slice(0, 60), score: num(d.score, 0, 10), note: String(d.note ?? "").slice(0, 200), ...(Array.isArray((d as { cites?: unknown }).cites) ? { cites: filterCites((d as { cites?: unknown }).cites, validSeqs) } : {}) })),
           sections: normSections(rawSpec.sections),
           // 6-PR4 (§6f): the register that leads the report; blocks land in
           // their own dedicated call below (grammar budget — see lib/report.ts)
@@ -624,6 +625,40 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             "Synthetic, directional output from persona-grounded AI agents — not counsel, engineering of record, or a substitute for primary diligence. " +
             "Verify quantitative claims with the cited sources before acting; crowd sentiment is simulated, not surveyed.",
         };
+        // Wave 4b (audit R-H1): the fact-gate ledger — printed in methodology,
+        // unsourced figures marked in the view
+        spec.fact_gate = factGate(spec);
+
+        // Wave 4b (audit R-H3): the verifier's SECOND pass — the assembled
+        // report's OWN claims against the evidence (the first pass audited
+        // the panel's posts). Soft-fail like the first.
+        if (cfg.verifier && ((docs?.length ?? 0) > 0 || toolFindings.length > 0)) {
+          const tv = Date.now();
+          try {
+            const claims = [
+              ...(spec.lead && (spec.lead.low || spec.lead.point || spec.lead.odds) ? [`LEAD: ${JSON.stringify({ kind: spec.lead.kind, low: spec.lead.low, high: spec.lead.high, point: spec.lead.point, odds: spec.lead.odds })}`] : []),
+              ...spec.sections.flatMap((sec) => (sec.numbers ?? []).map((n) => `${sec.question} — ${n.label}: ${n.value}`)),
+            ].slice(0, 15);
+            if (claims.length) {
+              const rres = await anthropic.messages.create({
+                model: verifyModel, max_tokens: 2500,
+                system: reportVerifierSystem(),
+                messages: [{ role: "user", content: `EVIDENCE:\n${corpusDigest ? `${corpusDigest.slice(0, 30_000)}\n` : ""}${toolText}\n\nREPORT CLAIMS:\n${claims.map((c, i) => `${i + 1}. ${c}`).join("\n")}` }],
+              });
+              await logCall("report.verify", verifyModel, rres.usage, tv, undefined, { pass: "report-claims", claims: claims.length });
+              const rj = parseLooseObject(rres.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join(""));
+              if (rj && Number.isFinite(Number(rj.checked))) {
+                spec.verification = {
+                  ...(spec.verification ?? { checks: 0, supported: 0, contradicted: 0, unverifiable: 0, contradictions: [] }),
+                  report_checks: Math.min(Number(rj.checked), 15),
+                  report_contradicted: Math.min(Number(rj.contradicted) || 0, 15),
+                };
+              }
+            }
+          } catch (e) {
+            await logCall("report.verify", verifyModel, null, tv, e instanceof Error ? e.message : "report verify failed", { pass: "report-claims" });
+          }
+        }
 
         // ---- 3b · the answer's ARTIFACTS (6-PR4, §6e): a dedicated small
         // structured call — folding blocks into the main schema blew the
@@ -665,19 +700,26 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         // evidence standards met), and failures trigger a TARGETED repair of
         // only the failing pieces, never a blind retry. Soft by design: a
         // judge that errors ships the draft with an honest receipt. ----
-        if (contract?.sub_asks?.length) {
+        // Wave 4b (audit R-H13): the judge runs on EVERY report — contract-less
+        // briefs get sub-asks synthesized from the question list
+        const judgeAsks = contract?.sub_asks?.length
+          ? contract.sub_asks
+          : questions.map((q2, i) => ({ id: `q${i + 1}`, ask: `${q2.label}${q2.detail ? ` — ${q2.detail}` : ""}`, kind: "question", evidence: "" }));
+        if (judgeAsks.length) {
           send({ type: "stage", value: "verify", note: "JUDGING THE ANSWER AGAINST YOUR BRIEF — EVERY SUB-ASK, EVERY ARTIFACT…" });
           const judgeInput = JSON.stringify({
             contract: {
-              sub_asks: contract.sub_asks,
-              entities: contract.entities ?? [],
-              output_contracts: contract.output_contracts ?? [],
-              success_criteria: contract.success_criteria ?? [],
+              sub_asks: judgeAsks,
+              entities: contract?.entities ?? [],
+              output_contracts: contract?.output_contracts ?? [],
+              success_criteria: contract?.success_criteria ?? [],
             },
             answers: {
               verdict: spec.verdict,
               bottom_line: spec.bottom_line,
-              sections: spec.sections.map((s) => ({ question: s.question, answer: s.answer, finding: s.finding.slice(0, 600), numbers: s.numbers, cites: s.cites })),
+              sections: spec.sections.map((s) => ({ question: s.question, answer: s.answer, finding: s.finding.slice(0, 600), numbers: s.numbers, cites: s.cites,
+                // Wave 4b: the judge can CHECK cite support, not just count chips
+                cited_evidence: s.cites.slice(0, 2).map((c) => { const r = postRows.find((pr) => pr.seq === c); return r ? `[${c}] ${String(r.content).slice(0, 280)}` : `[${c}] MISSING`; }) })),
               blocks: spec.blocks ?? [],
               criteria: spec.criteria ?? [],
             },
@@ -690,7 +732,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               system: judgeSystem(),
               messages: [{ role: "user", content: judgeInput.slice(0, 60_000) }],
             });
-            await logCall("report.judge", judgeModel, jres.usage, tj, undefined, { sub_asks: contract.sub_asks.length, blocks: spec.blocks?.length ?? 0 });
+            await logCall("report.judge", judgeModel, jres.usage, tj, undefined, { sub_asks: judgeAsks.length, blocks: spec.blocks?.length ?? 0 });
             const jtext = jres.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
             verdict = parseJudgeVerdict(parseLooseObject(jtext));
           } catch (e) {
@@ -726,6 +768,36 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               await logCall("report.judge_patch", synthModel, null, tp, e instanceof Error ? e.message : "repair failed");
             }
             spec.judge = { pass: false, fixed, notes: verdict.failures.map((f) => `${f.target} — ${f.problem}`) };
+            // Wave 4b (audit R-H13): after a repair the judge LOOKS AGAIN —
+            // one re-judge on the patched sections, never a second repair;
+            // the receipt records whether the fix actually closed the gaps
+            if (fixed > 0) {
+              const tr = Date.now();
+              try {
+                const reInput = JSON.stringify({
+                  contract: { sub_asks: judgeAsks, entities: contract?.entities ?? [], output_contracts: contract?.output_contracts ?? [], success_criteria: contract?.success_criteria ?? [] },
+                  answers: {
+                    verdict: spec.verdict, bottom_line: spec.bottom_line,
+                    sections: spec.sections.map((s2) => ({ question: s2.question, answer: s2.answer, finding: s2.finding.slice(0, 600), numbers: s2.numbers, cites: s2.cites })),
+                    blocks: spec.blocks ?? [], criteria: spec.criteria ?? [],
+                  },
+                });
+                const rres = await anthropic.messages.create({
+                  model: judgeModel, max_tokens: 3000,
+                  system: judgeSystem(),
+                  messages: [{ role: "user", content: reInput.slice(0, 60_000) }],
+                });
+                await logCall("report.judge", judgeModel, rres.usage, tr, undefined, { sub_asks: judgeAsks.length, rejudge: true });
+                const rverdict = parseJudgeVerdict(parseLooseObject(rres.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("")));
+                if (rverdict) {
+                  spec.judge = rverdict.pass
+                    ? { pass: true, fixed, rejudged: true }
+                    : { pass: false, fixed, notes: rverdict.failures.map((f) => `${f.target} — ${f.problem}`), rejudged: true };
+                }
+              } catch (e) {
+                await logCall("report.judge", judgeModel, null, tr, e instanceof Error ? e.message : "re-judge failed", { rejudge: true });
+              }
+            }
           } else if (verdict) {
             spec.judge = { pass: true, fixed: 0 };
           }
