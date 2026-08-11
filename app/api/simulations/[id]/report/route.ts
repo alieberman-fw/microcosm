@@ -5,7 +5,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import { RUN_DEFAULTS, RunConfig, TIER_MODELS } from "@/lib/run";
-import { REPORT_DIRECTOR_SCHEMA, REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, REPORT_BLOCKS_SCHEMA, blocksSpecFor, blocksSynthSystem, clipText, judgePatchSystem, judgeSystem, mergePatchedBlocks, mergePatchedSections, normalizeBlocks, parseJudgeVerdict, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, sectionWorkerSystem, synthBudgetFor, synthesizePlain, verifierSystem, filterCites } from "@/lib/report";
+import { REPORT_DIRECTOR_SCHEMA, REPORT_JSON_SCHEMA, REPORT_VERSION, ReportLength, ReportSpec, REPORT_BLOCKS_SCHEMA, blocksSpecFor, blocksSynthSystem, clipText, judgePatchSystem, middleClip, judgeSystem, mergePatchedBlocks, mergePatchedSections, normalizeBlocks, parseJudgeVerdict, reportSpecIncomplete, reportSynthSystem, resolveReportMedia, sectionWorkerSystem, synthBudgetFor, synthesizePlain, verifierSystem, filterCites } from "@/lib/report";
 import { BriefContract } from "@/lib/understand";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { normalizeEnabledTools } from "@/lib/tools";
@@ -189,6 +189,31 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       (contested.length ? `- most-contested (net downvoted): ${contested.map(([s, n]) => `post ${s} by ${nameOf(s)} (net ${n})`).join("; ")}\n` : "")
     : "";
 
+  // Wave 4a (audit R-H4): synthesis can finally read the documents it writes
+  // about — a bounded text digest per parsed doc (framework docs first; the
+  // full native-block path lands with the fact-gate schema work)
+  let corpusDigest = "";
+  {
+    const roleOf = new Map((contract?.doc_roles ?? []).map((r) => [r.name, r.role]));
+    const ordered = [...(docs ?? [])].sort((a, b) => (roleOf.get(b.name as string) === "framework" ? 1 : 0) - (roleOf.get(a.name as string) === "framework" ? 1 : 0));
+    const parts: string[] = [];
+    let budget = 36_000;
+    for (const d of ordered) {
+      if (budget <= 2_000) break;
+      const { data: chunks } = await supabase.from("doc_chunks")
+        .select("content").eq("document_id", d.id).order("seq", { ascending: true }).limit(8);
+      const text = (chunks ?? []).map((c) => c.content).join("\n").slice(0, Math.min(4_000, budget));
+      if (!text) continue;
+      budget -= text.length;
+      parts.push(`--- ${d.name}${roleOf.get(d.name as string) === "framework" ? " [FRAMEWORK — its standards bind this report]" : ""} ---\n${text}`);
+    }
+    if (parts.length) corpusDigest = `CORPUS EXCERPTS (ground every number you can here; cite by filename):\n${parts.join("\n")}`;
+  }
+
+  const toolText = toolFindings.length
+    ? `TOOL FINDINGS (live web searches the panel ran — citable as "source: web", URLs are real):\n${toolFindings.map((f) => `- [${f.agent}] searched "${f.query}" → ${f.results.slice(0, 3).map((x) => `${x.title} <${x.url}>`).join(" · ") || "no results"}`).join("\n")}`
+    : "";
+
   const questions = normalizeQuestions(brief.questions);
   const success = normalizeSuccess(brief.success);
   const transcript = postRows.map((r) => {
@@ -210,7 +235,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     // at close and the position census — reaches the synthesizer verbatim
     ((lastCoverage?.scores ?? []).length ? `SUB-ASK RESOLUTION AT CLOSE (the run tracked these):\n${lastCoverage!.scores!.map((c) => `- [${c.id}] ${c.score}/100 resolved${c.missing ? ` — missing: ${c.missing}` : ""}`).join("\n")}\n` : "") +
     (censusEvt && censusEvt.measured ? `CLOSING POSITION CENSUS (measured): ${censusEvt.aligned} of ${censusEvt.total} aligned${(censusEvt.dissenters ?? []).length ? ` — dissenting: ${censusEvt.dissenters!.join(", ")}` : ""}\n` : "") +
-    (toolFindings.length ? `TOOL FINDINGS (live web searches the panel ran — citable as "source: web", URLs are real):\n${toolFindings.map((f) => `- [${f.agent}] searched "${f.query}" → ${f.results.slice(0, 3).map((x) => `${x.title} <${x.url}>`).join(" · ") || "no results"}`).join("\n")}\n` : "") +
+    (toolText ? `${toolText}\n` : "") +
+    // Wave 4a (audit R-H4): the contract's reading of the documents binds
+    // the report — framework docs are STANDARDS, not just evidence
+    (((contract?.doc_roles ?? []).length) ? `DOCUMENT ROLES (how the understanding pass classified the corpus):\n${contract!.doc_roles!.map((r) => `- ${r.name}: ${r.role}${r.role === "framework" ? " — its standards BIND this report; apply them explicitly" : ""}${r.note ? ` (${r.note})` : ""}`).join("\n")}\n` : "") +
+    (((contract?.constraints ?? []).length) ? `CONSTRAINTS IN PLAY: ${contract!.constraints!.join(" · ")}\n` : "") +
+    (corpusDigest ? `${corpusDigest}\n` : "") +
     ((docs?.length ?? 0) > 0 ? `UPLOADED MATERIALS (exact filenames — usable in "media" when the decision turned on one):\n${docs!.map((d) => `- ${d.name} (${(d.mime ?? "").startsWith("image/") ? "image" : "document"})`).join("\n")}\n` : "") +
     voteText;
 
@@ -301,7 +331,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
                 const res = await anthropic.messages.create({
                   model: synthModel, max_tokens: wb,
                   system: sectionWorkerSystem(effLength),
-                  messages: [{ role: "user", content: `${briefText}\nASSIGNED QUESTION: ${q.label}${q.detail ? ` — ${q.detail}` : ""}\nTRANSCRIPT:\n${transcript.slice(0, 140_000)}` }],
+                  messages: [{ role: "user", content: `${briefText}\nASSIGNED QUESTION: ${q.label}${q.detail ? ` — ${q.detail}` : ""}\nTRANSCRIPT:\n${middleClip(transcript, 140_000)}` }],
                 });
                 await logCall("report.section", synthModel, res.usage, t0, undefined, { q: q.label.slice(0, 60), budget: wb, stop: res.stop_reason });
                 if (res.stop_reason === "max_tokens") continue; // escalate once
@@ -333,7 +363,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
                 const ms = anthropic.messages.stream({
                   model: synthModel, max_tokens: db,
                   system: reportSynthSystem(effLength, { director: true }),
-                  messages: [{ role: "user", content: `${briefText}\nSECTION DRAFTS (final — write everything else consistent with these):\n${JSON.stringify(results)}\nTRANSCRIPT:\n${transcript.slice(0, 160_000)}` }],
+                  messages: [{ role: "user", content: `${briefText}\nSECTION DRAFTS (final — write everything else consistent with these):\n${JSON.stringify(results)}\nTRANSCRIPT:\n${middleClip(transcript, 160_000)}` }],
                   output_config: { format: { type: "json_schema", schema: REPORT_DIRECTOR_SCHEMA } },
                 });
                 let dbuf = "";
@@ -377,7 +407,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               model: synthModel,
               max_tokens: budgets[attempt],
               system: reportSynthSystem(effLength),
-              messages: [{ role: "user", content: `${briefText}\nTRANSCRIPT:\n${transcript.slice(0, 160_000)}` }],
+              messages: [{ role: "user", content: `${briefText}\nTRANSCRIPT:\n${middleClip(transcript, 160_000)}` }],
               // structured outputs pin the reply to the report schema — a
               // prose-wrapped response killed a live synthesis ("unparseable")
               output_config: { format: { type: "json_schema", schema: REPORT_JSON_SCHEMA } },
@@ -426,7 +456,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
         // ---- 2 · verify: numeric claims vs the corpus (§4.1) ----
         let verification: ReportSpec["verification"];
-        if (cfg.verifier && (docs?.length ?? 0) > 0) {
+        if (cfg.verifier && ((docs?.length ?? 0) > 0 || toolFindings.length > 0)) {
           send({ type: "stage", value: "verify", note: `FACT-CHECKING CLAIMS AGAINST ${docs!.length} DOCUMENT${docs!.length > 1 ? "S" : ""}…` });
           const corpusBlocks: (Anthropic.Beta.BetaContentBlockParam & { cache_control?: { type: "ephemeral" } })[] = [];
           for (const d of docs!) {
@@ -447,7 +477,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
                 model: verifyModel,
                 max_tokens: 5000, // verifier fails soft, but thinking headroom keeps its check list complete
                 system: verifierSystem(),
-                messages: [{ role: "user", content: [...corpusBlocks, { type: "text", text: `PANEL POSTS:\n${transcript.slice(0, 100_000)}` }] }],
+                messages: [{ role: "user", content: [...corpusBlocks, { type: "text", text: `${toolText ? `${toolText}\n` : ""}PANEL POSTS:\n${middleClip(transcript, 100_000)}` }] }],
                 betas: [FILES_BETA],
               });
               await logCall("report.verify", verifyModel, vres.usage as { input_tokens: number; output_tokens: number }, t1);
@@ -544,7 +574,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           risks: (Array.isArray(rawSpec.risks) ? rawSpec.risks : []).slice(0, 10)
             .map((r) => ({ risk: String(r.risk ?? "").slice(0, 220), severity: (["high", "medium", "low"] as const).find((sv) => sv === r.severity) ?? "medium", mitigation: String(r.mitigation ?? "").slice(0, 220), watch_signal: String(r.watch_signal ?? "").slice(0, 220) })),
           dissents: (Array.isArray(rawSpec.dissents) ? rawSpec.dissents : []).slice(0, 6)
-            .map((d) => ({ name: String(d.name ?? "").slice(0, 60), role: String(d.role ?? "").slice(0, 90), position: String(d.position ?? "").slice(0, 220), quote: String(d.quote ?? "").slice(0, 400), seq: validSeqs.has(Number(d.seq)) ? Number(d.seq) : 0 })),
+            .map((d) => {
+              // Wave 4a (audit R-H14): a "verbatim" dissent must actually
+              // appear in the post it cites — otherwise keep the words but
+              // drop the dead jump; and never cut a quote mid-word
+              const seqN = validSeqs.has(Number(d.seq)) ? Number(d.seq) : 0;
+              const quote = clipText(String(d.quote ?? ""), 400);
+              const norm = (x: string) => x.replace(/\s+/g, " ").trim().toLowerCase();
+              const post = seqN ? postRows.find((r) => r.seq === seqN) : undefined;
+              const verbatim = post ? norm(String(post.content ?? "")).includes(norm(quote).slice(0, 80)) : false;
+              return { name: String(d.name ?? "").slice(0, 60), role: String(d.role ?? "").slice(0, 90), position: String(d.position ?? "").slice(0, 220), quote, seq: verbatim ? seqN : 0 };
+            }),
           tripwires: (Array.isArray(rawSpec.tripwires) ? rawSpec.tripwires : []).slice(0, 8).map((t) => String(t).slice(0, 220)),
           sentiment: sentiments,
           poll_question: pollQuestion ? String(pollQuestion).slice(0, 240) : undefined,
@@ -602,7 +642,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
                   content:
                     `${briefText}\nDRAFT ANSWERS (align the artifacts with these):\n` +
                     `${JSON.stringify(spec.sections.map((s) => ({ question: s.question, answer: s.answer })))}\n` +
-                    `TRANSCRIPT:\n${transcript.slice(0, 120_000)}`,
+                    `TRANSCRIPT:\n${middleClip(transcript, 120_000)}`,
                 }],
                 output_config: { format: { type: "json_schema", schema: REPORT_BLOCKS_SCHEMA } },
               });
@@ -669,7 +709,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
                   role: "user",
                   content:
                     `${briefText}\nTHE JUDGE'S FAILURES (repair EXACTLY these):\n${verdict.failures.map((f) => `- ${f.target}: ${f.problem}${f.must_fix ? ` — fix: ${f.must_fix}` : ""}`).join("\n")}\n` +
-                    `CURRENT DRAFT ANSWERS (JSON):\n${judgeInput.slice(0, 30_000)}\nTRANSCRIPT:\n${transcript.slice(0, 120_000)}`,
+                    `CURRENT DRAFT ANSWERS (JSON):\n${judgeInput.slice(0, 30_000)}\nTRANSCRIPT:\n${middleClip(transcript, 120_000)}`,
                 }],
               });
               await logCall("report.judge_patch", synthModel, pres.usage, tp, undefined, { failures: verdict.failures.length, stop: pres.stop_reason });

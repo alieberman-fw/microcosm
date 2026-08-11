@@ -138,3 +138,19 @@ describe("Wave 3 — feedback loops", () => {
     expect(withVotes?.seq).toBe(1);
   });
 });
+
+describe("middleClip (Wave 4a, R-H9) — the closing rounds survive", () => {
+  it("keeps head AND tail with an honest marker", async () => {
+    const { middleClip } = await import("@/lib/report");
+    const text = "OPENING." + "x".repeat(5000) + "THE CLOSING ROUNDS.";
+    const out = middleClip(text, 1000);
+    expect(out).toContain("OPENING.");
+    expect(out).toContain("THE CLOSING ROUNDS.");
+    expect(out).toContain("CLIPPED FOR LENGTH");
+    expect(out.length).toBeLessThan(1300);
+  });
+  it("passes short text through untouched", async () => {
+    const { middleClip } = await import("@/lib/report");
+    expect(middleClip("short", 1000)).toBe("short");
+  });
+});
