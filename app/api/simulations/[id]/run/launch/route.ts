@@ -108,6 +108,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       worker: workerNonce,
       stop_requested: false,
       started_at: isContinue ? (runState?.started_at ?? new Date().toISOString()) : new Date().toISOString(),
+      // pin the launched mode: a continue/reclaim keeps the mode the run
+      // STARTED under even if config.casting.mode mutates mid-run (the
+      // Agora→Tribunal field incident)
+      mode: isContinue ? (runState?.mode ?? castMode) : castMode,
     } satisfies RunState,
     status: "running",
     configPatch,

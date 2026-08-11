@@ -219,11 +219,18 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
         if (generated === 0) throw new Error("Crowd generation produced no members — try again");
 
+        // FRESH read-merge-write: this stream runs for minutes, and spreading
+        // the config snapshot from request start clobbered everything written
+        // meanwhile — the field incident wiped a user's mode choice AND a live
+        // run's run_state heartbeat (stall → reclaim → the mode "flip")
+        const { data: freshSim } = await supabase.from("simulations").select("config").eq("id", id).maybeSingle();
+        const freshConfig = (freshSim?.config as Record<string, unknown>) ?? {};
+        const freshCasting = (freshConfig.casting as Record<string, unknown>) ?? {};
         await supabase.from("simulations").update({
           config: {
-            ...((sim.config as Record<string, unknown>) ?? {}),
+            ...freshConfig,
             casting: {
-              ...(casting as Record<string, unknown>),
+              ...freshCasting,
               crowd: { generated, sample, sampled_of: target, at: new Date().toISOString() },
             },
           },

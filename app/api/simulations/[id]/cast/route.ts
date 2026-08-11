@@ -399,8 +399,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const { error: agentErr } = await supabase.from("sim_agents").insert(rows);
         if (agentErr) throw new Error(agentErr.message);
 
-        const prevCasting = ((sim.config as { casting?: Record<string, unknown> } | null)?.casting) ?? null;
-        const prevConfig = (sim.config as Record<string, unknown>) ?? {};
+        // FRESH read-merge-write (same class as the crowd-route field fix):
+        // casting streams for minutes — a stale spread here would clobber any
+        // config written meanwhile (mode choices, run settings, run_state)
+        const { data: freshSim } = await supabase.from("simulations").select("config").eq("id", id).maybeSingle();
+        const prevConfig = ((freshSim?.config as Record<string, unknown>) ?? (sim.config as Record<string, unknown>)) ?? {};
+        const prevCasting = (prevConfig.casting as Record<string, unknown> | undefined) ?? null;
         if (!addMode) { delete prevConfig.run_state; delete prevConfig.run_result; }
         await supabase.from("simulations").update({
           ...(addMode ? {} : { status: "draft" }),

@@ -95,6 +95,7 @@ export default function SimWorkspace({
     }
   }, [synthesizing, router]);
   const [castingBusy, setCastingBusy] = useState(false);
+  const [crowdBusy, setCrowdBusy] = useState(false); // crowd generating → launch locks
   // the mode is CHOSEN in run config; a fresh cast re-seeds it to the director's pick
   const [modeSel, setModeSel] = useState<string | null>(initialCasting?.mode ?? null);
   const [docs, setDocs] = useState<DocRow[]>(initialDocs);
@@ -579,6 +580,7 @@ export default function SimWorkspace({
         onCountChange={setPopulationCount}
         onCastingChange={setCastingBusy}
         onModeChange={setModeSel}
+        onCrowdGenChange={setCrowdBusy}
       />
 
       {/* stage 4 — run configuration (§4.1); LAUNCH activates with the engine */}
@@ -601,6 +603,7 @@ export default function SimWorkspace({
             crowd={crowd}
             initialRun={initialRun}
             initialTools={initialTools}
+            crowdBusy={crowdBusy}
           />
         );
       })()}

@@ -16,7 +16,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { CoverageScore, PollAngle, StanceLabels, SubAskLite, agendaForRound, coverageSystem, normalizeStanceLabels, parseCoverage, pollAngleForRound } from "@/lib/agenda";
 import { FrozenSpec } from "@/lib/casting";
-import { RunConfig, TIER_MODELS, agoraReplies, burstSize, counterSlots, crossfireSlots, waveWidth as waveWidthOf } from "@/lib/run";
+import { RunConfig, TIER_MODELS, agoraReplies, burstSize, counterSlots, crossfireSlots, dedupeCites, waveWidth as waveWidthOf } from "@/lib/run";
 import { parseLooseArray } from "@/lib/llm-json";
 import { toolBlocksFor, toolPromptAddendum } from "@/lib/tools";
 
@@ -312,7 +312,7 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
     name: lead.spec.name, role: lead.spec.seat?.role ?? lead.spec.role, initials: lead.spec.initials,
     adversarial: lead.spec.seat?.adversarial || lead.spec.kind === "adversarial",
     thread: opts.thread, reply_to: opts.reply_to ?? null, tag: opts.tag, content: text,
-    cites: cites.slice(0, 4), round: opts.round, phase: opts.phase, side: opts.side,
+    cites: dedupeCites(cites).slice(0, 4), round: opts.round, phase: opts.phase, side: opts.side,
   };
   if (opts.deferEmit) return { seq: opts.seq, text, post: postEvt };
   await ctx.emit(postEvt);
