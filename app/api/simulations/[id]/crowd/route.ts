@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { PersonaSpec } from "@/lib/personas";
+import { BriefContract } from "@/lib/understand";
 import { CROWD_BATCH, CROWD_MODEL, CROWD_SAMPLE_CAP, FrozenSpec, crowdGenerateSystem } from "@/lib/casting";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 
@@ -78,8 +79,32 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
         emit({ type: "start", target, sample, experts: expertsSample, residents: residentsSample });
 
-        const briefLine = `PROBLEM: ${(brief?.problem ?? "").slice(0, 500)}`;
-        const seenNames = new Set(leadSpecs.map((f) => f.name).filter(Boolean));
+        // Wave 2b (audit U-H6/H7/H8): the crowd IS the sentiment population —
+        // it gets the brief's world, not a 500-char excerpt: the contract's
+        // cohorts (geography, income, tenure), constraints, and the poll
+        // questions it will actually be asked.
+        const contract = (brief as { contract?: BriefContract } | null)?.contract;
+        const cohorts = contract?.population_hints?.cohorts ?? [];
+        const cohortLines = cohorts.length
+          ? `COHORTS TO REPRESENT (ground members in these, proportionally):\n${cohorts.map((c, i) => `- [${i + 1}] ${c.desc}${c.geography ? ` · geography: ${c.geography}` : ""}`).join("\n")}\n`
+          : "";
+        const constraintLines = (contract?.constraints ?? []).length
+          ? `CONSTRAINTS THAT SHAPE THIS MARKET: ${contract!.constraints!.join(" · ")}\n`
+          : "";
+        const pollLines = (Array.isArray(contract?.poll_plan) ? contract!.poll_plan! : [])
+          .map((a) => a.question).filter(Boolean).slice(0, 3);
+        const pollLine = pollLines.length
+          ? `THESE PEOPLE WILL BE POLLED ON: ${pollLines.join(" · ")} — give them lives and stances that make their answers MEAN something.\n`
+          : "";
+        const briefLine =
+          `PROBLEM: ${(brief?.problem ?? "").slice(0, 2000)}\n` +
+          cohortLines + constraintLines + pollLine;
+        // U-H26: a regenerate must not mint a duplicate of a preserved
+        // hand-picked member — seed the avoid-set from EVERY surviving row
+        const seenNames = new Set([
+          ...leadSpecs.map((f) => f.name),
+          ...(agents ?? []).map((a) => (a.spec_frozen as FrozenSpec)?.name),
+        ].filter(Boolean));
         let generated = 0;
         let keySeq = 0;
 

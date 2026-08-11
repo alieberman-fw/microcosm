@@ -46,6 +46,10 @@ export type EngineEvent =
   | { type: "coverage"; round: number; scores: CoverageScore[] };
 
 export interface EngineContext {
+  /** Wave 2b (E-F1): the brief contract's success criteria + constraints —
+   *  compiled into every persona prompt so the panel argues toward them */
+  criteria?: string[];
+  constraints?: string[];
   anthropic: Anthropic;
   cfg: RunConfig;
   mode: string;
@@ -88,7 +92,7 @@ export interface EngineContext {
 }
 
 /** §6.1: pure persona → system prompt compilation. Versioned by content. */
-export function compilePersonaPrompt(spec: FrozenSpec, args: { mode: string; problem: string; temperature: RunConfig["temperature"] }): string {
+export function compilePersonaPrompt(spec: FrozenSpec, args: { mode: string; problem: string; temperature: RunConfig["temperature"]; criteria?: string[]; constraints?: string[]; roster?: string[] }): string {
   const t = spec.traits ?? {};
   const styleBits: string[] = [];
   if ((t.verbosity ?? 0.5) < 0.4) styleBits.push("You are terse — two or three sentences, no throat-clearing.");
@@ -113,6 +117,16 @@ export function compilePersonaPrompt(spec: FrozenSpec, args: { mode: string; pro
     spec.backstory ? `Background: ${spec.backstory}` : "",
     spec.stances?.length ? `Standing positions you argue from:\n${spec.stances.map((x) => `- ${x}`).join("\n")}` : "",
     `You are one voice on a ${args.mode} panel deliberating: "${args.problem}"`,
+    // Wave 2b (audit E-F3): "address colleagues by first name" finally has a
+    // roster to address — every persona knows who is in the room
+    args.roster?.length ? `The panel: ${args.roster.join(" · ")}.` : "",
+    // E-F2: a Tribunal bench is a MANDATE the persona argues from, knowingly
+    args.mode === "Tribunal" && spec.seat?.side
+      ? `You sit on the ${spec.seat.side === "con" ? "CON" : "PRO"} bench: your professional read genuinely ${spec.seat.side === "con" ? "OPPOSES" : "SUPPORTS"} the thesis — argue it with evidence, concede only what the record forces, and remember a judge scores each round.`
+      : "",
+    // E-F1: the brief's contract binds the deliberation, not just the report
+    args.criteria?.length ? `A decision-grade answer must deliver (argue toward these):\n${args.criteria.map((c) => `- ${c}`).join("\n")}` : "",
+    args.constraints?.length ? `Constraints in play: ${args.constraints.join(" · ")}.` : "",
     `Forum rules: write ONE post in your own voice, 60–140 words, concrete and specific — numbers, names, mechanisms. ` +
     `Reference documents by name when you use them. Address colleagues by first name. ` +
     `Start directly with your point — never prefix your post with your own name, a greeting, or markdown headers. ` +
@@ -190,7 +204,7 @@ async function speak(ctx: EngineContext, lead: EngineLead, opts: {
   // 3d — tools attach to LEAD turns only, and only when the user enabled them;
   // the addendum makes use agent-decided, never mandatory
   const toolBlocks = toolBlocksFor(ctx.tools, model);
-  const system = compilePersonaPrompt(lead.spec, { mode: ctx.mode, problem: ctx.problem, temperature: ctx.cfg.temperature })
+  const system = compilePersonaPrompt(lead.spec, { mode: ctx.mode, problem: ctx.problem, temperature: ctx.cfg.temperature, criteria: ctx.criteria, constraints: ctx.constraints, roster: ctx.leads.map((l) => `${l.spec.name} (${l.spec.seat?.role ?? l.spec.role})`) })
     + toolPromptAddendum(ctx.tools);
   const factDigest = toolBlocks.length && ctx.pulledFacts.length
     ? `\n\nFACTS THE PANEL ALREADY PULLED (check before searching again):\n${ctx.pulledFacts.slice(-10).map((f) => `- "${f.query}" → ${f.results.slice(0, 2).map((r) => `${r.title} (${r.url})`).join(" · ") || "no results"}`).join("\n")}`

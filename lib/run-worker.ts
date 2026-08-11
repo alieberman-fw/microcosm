@@ -71,6 +71,9 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
     // tracker, and the adaptive poll plan; no contract → all three off
     const subAsks: SubAskLite[] = (brief.contract?.sub_asks ?? []).map((s) => ({ id: s.id, ask: s.ask }));
     const pollPlan: PollAngle[] | null = Array.isArray(brief.contract?.poll_plan) ? brief.contract!.poll_plan! : null;
+    // Wave 2b (E-F1): criteria + constraints reach every persona prompt
+    const criteria = (brief.contract?.success_criteria ?? []).slice(0, 8);
+    const constraints = (brief.contract?.constraints ?? []).slice(0, 8);
     const config = (sim.config as Record<string, unknown>) ?? {};
     const cfg: RunConfig = { ...RUN_DEFAULTS, ...((config.run as Partial<RunConfig>) ?? {}) };
     const runState = (config.run_state as RunState | undefined) ?? {};
@@ -207,7 +210,7 @@ export async function executeSlice({ db, simId, orgId, userId, origin, canChain,
       // SLICE_BUDGET + CALL_TIMEOUT + margin ≤ 800s (see lib/walkaway.ts) —
       // a runaway multi-search turn gets cut, and the engine's own ladder
       // retries at a safe boundary where the deadline is re-checked
-      anthropic: new Anthropic({ timeout: ENGINE_CALL_TIMEOUT_MS, maxRetries: 0 }), cfg, mode,
+      anthropic: new Anthropic({ timeout: ENGINE_CALL_TIMEOUT_MS, maxRetries: 0 }), cfg, mode, criteria, constraints,
       problem: brief.problem ?? "",
       questions: normalizeQuestions(brief.questions).map((x) => x.label),
       leads, crowd, corpusBlocks,

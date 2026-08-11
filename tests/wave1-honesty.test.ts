@@ -84,3 +84,32 @@ describe("castingPlanSystem (Wave 2a) — an explicit mode is a design constrain
     expect(castingGenerateSystem()).toContain("GENUINELY oppose the thesis");
   });
 });
+
+describe("compilePersonaPrompt (Wave 2b) — personas know their world", () => {
+  it("roster, criteria, constraints, and the Tribunal bench mandate all land", async () => {
+    const { compilePersonaPrompt } = await import("@/lib/engine");
+    const spec = {
+      name: "Ana Ruiz", initials: "AR", role: "Zoning attorney", kind: "expert",
+      tagline: "", backstory: "", stances: [], skills: [], traits: {},
+      seat: { role: "Zoning", why: "owns entitlement", discipline: "ZONING", adversarial: false, provenance: "generated", side: "con" },
+    } as never;
+    const sys = compilePersonaPrompt(spec, {
+      mode: "Tribunal", problem: "Approve the rezoning?", temperature: "balanced",
+      criteria: ["approval odds with a whip count"], constraints: ["council votes in 60 days"],
+      roster: ["Ana Ruiz (Zoning)", "Bo Lee (Planner)"],
+    });
+    expect(sys).toContain("The panel: Ana Ruiz (Zoning) · Bo Lee (Planner).");
+    expect(sys).toContain("CON bench");
+    expect(sys).toContain("genuinely OPPOSES the thesis");
+    expect(sys).toContain("approval odds with a whip count");
+    expect(sys).toContain("Constraints in play: council votes in 60 days.");
+  });
+  it("omits every block when the context is absent (legacy prompts unchanged)", async () => {
+    const { compilePersonaPrompt } = await import("@/lib/engine");
+    const spec = { name: "Bo Lee", initials: "BL", role: "Planner", kind: "expert", tagline: "", backstory: "", stances: [], skills: [], traits: {}, seat: { role: "Planner", why: "", discipline: "PANEL", adversarial: false, provenance: "generated" } } as never;
+    const sys = compilePersonaPrompt(spec, { mode: "Agora", problem: "q", temperature: "balanced" });
+    expect(sys).not.toContain("The panel:");
+    expect(sys).not.toContain("bench");
+    expect(sys).not.toContain("Constraints in play");
+  });
+});
