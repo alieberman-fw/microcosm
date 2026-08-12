@@ -224,7 +224,7 @@ export async function POST(request: Request) {
             try {
               const res = await anthropic.messages.create({
                 model: CASTING_MODEL,
-                max_tokens: 1200 * chunk.length + 600,
+                max_tokens: (attempt >= 2 ? 3500 : 2000) * chunk.length + 1000, // escalating ladder — see the sim cast route
                 system: castingGenerateSystem(),
                 messages: [{
                   role: "user",

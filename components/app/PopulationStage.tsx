@@ -853,17 +853,20 @@ export default function PopulationStage({
             castMode === "add" ? (
               <MiniSwarm key={p.key} label={`INCOMING · ${p.role.slice(0, 30).toUpperCase()}`} />
             ) : (
+            // field report: the cards read as dead gray — `shim` animates
+            // background-position, and the old wrapper had NO gradient, so the
+            // animation was a silent no-op. The demo's shimmer = a moving
+            // gradient ON each placeholder bar.
             <div key={p.key} style={{ border: "1px solid var(--ln3)", borderRadius: 14, padding: "20px 20px", background: "var(--sf)", minHeight: 148, boxSizing: "border-box" }}>
-              <div style={{ animation: "shim 1.2s ease infinite" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--sf2)", flex: "none" }} />
-                  <div style={{ height: 12, borderRadius: 100, background: "var(--sf2)", width: "70%" }} />
-                </div>
-                <div style={{ marginTop: 14, fontSize: 12.5, fontWeight: 600, color: "var(--t4)" }}>{p.role}</div>
-                <div style={{ marginTop: 9, height: 9, borderRadius: 100, background: "var(--sf2)", width: "60%" }} />
-                <div style={{ marginTop: 16, ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t7)" }}>
-                  MATCHING · DRAFTING BACKSTORY…
-                </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: "50%", flex: "none", background: "linear-gradient(90deg, var(--sf2) 25%, var(--ln3) 50%, var(--sf2) 75%)", backgroundSize: "400px 100%", animation: "shim 1.4s linear infinite" }} />
+                <div style={{ height: 12, borderRadius: 100, width: "70%", background: "linear-gradient(90deg, var(--sf2) 25%, var(--ln3) 50%, var(--sf2) 75%)", backgroundSize: "400px 100%", animation: "shim 1.4s linear infinite" }} />
+              </div>
+              <div style={{ marginTop: 14, fontSize: 12.5, fontWeight: 600, color: "var(--t4)" }}>{p.role}</div>
+              <div style={{ marginTop: 9, height: 9, borderRadius: 100, width: "60%", background: "linear-gradient(90deg, var(--sf2) 25%, var(--ln3) 50%, var(--sf2) 75%)", backgroundSize: "400px 100%", animation: "shim 1.4s linear infinite" }} />
+              <div style={{ marginTop: 16, ...mono, fontSize: 9.5, letterSpacing: ".06em", color: "var(--t6)", display: "flex", alignItems: "center", gap: 7 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)", animation: "pulseDot 1.6s ease infinite", flex: "none" }} />
+                MATCHING · DRAFTING BACKSTORY…
               </div>
             </div>
             )
