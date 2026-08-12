@@ -66,7 +66,12 @@ export default function UnderstandingCard({
   // the understanding theater: what the pass is actually doing, narrated
   const scanLines = [
     "READING YOUR BRIEF…",
-    ...parsedDocNames.slice(0, 3).map((n) => `READING ${n.toUpperCase().slice(0, 34)}…`),
+    // field report: 5 docs uploaded, 3 READING lines — the theater capped at
+    // three and read as if documents were being skipped (they never were;
+    // the pass reads every parsed doc). Name up to six, COUNT the rest —
+    // the theater must never omit a document silently.
+    ...parsedDocNames.slice(0, 6).map((n) => `READING ${n.toUpperCase().slice(0, 34)}…`),
+    ...(parsedDocNames.length > 6 ? [`READING ${parsedDocNames.length - 6} MORE DOCUMENT${parsedDocNames.length - 6 > 1 ? "S" : ""}…`] : []),
     "DECOMPOSING THE ASK INTO SUB-QUESTIONS…",
     "MAPPING THE SHAPE OF THE ANSWER…",
     "LOOKING FOR A DESCRIBED POPULATION…",
