@@ -13,6 +13,7 @@ import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MiniSwarm } from "@/components/app/CastingTheater";
+import DocketRail from "@/components/app/DocketRail";
 import Markdown from "@/components/app/Markdown";
 import Orb from "@/components/app/Orb";
 import { distShares } from "@/lib/dist";
@@ -235,18 +236,16 @@ export default function LiveRun({
   const [probOpen, setProbOpen] = useState(false);
   const [votes, setVotes] = useState<LiveVote[]>(initialVotes);
   // 6-PR3 — the run walks the brief: sub-ask resolution scores + round agendas
-  /** which COVERAGE chip's popover is open (hover or tap) */
-  const [covOpen, setCovOpen] = useState<string | null>(null);
-  // field report: the strip appeared only after round 1's tracker pass — the
-  // contract's sub-asks now seed it from LAUNCH as pending pills (score —,
-  // dimmed) so the run's questions are visible before the first scoring
+  // (rendered by the DOCKET RAIL on the canvas). Field report: the strip
+  // appeared only after round 1's tracker pass — the contract's sub-asks seed
+  // it from LAUNCH as pending rows (score —, dimmed) so the run's questions
+  // are visible before the first scoring.
   const [coverage, setCoverage] = useState<({ id: string; ask: string; score: number; missing: string; pending?: boolean })[]>(
     initialCoverage.length
       ? initialCoverage
       : initialSubAsks.map((a) => ({ id: a.id, ask: a.ask, score: 0, missing: "", pending: true })),
   );
   const [agendas, setAgendas] = useState<Record<number, { label: string; detail: string }>>(initialAgendas);
-  const [agendaOpen, setAgendaOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [rosterOpen, setRosterOpen] = useState(false);
   // roster scope: leads always ride with the page; the crowd (up to 1,000
@@ -1194,104 +1193,28 @@ export default function LiveRun({
           {" "}(RE-CASTS CLEAR THE CROWD)
         </div>
       )}
-      {/* §6c COVERAGE — one chip per sub-ask filling toward resolved, so
-          convergence is visible and MEANS something. Only when the contract
-          gave the run sub-asks and the tracker has spoken. Field report: the
-          native title tooltip read as a bare "?" cursor and 180px chips cut
-          every question — the strip now says what it is, and each chip opens
-          a real popover (hover or click) with the full question + score. */}
-      {coverage.length > 0 && (
-        // field report: a pill's popover rendered UNDER the forum feed — the
-        // strip was static-positioned, so the later canvas/feed siblings
-        // painted over its absolutely-positioned children regardless of their
-        // z-index. The strip is its own stacking context above the panels now.
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10, position: "relative", zIndex: 50 }}>
-          <span style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t6)" }}>
-            COVERAGE <span style={{ color: "var(--t7)" }}>— HOW RESOLVED EACH QUESTION IS (0–100), RE-SCORED EVERY ROUND</span>
-          </span>
-          {coverage.map((c) => (
-            <span
-              key={c.id}
-              onMouseEnter={() => setCovOpen(c.id)}
-              onMouseLeave={() => setCovOpen((v) => (v === c.id ? null : v))}
-              onClick={() => setCovOpen((v) => (v === c.id ? null : c.id))}
-              style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${c.score >= 85 ? "var(--acc)" : "var(--ln4)"}`, borderRadius: 100, padding: "3px 10px", cursor: "pointer", opacity: c.pending ? 0.55 : 1 }}
-            >
-              <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: c.score >= 85 ? "var(--acc)" : "var(--t5)", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {c.ask.toUpperCase()}
-              </span>
-              <span style={{ ...mono, fontSize: 7.5, color: c.pending ? "var(--t7)" : c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)", flex: "none" }}>{c.pending ? "—" : c.score}</span>
-              {!c.pending && (
-                <span style={{ width: 34, height: 3, borderRadius: 100, background: "var(--sf2)", overflow: "hidden", flex: "none" }}>
-                  <span style={{ display: "block", width: `${c.score}%`, height: "100%", borderRadius: 100, background: c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)", transition: "width .6s ease" }} />
-                </span>
-              )}
-              {covOpen === c.id && (
-                <span style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40, width: 340, maxWidth: "70vw", border: "1px solid var(--ln4)", borderRadius: 12, background: "var(--sf)", boxShadow: "0 8px 28px rgba(0,0,0,.35)", padding: "10px 14px", cursor: "default", whiteSpace: "normal" }}>
-                  <span style={{ display: "block", fontSize: 12, lineHeight: 1.55, color: "var(--t2)", fontFamily: "inherit" }}>{c.ask}</span>
-                  <span style={{ ...mono, display: "block", fontSize: 8.5, letterSpacing: ".06em", marginTop: 6, color: c.pending ? "var(--t6)" : c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)" }}>
-                    {c.pending ? "NOT YET SCORED — THE TRACKER RATES THIS AFTER EACH ROUND" : `${c.score}/100 RESOLVED${c.score >= 85 ? " · SETTLED" : ""}`}
-                  </span>
-                  {!c.pending && c.missing && c.score < 85 && (
-                    <span style={{ display: "block", fontSize: 11, lineHeight: 1.5, color: "var(--t5)", marginTop: 4 }}>Still missing: {c.missing}</span>
-                  )}
-                </span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-      {/* field report: the agenda used to ride inline at the strip's tail and
-          clipped on anything long — it owns a WRAPPING row now, and the full
-          round instruction expands on click */}
-      {agendas[currentRound] && status === "running" && (
-        <div style={{ marginTop: 8, position: "relative", zIndex: 50 }}>
-          <button
-            onClick={() => setAgendaOpen((v) => !v)}
-            style={{ display: "flex", alignItems: "baseline", gap: 8, background: "none", border: "none", padding: 0, cursor: agendas[currentRound].detail ? "pointer" : "default", textAlign: "left", maxWidth: "100%" }}
-          >
-            <span style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t6)", flex: "none" }}>AGENDA · R{currentRound}</span>
-            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--acc)", lineHeight: 1.6, whiteSpace: "normal", minWidth: 0 }}>
-              {agendas[currentRound].label}{agendas[currentRound].detail ? (agendaOpen ? " ▴" : " ▾") : ""}
-            </span>
-          </button>
-          {agendaOpen && agendas[currentRound].detail && (
-            <div style={{ marginTop: 6, border: "1px solid var(--ln3)", borderRadius: 10, background: "var(--sf2)", padding: "10px 16px", fontSize: 12, lineHeight: 1.65, color: "var(--t4)", maxWidth: 860 }}>
-              {(() => {
-                // field report: "1) … 2) … 3) …" read as one jumbled block —
-                // numbered runs render as a real list, anything else as prose
-                const detail = agendas[currentRound].detail;
-                const parts = detail.split(/\s*\d+\)\s+/);
-                if (parts.length < 3) return detail;
-                return (
-                  <>
-                    {parts[0].trim() && <div style={{ marginBottom: 8 }}>{parts[0].trim()}</div>}
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {parts.slice(1).map((item, i) => (
-                        <div key={i} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
-                          <span style={{ ...mono, fontSize: 9, color: "var(--acc)", flex: "none", width: 14, textAlign: "right" }}>{i + 1}</span>
-                          <span style={{ minWidth: 0 }}>{item.trim()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          )}
-        </div>
-      )}
       <div style={{ height: 4, borderRadius: 100, background: "var(--sf2)", marginTop: 12, overflow: "hidden" }}>
         <div style={{ width: `${status === "done" ? 100 : Math.min(96, (currentRound / Math.max(maxR, 1)) * 100)}%`, height: "100%", background: "var(--acc)", transition: "width .4s ease" }} />
       </div>
 
       <div style={{ display: "flex", gap: 18, flex: 1, minHeight: 0, marginTop: 14 }}>
-        <div style={{ flex: 1.15, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, padding: "14px 16px", background: "var(--sf)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>
+        <div style={{ flex: 1.15, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, padding: "14px 16px", background: "var(--sf)", position: "relative" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, ...mono, fontSize: 9, letterSpacing: ".08em", color: "var(--t6)" }}>
             <span>AGENT NETWORK · {viewMode.toUpperCase()} ARRANGEMENT</span>
             <span>{leads.length} LEADS · {liveCrowd} CROWD</span>
           </div>
           <canvas ref={canvasEl} onClick={canvasClick} title="Click a lead for their full profile" style={{ flex: 1, width: "100%", minHeight: 0, marginTop: 10, cursor: "pointer" }} />
+          {/* §6c coverage + agendas live on the canvas now — the DOCKET RAIL:
+              a 34px spine of score bars, expanding to full question rows.
+              A pure overlay, so the graph and the feed never reflow. */}
+          <DocketRail
+            simId={simId}
+            coverage={coverage}
+            agendas={agendas}
+            round={currentRound}
+            maxRounds={maxR}
+            running={status === "running"}
+          />
         </div>
 
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid var(--ln2)", borderRadius: 14, background: "var(--sf)", overflow: "hidden", position: "relative" }}>
