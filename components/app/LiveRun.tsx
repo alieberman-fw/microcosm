@@ -1201,7 +1201,11 @@ export default function LiveRun({
           every question — the strip now says what it is, and each chip opens
           a real popover (hover or click) with the full question + score. */}
       {coverage.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+        // field report: a pill's popover rendered UNDER the forum feed — the
+        // strip was static-positioned, so the later canvas/feed siblings
+        // painted over its absolutely-positioned children regardless of their
+        // z-index. The strip is its own stacking context above the panels now.
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10, position: "relative", zIndex: 50 }}>
           <span style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t6)" }}>
             COVERAGE <span style={{ color: "var(--t7)" }}>— HOW RESOLVED EACH QUESTION IS (0–100), RE-SCORED EVERY ROUND</span>
           </span>
@@ -1241,7 +1245,7 @@ export default function LiveRun({
           clipped on anything long — it owns a WRAPPING row now, and the full
           round instruction expands on click */}
       {agendas[currentRound] && status === "running" && (
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 8, position: "relative", zIndex: 50 }}>
           <button
             onClick={() => setAgendaOpen((v) => !v)}
             style={{ display: "flex", alignItems: "baseline", gap: 8, background: "none", border: "none", padding: 0, cursor: agendas[currentRound].detail ? "pointer" : "default", textAlign: "left", maxWidth: "100%" }}
@@ -1252,8 +1256,27 @@ export default function LiveRun({
             </span>
           </button>
           {agendaOpen && agendas[currentRound].detail && (
-            <div style={{ marginTop: 6, border: "1px solid var(--ln3)", borderRadius: 10, background: "var(--sf2)", padding: "9px 14px", fontSize: 12, lineHeight: 1.6, color: "var(--t4)", maxWidth: 860 }}>
-              {agendas[currentRound].detail}
+            <div style={{ marginTop: 6, border: "1px solid var(--ln3)", borderRadius: 10, background: "var(--sf2)", padding: "10px 16px", fontSize: 12, lineHeight: 1.65, color: "var(--t4)", maxWidth: 860 }}>
+              {(() => {
+                // field report: "1) … 2) … 3) …" read as one jumbled block —
+                // numbered runs render as a real list, anything else as prose
+                const detail = agendas[currentRound].detail;
+                const parts = detail.split(/\s*\d+\)\s+/);
+                if (parts.length < 3) return detail;
+                return (
+                  <>
+                    {parts[0].trim() && <div style={{ marginBottom: 8 }}>{parts[0].trim()}</div>}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {parts.slice(1).map((item, i) => (
+                        <div key={i} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+                          <span style={{ ...mono, fontSize: 9, color: "var(--acc)", flex: "none", width: 14, textAlign: "right" }}>{i + 1}</span>
+                          <span style={{ minWidth: 0 }}>{item.trim()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
