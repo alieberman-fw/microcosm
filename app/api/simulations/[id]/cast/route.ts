@@ -11,7 +11,12 @@ import {
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { BriefContract, populationHintLines } from "@/lib/understand";
 
-export const maxDuration = 180; // plan + generation calls for a full panel
+// prod field incident: a 10-seat cast (55s plan + 92 serial fit checks +
+// generation + reconciliation) blew the old 180s ceiling — the function was
+// KILLED mid-stream, so rows/config/done never landed and the crowd button
+// answered "Cast the leads first" on a panel the user had just watched cast.
+// 600s = worst-case reconciliation headroom (the report route runs at 800).
+export const maxDuration = 600;
 
 /**
  * The Casting Director (CLAUDE.md §3.2A, demo Stage 02), streamed as ND-JSON:
@@ -244,6 +249,40 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         emit({ type: "plan", ...plan, add: addMode });
         const finalSeats = plan.seats;
 
+        // SURVIVE-YOUR-OWN-DEATH (prod field incident): everything the rest of
+        // the app depends on lands NOW, not at the end of the stream — a
+        // mid-flight kill used to leave zero rows, no scale (the crowd button
+        // 400'd "Cast the leads first"), and a stale status. The reset also
+        // moves here so per-seat inserts below never collide with old keys.
+        if (!addMode) {
+          await supabase.from("sim_agents").delete().eq("sim_id", id);
+          await supabase.from("posts").delete().eq("sim_id", id);
+          await supabase.from("events").delete().eq("sim_id", id);
+          const { data: freshSim0 } = await supabase.from("simulations").select("config").eq("id", id).maybeSingle();
+          const cfg0 = ((freshSim0?.config as Record<string, unknown>) ?? {});
+          delete cfg0.run_state; delete cfg0.run_result;
+          await supabase.from("simulations").update({
+            status: "draft",
+            config: {
+              ...cfg0,
+              casting: {
+                composition: plan.composition, rationale: plan.rationale, rationaleSummary: plan.rationaleSummary, scale: plan.scale,
+                mode: plan.mode, recommended_mode: plan.mode, cast_mode: plan.mode, modeRationale: plan.modeRationale, modeSummary: plan.modeSummary,
+                guidance: guidance || null, cast_at: new Date().toISOString(),
+              },
+            },
+          }).eq("id", id);
+        }
+        /** per-seat incremental insert — a killed stream keeps every seat that
+         *  resolved before the kill (the old end-of-stream bulk insert kept none) */
+        let insertedCount = 0;
+        const insertSeat = async (seat: CastSeat, personaId: string, spec: FrozenSpec): Promise<boolean> => {
+          const { error: insErr } = await supabase.from("sim_agents")
+            .insert({ sim_id: id, persona_id: personaId, agent_key: seat.key, spec_frozen: spec });
+          if (!insErr) insertedCount += 1;
+          return !insErr;
+        };
+
         // frozen spec = persona + seat metadata (+ adversarial mandate) — built
         // up-front so live seat events render exactly what gets persisted
         const freeze = (seat: CastSeat, spec: PersonaSpec, provenance: "yours" | "library" | "generated"): FrozenSpec => {
@@ -275,7 +314,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const resolved: { seat: CastSeat; personaId: string; spec: FrozenSpec; provenance: "yours" | "library" }[] = [];
         const gaps: CastSeat[] = [];
 
-        for (const seat of finalSeats) {
+        // MATCHING RUNS 4-WIDE (prod field incident: 92 serial fit checks ≈
+        // 62s of the wall-clock — the user watched shimmer cards sit still).
+        // JS is single-threaded, so the usedPersonaIds check-and-claim below
+        // stays race-free; seat events interleave and the client fills cards
+        // by key, so arrival order never mattered.
+        const matchSeat = async (seat: CastSeat) => {
           const seatText = `${seat.role} ${seat.query}`;
           // FIT GATE: the loose OR-query fallback once seated a Wine Cellar
           // Builder as "Pool Design & Build Specialist" on a shared word.
@@ -336,12 +380,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           for (const cand of orgRanked) {
             if (await fits(cand.spec)) { orgHit = cand; break; }
           }
-          if (orgHit) {
+          if (orgHit && !usedPersonaIds.has(orgHit.id)) {
             usedPersonaIds.add(orgHit.id);
             const frozenYours = freeze(seat, orgHit.spec, "yours");
             resolved.push({ seat, personaId: orgHit.id, spec: frozenYours, provenance: "yours" });
+            await insertSeat(seat, orgHit.id, frozenYours);
             emit({ type: "seat", key: seat.key, provenance: "yours", spec: frozenYours });
-            continue;
+            return;
           }
           // 2b — the global library (FTS; residents/consumers match their own kinds)
           const kinds = seat.kind === "consumer" || seat.kind === "resident" ? ["consumer", "resident"] : null;
@@ -360,14 +405,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
               if (await fits(r.spec, loose)) { hit = r; break outer; }
             }
           }
-          if (hit) {
+          if (hit && !usedPersonaIds.has(hit.id)) {
             usedPersonaIds.add(hit.id);
             const frozenLib = freeze(seat, hit.spec, "library");
             resolved.push({ seat, personaId: hit.id, spec: frozenLib, provenance: "library" });
+            await insertSeat(seat, hit.id, frozenLib);
             emit({ type: "seat", key: seat.key, provenance: "library", spec: frozenLib });
           } else {
             gaps.push(seat);
           }
+        };
+        {
+          let cursor = 0;
+          const matchWorker = async () => {
+            for (;;) {
+              const i = cursor++;
+              if (i >= finalSeats.length) return;
+              await matchSeat(finalSeats[i]);
+            }
+          };
+          await Promise.all(Array.from({ length: Math.min(4, Math.max(finalSeats.length, 1)) }, matchWorker));
+          // gaps generate in plan order regardless of which worker found them
+          gaps.sort((a, b) => finalSeats.indexOf(a) - finalSeats.indexOf(b));
         }
 
         // ---- 3 · generate the true gaps, save them back to the org library ----
@@ -383,7 +442,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const generateSeats = async (seats: CastSeat[], attempt: number): Promise<CastSeat[]> => {
           if (!seats.length) return [];
           const failed: CastSeat[] = [];
-          const CHUNK = 4;
+          // prod field incident: out=3300 on a 4-seat chunk was EXACTLY the old
+          // 700/seat+500 cap — truncated JSON, salvage lost the tail seats, and
+          // the cards "disappeared". Smaller chunks, real headroom (adaptive
+          // thinking on the casting tier bills against this cap too).
+          const CHUNK = 3;
           const chunks: CastSeat[][] = [];
           for (let i = 0; i < seats.length; i += CHUNK) chunks.push(seats.slice(i, i + CHUNK));
           const chunkSpecs = await Promise.all(chunks.map(async (chunk) => {
@@ -391,7 +454,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             try {
               const genRes = await anthropic.messages.create({
                 model: CASTING_MODEL,
-                max_tokens: 700 * chunk.length + 500,
+                max_tokens: 1200 * chunk.length + 600,
                 system: castingGenerateSystem(),
                 messages: [{
                   role: "user",
@@ -400,7 +463,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                     chunk.map((s) => `- seat_key ${s.key}: ${s.role} (kind ${s.kind}, discipline ${s.discipline}${s.side ? `, tribunal bench: ${s.side === "con" ? "CON — genuinely opposes the thesis" : "PRO — genuinely supports the thesis"}` : ""}) — ${s.why}`).join("\n"),
                 }],
               });
-              await logCall("casting.generate", CASTING_MODEL, genRes.usage, t1, undefined, { seats: chunk.length, attempt });
+              // stop reason is THE diagnostic for lost seats — it was invisible
+              await logCall("casting.generate", CASTING_MODEL, genRes.usage, t1, undefined, { seats: chunk.length, attempt, stop: genRes.stop_reason });
               const genText = genRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
               return (parseLooseArray(genText) ?? []) as (PersonaSpec & { seat_key?: string })[];
             } catch (e) {
@@ -454,6 +518,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 .select("id").single();
               if (insErr || !inserted) { failed.push(seat); continue; }
               const frozenGen = freeze(seat, spec, "generated");
+              if (!(await insertSeat(seat, inserted.id as string, frozenGen))) { failed.push(seat); continue; }
               generated.push({ seat, personaId: inserted.id, spec: frozenGen });
               emit({ type: "seat", key: seat.key, provenance: "generated", spec: frozenGen });
             }
@@ -519,56 +584,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           await logCall("casting.plan", CASTING_MODEL, null, Date.now(), undefined, { note: "cast conceded a shortfall", target: targetCount, seated: resolved.length + generated.length });
         }
 
-        // ---- 4 · freeze the cast ----
-        if (!addMode) {
-          // re-cast replaces the population — the old transcript referenced
-          // agents that no longer exist, so run artifacts reset with it
-          // (brief, corpus, and the user's run parameters are kept)
-          await supabase.from("sim_agents").delete().eq("sim_id", id);
-          await supabase.from("posts").delete().eq("sim_id", id);
-          await supabase.from("events").delete().eq("sim_id", id);
-        }
-        const all = [
-          ...resolved.map((r) => ({ ...r, provenance: r.provenance as "yours" | "library" | "generated" })),
-          ...generated.map((g) => ({ ...g, provenance: "generated" as const })),
-        ];
-        const rows = all.map(({ seat, personaId, spec }) => (
-          { sim_id: id, persona_id: personaId, agent_key: seat.key, spec_frozen: spec }
-        ));
-        if (rows.length === 0) throw new Error("No seats could be cast");
-        const { error: agentErr } = await supabase.from("sim_agents").insert(rows);
-        if (agentErr) throw new Error(agentErr.message);
-
+        // ---- 4 · close out — the reset, the row inserts, and the full config
+        // all happened UP-FRONT (survive-your-own-death); what remains is the
+        // integrity check and the final merge (shortfall / add-mode note)
+        if (insertedCount === 0) throw new Error("No seats could be cast");
         // FRESH read-merge-write (same class as the crowd-route field fix):
         // casting streams for minutes — a stale spread here would clobber any
         // config written meanwhile (mode choices, run settings, run_state)
         const { data: freshSim } = await supabase.from("simulations").select("config").eq("id", id).maybeSingle();
         const prevConfig = ((freshSim?.config as Record<string, unknown>) ?? (sim.config as Record<string, unknown>)) ?? {};
         const prevCasting = (prevConfig.casting as Record<string, unknown> | undefined) ?? null;
-        if (!addMode) { delete prevConfig.run_state; delete prevConfig.run_result; }
-        await supabase.from("simulations").update({
-          ...(addMode ? {} : { status: "draft" }),
-          config: {
-            ...prevConfig,
-            casting: addMode && prevCasting
-              ? { ...prevCasting, last_addition: guidance, cast_at: new Date().toISOString() }
-              : {
-                  composition: plan.composition, rationale: plan.rationale, rationaleSummary: plan.rationaleSummary, scale: plan.scale,
-                  // mode is CHOSEN in run config; the director's pick seeds it and
-                  // recommended_mode survives user changes so the card stays tagged.
-                  // cast_mode is the mode this CAST was designed for — only a
-                  // re-cast may move it (the RE-CAST chip compares against it;
-                  // field report: the chip used to compare against the LAST
-                  // CLICK, so switching back never cleared it and re-clicking
-                  // the same new mode wrongly did)
-                  mode: plan.mode, recommended_mode: plan.mode, cast_mode: plan.mode, modeRationale: plan.modeRationale, modeSummary: plan.modeSummary,
-                  guidance: guidance || null, cast_at: new Date().toISOString(),
-                  ...(shortfall > 0 ? { shortfall } : {}),
-                },
-          },
-        }).eq("id", id);
+        if (addMode && prevCasting) {
+          await supabase.from("simulations").update({
+            config: { ...prevConfig, casting: { ...prevCasting, last_addition: guidance, cast_at: new Date().toISOString() } },
+          }).eq("id", id);
+        } else if (!addMode && shortfall > 0 && prevCasting) {
+          await supabase.from("simulations").update({
+            config: { ...prevConfig, casting: { ...prevCasting, shortfall } },
+          }).eq("id", id);
+        }
 
-        emit({ type: "done", seats: rows.length, generated: generated.length, add: addMode, ...(shortfall > 0 ? { shortfall } : {}) });
+        emit({ type: "done", seats: insertedCount, generated: generated.length, add: addMode, ...(shortfall > 0 ? { shortfall } : {}) });
       } catch (e) {
         emit({ type: "error", error: e instanceof Error ? e.message : "Casting failed" });
       } finally {

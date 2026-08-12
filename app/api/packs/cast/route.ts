@@ -9,7 +9,7 @@ import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { MAX_PACKS_PER_ORG, parsePackKind } from "@/lib/packs";
 import { MAX_PACK_PROMPT, normalizePackPlan, normalizeTopupMembers, packPlanSystem, packTopupSystem } from "@/lib/packs-cast";
 
-export const maxDuration = 180; // plan + generation for a full roster
+export const maxDuration = 600; // plan + judged matching + generation — the sim cast route's prod timeout applies here too
 
 /**
  * The Pack Director — natural-language pack casting, streamed as ND-JSON:
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
         let matched = 0;
         const gaps: CastSeat[] = [];
 
-        for (const seat of plan.members) {
+        const matchMember = async (seat: CastSeat) => {
           const seatText = `${seat.role} ${seat.query}`;
           let fitChecks = 0;
           let fitExhausted = false;
@@ -156,12 +156,12 @@ export async function POST(request: Request) {
               bestScore = score;
             }
           }
-          if (best && bestScore >= 2 && (await fits(best.spec))) {
+          if (best && bestScore >= 2 && (await fits(best.spec)) && !used.has(best.id)) {
             used.add(best.id);
             resolvedIds.push(best.id);
             matched++;
             emit({ type: "member", provenance: "yours", member: { id: best.id, kind: best.kind, spec: best.spec } });
-            continue;
+            return;
           }
 
           // 2b — the global library, progressively looser
@@ -180,7 +180,7 @@ export async function POST(request: Request) {
               if (await fits(r.spec, loose)) { hit = r; break outer; }
             }
           }
-          if (hit) {
+          if (hit && !used.has(hit.id)) {
             used.add(hit.id);
             resolvedIds.push(hit.id);
             matched++;
@@ -188,6 +188,20 @@ export async function POST(request: Request) {
           } else {
             gaps.push(seat);
           }
+        };
+        {
+          // 4-wide matching (the sim route's prod incident: serial judging was
+          // the wall-clock hog); single-threaded JS keeps the claim race-free
+          let mcursor = 0;
+          const mworker = async () => {
+            for (;;) {
+              const i = mcursor++;
+              if (i >= plan.members.length) return;
+              await matchMember(plan.members[i]);
+            }
+          };
+          await Promise.all(Array.from({ length: Math.min(4, Math.max(plan.members.length, 1)) }, mworker));
+          gaps.sort((a, b) => plan.members.indexOf(a) - plan.members.indexOf(b));
         }
 
         // ---- 3 · generate the gaps (concurrent chunks), save to the org library ----
@@ -202,7 +216,7 @@ export async function POST(request: Request) {
         const generateSeats = async (seats: CastSeat[], attempt: number): Promise<CastSeat[]> => {
           if (!seats.length) return [];
           const failed: CastSeat[] = [];
-          const CHUNK = 4;
+          const CHUNK = 3; // truncation headroom — see the sim cast route's prod incident
           const chunks: CastSeat[][] = [];
           for (let i = 0; i < seats.length; i += CHUNK) chunks.push(seats.slice(i, i + CHUNK));
           const chunkSpecs = await Promise.all(chunks.map(async (chunk) => {
@@ -210,7 +224,7 @@ export async function POST(request: Request) {
             try {
               const res = await anthropic.messages.create({
                 model: CASTING_MODEL,
-                max_tokens: 700 * chunk.length + 500,
+                max_tokens: 1200 * chunk.length + 600,
                 system: castingGenerateSystem(),
                 messages: [{
                   role: "user",
@@ -219,7 +233,7 @@ export async function POST(request: Request) {
                     chunk.map((s) => `- seat_key ${s.key}: ${s.role} (kind ${s.kind}, discipline ${s.discipline}) — ${s.why}`).join("\n"),
                 }],
               });
-              await logCall("packs.generate", CASTING_MODEL, res.usage, t1, undefined, { seats: chunk.length, attempt });
+              await logCall("packs.generate", CASTING_MODEL, res.usage, t1, undefined, { seats: chunk.length, attempt, stop: res.stop_reason });
               const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
               return (parseLooseArray(text) ?? []) as (PersonaSpec & { seat_key?: string })[];
             } catch (e) {
