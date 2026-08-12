@@ -611,6 +611,9 @@ function PackModal({ pack, orgId, onClose, onChanged, onDeleted }: {
                 style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-.01em", color: "var(--t0)", cursor: "text", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-sans), sans-serif" }}
               >
                 {pack.name}
+                {/* field report: the click-to-rename was invisible — nobody
+                    found it staring straight at it. The pencil says it's live. */}
+                <span aria-hidden style={{ ...mono, fontSize: 12, color: "var(--t6)", marginLeft: 8, fontWeight: 400 }}>✎</span>
               </button>
             )}
             <span style={{ ...mono, fontSize: 9.5, letterSpacing: ".06em", color: full ? "var(--warn)" : "var(--t6)", flex: "none" }}>

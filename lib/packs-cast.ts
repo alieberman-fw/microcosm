@@ -40,6 +40,8 @@ export function packPlanSystem(kindOverride?: PackKind): string {
     `- member count: the members array MUST contain EXACTLY target_count entries. Honor the user's number, capped at ${CAST_MEMBER_CAPS.panel} for panel and ${CAST_MEMBER_CAPS.crowd} for crowd. ` +
     `No number given → ${DEFAULT_CAST_COUNTS.panel} for panel, ${DEFAULT_CAST_COUNTS.crowd} for crowd. Count the entries before you answer.\n` +
     `- Every member is DISTINCT — spread the roles across every focus the user names (specialties, asset classes, geographies, dispositions) so the roster covers the whole description, not one archetype repeated.\n` +
+    `- ROLE-CLASS FIDELITY (field report: an "agents" pack came back with buyers, sellers, and a fund manager): when the user names a specific role class ("real estate agents", "lenders", "appraisers"), EVERY member IS that role class — diversity comes from specialization WITHIN it (niche, submarket, price tier, clientele, career stage), NEVER from adjacent roles or counterparties, unless the user explicitly asks for a mixed roster.\n` +
+    `- CONTEXT TRAVELS IN EVERY MEMBER: a geography, price tier, or asset class the user names appears in each member's role or why ("Trousdale Estates listing agent, $10-25M sales") AND in its query — a member stripped of the user's market context is a failure.\n` +
     `- Roles are concrete ("REIT portfolio manager, industrial", not "investor").\n` +
     `- No adversarial seats — packs are neutral rosters; opposition gets seeded at simulation time.`
   );

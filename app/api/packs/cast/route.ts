@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { PersonaSpec } from "@/lib/personas";
 import {
-  CASTING_MODEL, CROWD_MODEL, CastSeat, castingGenerateSystem, overlapScore, roleOverlap,
+  CASTING_MODEL, CROWD_MODEL, CastSeat, castingGenerateSystem, overlapScore,
 } from "@/lib/casting";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { MAX_PACKS_PER_ORG, parsePackKind } from "@/lib/packs";
@@ -112,21 +112,36 @@ export async function POST(request: Request) {
         for (const seat of plan.members) {
           const seatText = `${seat.role} ${seat.query}`;
           let fitChecks = 0;
-          const fits = async (spec: PersonaSpec): Promise<boolean> => {
-            if (roleOverlap(seat.role, spec.role) >= 2) return true;
-            if (fitChecks >= 3) return false; // bound model calls per member
+          let fitExhausted = false;
+          // Field report ("Beverly Hills luxury buyers" pack seated a Cleveland
+          // small landlord): the old role-vs-role fast path auto-accepted a
+          // same-role persona from the WRONG MARKET, and even the judged path
+          // never saw the pack description. Every candidate now faces the
+          // judge, and the judge sees the pack — role, market, and tier all
+          // have to fit, wherever the description specifies them.
+          const fits = async (spec: PersonaSpec, looseCandidate = false): Promise<boolean> => {
+            if (fitChecks >= 6) {
+              if (!fitExhausted) {
+                fitExhausted = true;
+                await logCall("packs.fit", CROWD_MODEL, null, Date.now(), undefined, { note: "fit budget exhausted", seat: seat.role, checks: fitChecks });
+              }
+              return false;
+            }
             fitChecks += 1;
             const tf = Date.now();
+            const demo = spec.demographics as { metro?: string; state?: string } | undefined;
+            const where = demo?.metro ? ` · based in ${demo.metro}${demo.state ? `, ${demo.state}` : ""}` : "";
             try {
               const res = await anthropic.messages.create({
                 model: CROWD_MODEL, max_tokens: 8,
-                system: `Casting fit check. Reply ONLY "yes" or "no": could this person credibly hold this seat and speak with first-hand authority on it? A neighboring trade or generic overlap is "no".`,
-                messages: [{ role: "user", content: `SEAT: ${seat.role}${seat.why ? ` — ${seat.why}` : ""}\nPERSON: ${spec.role}${spec.tagline ? ` — ${spec.tagline}` : ""}` }],
+                system: `Casting fit check for a user-described roster. Reply ONLY "yes" or "no": does this person credibly BELONG in this pack — the right role, and the right market, geography, and price tier WHERE THE PACK SPECIFIES THEM? A neighboring trade, a counterparty role, or a different market is "no".`,
+                messages: [{ role: "user", content: `THE PACK, AS THE USER DESCRIBED IT: ${prompt}\nSEAT IN THE PACK: ${seat.role}${seat.why ? ` — ${seat.why}` : ""}\nCANDIDATE: ${spec.role}${spec.tagline ? ` — ${spec.tagline}` : ""}${where}` }],
               });
               await logCall("packs.fit", CROWD_MODEL, res.usage, tf, undefined, { seat: seat.role, candidate: spec.role });
               return res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").toLowerCase().includes("yes");
             } catch {
-              return true; // fail open — a plausible FTS match beats a dead cast
+              // U-H24's rule, ported: a loose or-query candidate fails CLOSED
+              return !looseCandidate;
             }
           };
 
@@ -159,9 +174,10 @@ export async function POST(request: Request) {
               q, kinds, cats: null, age_min: null, age_max: null, tenure_f: null,
               sort: "relevance", off_set: 0, lim: 5,
             });
+            const loose = q === orQuery;
             for (const r of (rows as { id: string; kind: string; spec: PersonaSpec }[] | null) ?? []) {
               if (used.has(r.id)) continue;
-              if (await fits(r.spec)) { hit = r; break outer; }
+              if (await fits(r.spec, loose)) { hit = r; break outer; }
             }
           }
           if (hit) {
