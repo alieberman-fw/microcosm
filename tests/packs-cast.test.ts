@@ -99,3 +99,12 @@ describe("prompt builders", () => {
     expect(s).toContain("never a real person");
   });
 });
+
+describe("packs field report — the plan honors the role class and the market", () => {
+  it("packPlanSystem carries the role-class fidelity and context-travel rules", () => {
+    const sys = packPlanSystem();
+    expect(sys).toContain("ROLE-CLASS FIDELITY");
+    expect(sys).toContain("EVERY member IS that role class");
+    expect(sys).toContain("CONTEXT TRAVELS IN EVERY MEMBER");
+  });
+});

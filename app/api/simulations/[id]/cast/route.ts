@@ -6,7 +6,7 @@ import { normalizeQuestions, normalizeSuccess } from "@/lib/corpus";
 import {
   CastPlan, CastSeat, FrozenSpec, MAX_SEATS, SIM_MODES,
   CASTING_MODEL, CROWD_MODEL, castingAddSystem, castingGenerateSystem, castingPlanSystem,
-  nextKeyOffset, overlapScore, reconcileSeats, roleOverlap, sanitizeKind, sanitizeTraits, seatKey,
+  nextKeyOffset, overlapScore, reconcileSeats, sanitizeKind, sanitizeTraits, seatKey,
 } from "@/lib/casting";
 import { parseLooseArray, parseLooseObject } from "@/lib/llm-json";
 import { BriefContract, populationHintLines } from "@/lib/understand";
@@ -287,8 +287,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           // Haiku yes/no before it sits — rejects become generated.
           let fitChecks = 0;
           let fitExhausted = false;
+          // Packs field report, same hole here (audit U-H9 completed): the
+          // role-vs-role fast path auto-accepted same-role personas from the
+          // WRONG MARKET, and the judge never saw the brief. Every candidate
+          // faces the judge now, and the judge knows what the panel is for.
           const fits = async (spec: PersonaSpec, looseCandidate = false): Promise<boolean> => {
-            if (roleOverlap(seat.role, spec.role) >= 2) return true;
             if (fitChecks >= 6) {
               // U-H13: budget exhaustion is a DISTINCT outcome, logged once —
               // it used to read exactly like a judged rejection
@@ -301,10 +304,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             fitChecks += 1;
             const tf = Date.now();
             try {
+              const demo = spec.demographics as { metro?: string; state?: string } | undefined;
+              const where = demo?.metro ? ` · based in ${demo.metro}${demo.state ? `, ${demo.state}` : ""}` : "";
               const res = await anthropic.messages.create({
                 model: CROWD_MODEL, max_tokens: 8,
-                system: `Casting fit check for an expert panel. Reply ONLY "yes" or "no": could this person credibly hold this seat and speak with first-hand authority on it? A neighboring trade or generic overlap is "no".`,
-                messages: [{ role: "user", content: `SEAT: ${seat.role}${seat.why ? ` — ${seat.why}` : ""}\nPERSON: ${spec.role}${spec.tagline ? ` — ${spec.tagline}` : ""}` }],
+                system: `Casting fit check for an expert panel. Reply ONLY "yes" or "no": could this person credibly hold this seat on THIS panel — first-hand authority on the role, and the right market, geography, and tier WHERE THE BRIEF SPECIFIES THEM? A neighboring trade, a counterparty role, or a different market is "no".`,
+                messages: [{ role: "user", content: `THE PANEL'S BRIEF (context): ${String(brief.problem ?? "").slice(0, 400)}\nSEAT: ${seat.role}${seat.why ? ` — ${seat.why}` : ""}\nPERSON: ${spec.role}${spec.tagline ? ` — ${spec.tagline}` : ""}${where}` }],
               });
               await logCall("casting.fit", CROWD_MODEL, res.usage, tf, undefined, { seat: seat.role, candidate: spec.role });
               const verdict = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").toLowerCase();
