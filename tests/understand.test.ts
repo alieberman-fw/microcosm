@@ -249,3 +249,15 @@ describe("populationHintLines", () => {
     expect(lines).toContain("stated composition lean: mixed");
   });
 });
+
+describe("poll-surface extraction (field report: Crescent Point polled nobody)", () => {
+  it("understandSystem digs under expert-shaped questions for the behavioral one", () => {
+    const sys = understandSystem([]);
+    expect(sys).toContain("POPULATION WHOSE BEHAVIOR");
+    expect(sys).toContain("BEHAVIORAL question");
+    expect(sys).toContain("NEVER the user's decision itself");
+    expect(sys).toContain("population_hints cohorts, the poll plan is almost never empty");
+    // the honest empty stays, scoped to genuinely population-free briefs
+    expect(sys).toContain("genuinely NO such population");
+  });
+});
