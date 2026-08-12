@@ -69,11 +69,16 @@ export default async function RunPage({ params, searchParams }: {
   // 6-PR3 — latest tracker scores + per-round agenda labels for replay
   const coverageRows = (eventRows ?? []).filter((e) => e.type === "coverage").map((e) => e.payload as { round?: number; scores?: { id: string; ask: string; score: number; missing: string }[] });
   const initialCoverage = coverageRows.length ? (coverageRows[coverageRows.length - 1].scores ?? []) : [];
-  const initialAgendas: Record<number, string> = {};
+  const initialAgendas: Record<number, { label: string; detail: string }> = {};
   for (const e of (eventRows ?? []).filter((x) => x.type === "agenda")) {
-    const p = e.payload as { round?: number; label?: string };
-    if (p.round && p.label) initialAgendas[p.round] = p.label;
+    const p = e.payload as { round?: number; label?: string; detail?: string };
+    if (p.round && p.label) initialAgendas[p.round] = { label: p.label, detail: String(p.detail ?? "") };
   }
+  // the contract's sub-asks seed the COVERAGE strip from launch (pending pills)
+  const briefRow = (sim.brief ?? {}) as { contract?: { sub_asks?: { id?: string; ask?: string }[] } };
+  const initialSubAsks = (briefRow.contract?.sub_asks ?? [])
+    .filter((a) => a.id && a.ask)
+    .map((a) => ({ id: String(a.id), ask: String(a.ask) }));
   const initialVotes = (voteRows ?? []).map((v) => ({
     seq: v.seq as number, voter_key: v.voter_key as string, voter_name: v.voter_name as string,
     voter_role: (v.voter_role as string) ?? "", vote: (v.vote as number) === -1 ? -1 as const : 1 as const,
@@ -101,6 +106,7 @@ export default async function RunPage({ params, searchParams }: {
       initialVotes={initialVotes}
       initialCoverage={initialCoverage}
       initialAgendas={initialAgendas}
+      initialSubAsks={initialSubAsks}
       autoStart={autostart === "1"}
       initialStatus={sim.status as string}
       maxRounds={cfg.rounds}

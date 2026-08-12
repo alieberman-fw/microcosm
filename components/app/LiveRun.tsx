@@ -163,7 +163,7 @@ function layoutLeads(mode: string, leads: LiveLead[], w: number, h: number): Rec
 }
 
 export default function LiveRun({
-  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialVotes = [], initialTools = [], initialCoverage = [], initialAgendas = {}, autoStart = false, initialStatus, maxRounds, hasReport = false, hasStaleReport = false,
+  simId, problem, mode, configuredMode, leads, crowdCount, crowdTarget = 0, initialPosts, initialSentiments, initialVotes = [], initialTools = [], initialCoverage = [], initialAgendas = {}, initialSubAsks = [], autoStart = false, initialStatus, maxRounds, hasReport = false, hasStaleReport = false,
 }: {
   simId: string;
   problem: string;
@@ -181,7 +181,10 @@ export default function LiveRun({
   initialTools?: LiveTool[];
   /** 6-PR3 — latest tracker scores (the COVERAGE strip) + agenda labels */
   initialCoverage?: { id: string; ask: string; score: number; missing: string }[];
-  initialAgendas?: Record<number, string>;
+  initialAgendas?: Record<number, { label: string; detail: string }>;
+  /** the contract's sub-asks — seeds the COVERAGE strip from launch (score
+   *  pending) instead of appearing only after round 1's tracker pass */
+  initialSubAsks?: { id: string; ask: string }[];
   /** 6-PR2 Quick Run: launch on mount (?autostart=1) — the proven launch
    *  path materializes the crowd and streams; ignored if a run exists */
   autoStart?: boolean;
@@ -234,8 +237,16 @@ export default function LiveRun({
   // 6-PR3 — the run walks the brief: sub-ask resolution scores + round agendas
   /** which COVERAGE chip's popover is open (hover or tap) */
   const [covOpen, setCovOpen] = useState<string | null>(null);
-  const [coverage, setCoverage] = useState(initialCoverage);
-  const [agendas, setAgendas] = useState<Record<number, string>>(initialAgendas);
+  // field report: the strip appeared only after round 1's tracker pass — the
+  // contract's sub-asks now seed it from LAUNCH as pending pills (score —,
+  // dimmed) so the run's questions are visible before the first scoring
+  const [coverage, setCoverage] = useState<({ id: string; ask: string; score: number; missing: string; pending?: boolean })[]>(
+    initialCoverage.length
+      ? initialCoverage
+      : initialSubAsks.map((a) => ({ id: a.id, ask: a.ask, score: 0, missing: "", pending: true })),
+  );
+  const [agendas, setAgendas] = useState<Record<number, { label: string; detail: string }>>(initialAgendas);
+  const [agendaOpen, setAgendaOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [rosterOpen, setRosterOpen] = useState(false);
   // roster scope: leads always ride with the page; the crowd (up to 1,000
@@ -550,10 +561,22 @@ export default function LiveRun({
     } else if (evt.type === "sentiment") {
       const s = evt as unknown as LiveSentiment;
       const seen = appliedPolls.current.has(s.round);
-      // Wave 5a (E-C7): a round can carry a partial tally then a full re-poll —
-      // the full event REPLACES the partial card; a second partial never
-      // downgrades what's already shown
-      if (seen && s.partial) return null;
+      if (seen) {
+        // the observer loop RE-READS every persisted event each cycle — a
+        // re-handled round must cause ZERO canvas side effects (field report:
+        // the poll-finale ring pulses re-spawned every ~4s after the
+        // stream→observer handoff, a stuck starburst looping forever). The
+        // only legitimate work here is the partial→full card upgrade.
+        if (!s.partial) {
+          setItems((prev) => {
+            const at = prev.findIndex((it) => it.kind === "sentiment" && it.s.round === s.round && it.s.partial);
+            if (at < 0) return prev;
+            const nx = [...prev]; nx[at] = { kind: "sentiment", s }; return nx;
+          });
+          polling.current = null;
+        }
+        return null;
+      }
       appliedPolls.current.add(s.round);
       polling.current = null;
       setItems((prev) => {
@@ -582,7 +605,7 @@ export default function LiveRun({
       if (Array.isArray(scores) && scores.length) setCoverage(scores);
     } else if (evt.type === "agenda") {
       const a = evt as unknown as { round: number; label: string };
-      if (a.label) setAgendas((prev) => (prev[a.round] === a.label ? prev : { ...prev, [a.round]: a.label }));
+      if (a.label) setAgendas((prev) => (prev[a.round]?.label === a.label ? prev : { ...prev, [a.round]: { label: a.label, detail: String((evt as { detail?: unknown }).detail ?? "") } }));
     } else if (evt.type === "votes") {
       const vs = ((evt as unknown as { votes: LiveVote[] }).votes ?? [])
         .filter((v) => !appliedVotes.current.has(`${v.seq}:${v.voter_key}`));
@@ -1088,7 +1111,7 @@ export default function LiveRun({
     }
     // §6c: round dividers carry the round's AGENDA when the contract set one
     if (!prev || it.post.round !== prev.post.round) {
-      const agenda = agendas[it.post.round];
+      const agenda = agendas[it.post.round]?.label;
       return `ROUND ${it.post.round}${agenda ? ` — ${agenda}` : viewMode === "Roundtable" ? " — EVERY VOICE IN ORDER" : viewMode === "Jury" ? " — SCORE, THEN DELIBERATE" : ""}`;
     }
     return null;
@@ -1188,30 +1211,50 @@ export default function LiveRun({
               onMouseEnter={() => setCovOpen(c.id)}
               onMouseLeave={() => setCovOpen((v) => (v === c.id ? null : v))}
               onClick={() => setCovOpen((v) => (v === c.id ? null : c.id))}
-              style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${c.score >= 85 ? "var(--acc)" : "var(--ln4)"}`, borderRadius: 100, padding: "3px 10px", cursor: "pointer" }}
+              style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${c.score >= 85 ? "var(--acc)" : "var(--ln4)"}`, borderRadius: 100, padding: "3px 10px", cursor: "pointer", opacity: c.pending ? 0.55 : 1 }}
             >
               <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: c.score >= 85 ? "var(--acc)" : "var(--t5)", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {c.ask.toUpperCase()}
               </span>
-              <span style={{ ...mono, fontSize: 7.5, color: c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)", flex: "none" }}>{c.score}</span>
-              <span style={{ width: 34, height: 3, borderRadius: 100, background: "var(--sf2)", overflow: "hidden", flex: "none" }}>
-                <span style={{ display: "block", width: `${c.score}%`, height: "100%", borderRadius: 100, background: c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)", transition: "width .6s ease" }} />
-              </span>
+              <span style={{ ...mono, fontSize: 7.5, color: c.pending ? "var(--t7)" : c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)", flex: "none" }}>{c.pending ? "—" : c.score}</span>
+              {!c.pending && (
+                <span style={{ width: 34, height: 3, borderRadius: 100, background: "var(--sf2)", overflow: "hidden", flex: "none" }}>
+                  <span style={{ display: "block", width: `${c.score}%`, height: "100%", borderRadius: 100, background: c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)", transition: "width .6s ease" }} />
+                </span>
+              )}
               {covOpen === c.id && (
                 <span style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40, width: 340, maxWidth: "70vw", border: "1px solid var(--ln4)", borderRadius: 12, background: "var(--sf)", boxShadow: "0 8px 28px rgba(0,0,0,.35)", padding: "10px 14px", cursor: "default", whiteSpace: "normal" }}>
                   <span style={{ display: "block", fontSize: 12, lineHeight: 1.55, color: "var(--t2)", fontFamily: "inherit" }}>{c.ask}</span>
-                  <span style={{ ...mono, display: "block", fontSize: 8.5, letterSpacing: ".06em", marginTop: 6, color: c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)" }}>
-                    {c.score}/100 RESOLVED{c.score >= 85 ? " · SETTLED" : ""}
+                  <span style={{ ...mono, display: "block", fontSize: 8.5, letterSpacing: ".06em", marginTop: 6, color: c.pending ? "var(--t6)" : c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)" }}>
+                    {c.pending ? "NOT YET SCORED — THE TRACKER RATES THIS AFTER EACH ROUND" : `${c.score}/100 RESOLVED${c.score >= 85 ? " · SETTLED" : ""}`}
                   </span>
-                  {c.missing && c.score < 85 && (
+                  {!c.pending && c.missing && c.score < 85 && (
                     <span style={{ display: "block", fontSize: 11, lineHeight: 1.5, color: "var(--t5)", marginTop: 4 }}>Still missing: {c.missing}</span>
                   )}
                 </span>
               )}
             </span>
           ))}
-          {agendas[currentRound] && status === "running" && (
-            <span style={{ ...mono, fontSize: 8, letterSpacing: ".07em", color: "var(--acc)" }}>· AGENDA: {agendas[currentRound]}</span>
+        </div>
+      )}
+      {/* field report: the agenda used to ride inline at the strip's tail and
+          clipped on anything long — it owns a WRAPPING row now, and the full
+          round instruction expands on click */}
+      {agendas[currentRound] && status === "running" && (
+        <div style={{ marginTop: 8 }}>
+          <button
+            onClick={() => setAgendaOpen((v) => !v)}
+            style={{ display: "flex", alignItems: "baseline", gap: 8, background: "none", border: "none", padding: 0, cursor: agendas[currentRound].detail ? "pointer" : "default", textAlign: "left", maxWidth: "100%" }}
+          >
+            <span style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t6)", flex: "none" }}>AGENDA · R{currentRound}</span>
+            <span style={{ ...mono, fontSize: 8.5, letterSpacing: ".05em", color: "var(--acc)", lineHeight: 1.6, whiteSpace: "normal", minWidth: 0 }}>
+              {agendas[currentRound].label}{agendas[currentRound].detail ? (agendaOpen ? " ▴" : " ▾") : ""}
+            </span>
+          </button>
+          {agendaOpen && agendas[currentRound].detail && (
+            <div style={{ marginTop: 6, border: "1px solid var(--ln3)", borderRadius: 10, background: "var(--sf2)", padding: "9px 14px", fontSize: 12, lineHeight: 1.6, color: "var(--t4)", maxWidth: 860 }}>
+              {agendas[currentRound].detail}
+            </div>
           )}
         </div>
       )}
@@ -1476,10 +1519,13 @@ export default function LiveRun({
                     // field fix: replies under a post that ends in a search
                     // card + cite chips sat visually flush — depth > 0 gets
                     // more air than root posts
-                    marginTop: isInterjection ? 8 : depth > 0 ? 20 : 14,
-                    // reddit-style nesting: indent per reply depth (visual cap 5), chain line in --ln3
+                    // field report round 2: replies still sat tight against the
+                    // parent's vote/toggle row and hugged the chain line — more
+                    // top air, and the §10 spec's 36px reply indent (18 pad +
+                    // 18/depth) instead of the cramped 12
+                    marginTop: isInterjection ? 10 : depth > 0 ? 26 : 14,
                     marginLeft: (viewMode === "Tribunal" && p.side === "con" ? 20 : 0) + depth * 18,
-                    paddingLeft: depth > 0 ? 12 : 0,
+                    paddingLeft: depth > 0 ? 18 : 0,
                     borderLeft: depth > 0 ? "1px solid var(--ln3)" : "none",
                     ...(judge ? { border: "1px solid var(--acc)", background: "var(--acc-dim)", borderRadius: 12, padding: "12px 14px" } : {}),
                     ...(isFloor ? { border: "1px solid var(--acc)", borderRadius: 12, padding: "12px 14px", background: "var(--sf2)" } : {}),
