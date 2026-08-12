@@ -464,6 +464,61 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const failedTwice = await generateSeats(failedOnce, 2);
         for (const seat of failedTwice) emit({ type: "seat", key: seat.key, provenance: "failed" });
 
+        // COUNT CONTRACT (field report: asked for 10 leads, seated 7 — packs
+        // and the crowd already treat the user's number as a contract; the
+        // leads path was the one surface that could come up short silently).
+        // Mint fresh seat descriptors for the exact shortfall and GENERATE
+        // them directly — matching is skipped on purpose, every generation
+        // success is a guaranteed +1 — until the count is met or the API is
+        // demonstrably dead. Non-add casts only: add-mode's ask is guidance-
+        // shaped, not numeric.
+        const targetCount = addMode ? 0 : (targetSeats ?? finalSeats.length);
+        let minted = 0;
+        for (let pass = 0; pass < 3 && !addMode && resolved.length + generated.length < targetCount; pass++) {
+          const missing = targetCount - resolved.length - generated.length;
+          const have = [...resolved.map((r) => r.seat.role), ...generated.map((g) => g.seat.role)];
+          // a conceded adversarial seat must be restored — the skeptic is non-negotiable
+          const hasAdv = [...resolved, ...generated].some((x) => x.seat.kind === "adversarial");
+          const tt = Date.now();
+          let extra: CastSeat[] = [];
+          try {
+            const contRes = await anthropic.messages.create({
+              model: CASTING_MODEL,
+              max_tokens: Math.min(9000, 600 * missing + 800),
+              system:
+                `You are completing a Casting Director seat list for a real-estate simulation panel. ` +
+                `Seats already filled: ${have.join("; ") || "none"}. ` +
+                `Produce ONLY a JSON array of EXACTLY ${missing} ADDITIONAL seats (no duplicates of the above${hasAdv ? ", none adversarial — one already exists" : `, exactly one adversarial — the panel lost its skeptic`}): ` +
+                `[{"role": "...", "kind": "expert|consumer|resident|stakeholder|adversarial", "discipline": "SHORT UPPERCASE", "why": "one clause, <=12 words", "query": "2-4 lowercase keywords"}]`,
+              messages: [{ role: "user", content: briefText }],
+            });
+            await logCall("casting.plan", CASTING_MODEL, contRes.usage, tt, undefined, { mode: "count-reconcile", missing, pass });
+            const contText = contRes.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+            extra = ((parseLooseArray(contText) ?? []) as { role?: unknown; kind?: unknown; discipline?: unknown; why?: unknown; query?: unknown }[])
+              .slice(0, missing)
+              .map((m, i): CastSeat => ({
+                key: seatKey(String(m.role ?? "seat"), keyOffset + finalSeats.length + minted + i + 1),
+                role: String(m.role ?? "Panelist").slice(0, 80),
+                kind: sanitizeKind(m.kind, "expert"),
+                discipline: String(m.discipline ?? "PANEL").toUpperCase().slice(0, 20),
+                why: String(m.why ?? "").slice(0, 200),
+                query: String(m.query ?? m.role ?? "").slice(0, 80),
+              }));
+          } catch (e) {
+            await logCall("casting.plan", CASTING_MODEL, null, tt, e instanceof Error ? e.message : "count reconcile failed", { mode: "count-reconcile", missing, pass });
+            break;
+          }
+          if (!extra.length) break;
+          minted += extra.length;
+          const failedMint = await generateSeats(extra, 1);
+          await generateSeats(failedMint, 2);
+        }
+        const shortfall = addMode ? 0 : Math.max(targetCount - resolved.length - generated.length, 0);
+        if (shortfall > 0) {
+          // still short after reconciliation = the API is failing — VISIBLE, never silent
+          await logCall("casting.plan", CASTING_MODEL, null, Date.now(), undefined, { note: "cast conceded a shortfall", target: targetCount, seated: resolved.length + generated.length });
+        }
+
         // ---- 4 · freeze the cast ----
         if (!addMode) {
           // re-cast replaces the population — the old transcript referenced
@@ -508,11 +563,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                   // the same new mode wrongly did)
                   mode: plan.mode, recommended_mode: plan.mode, cast_mode: plan.mode, modeRationale: plan.modeRationale, modeSummary: plan.modeSummary,
                   guidance: guidance || null, cast_at: new Date().toISOString(),
+                  ...(shortfall > 0 ? { shortfall } : {}),
                 },
           },
         }).eq("id", id);
 
-        emit({ type: "done", seats: rows.length, generated: generated.length, add: addMode });
+        emit({ type: "done", seats: rows.length, generated: generated.length, add: addMode, ...(shortfall > 0 ? { shortfall } : {}) });
       } catch (e) {
         emit({ type: "error", error: e instanceof Error ? e.message : "Casting failed" });
       } finally {

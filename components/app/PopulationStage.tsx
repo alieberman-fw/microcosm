@@ -44,6 +44,8 @@ export interface CastingInfo {
   modeRationale: string;
   modeSummary?: string;
   user_set?: { mode?: boolean; scale?: boolean };
+  /** seats the cast conceded even after count reconciliation (API-dead only) */
+  shortfall?: number;
   crowd?: { generated: number; sample?: number; sampled_of: number };
 }
 
@@ -492,6 +494,11 @@ export default function PopulationStage({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
         <div style={label}>
           THE POPULATION{seats.length > 0 && ` · ${seats.length} LEAD${seats.length > 1 ? "S" : ""}`}
+          {(castingInfo?.shortfall ?? 0) > 0 && (
+            <span style={{ color: "var(--warn)" }}>
+              {" "}· {castingInfo!.shortfall} SEAT{castingInfo!.shortfall! > 1 ? "S" : ""} COULD NOT BE CAST — RE-CAST OR ADD LEADS
+            </span>
+          )}
           {crowdTarget > 0 && ` + ${crowdTarget.toLocaleString()} CROWD`}
         </div>
         {castingInfo && (
