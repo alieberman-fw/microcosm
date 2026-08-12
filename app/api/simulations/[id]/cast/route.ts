@@ -152,7 +152,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           const t0 = Date.now();
           const planRes = await anthropic.messages.create({
             model: CASTING_MODEL,
-            max_tokens: 9000, // 20 seats + reasoning + summaries with adaptive-thinking headroom
+            max_tokens: 16_000, // 20 seats + reasoning + summaries — adaptive thinking bills against this cap (a 9K plan truncated live; headroom is free, only actual output bills)
             system: addMode ? castingAddSystem(existingRoles, maxNew) : castingPlanSystem(targetSeats, compOverride, forcedMode),
             messages: [{ role: "user", content: briefText }],
           });
@@ -454,7 +454,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             try {
               const genRes = await anthropic.messages.create({
                 model: CASTING_MODEL,
-                max_tokens: 1200 * chunk.length + 600,
+                // ESCALATING ladder (stop-log field find: attempt 1 truncated at
+                // its cap and BOTH retries truncated at the SAME cap — adaptive
+                // thinking bills against max_tokens, so a same-ceiling retry
+                // fails identically; only actual output bills, headroom is free)
+                max_tokens: (attempt >= 2 ? 3500 : 2000) * chunk.length + 1000,
                 system: castingGenerateSystem(),
                 messages: [{
                   role: "user",
@@ -526,8 +530,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           return failed;
         };
         const failedOnce = await generateSeats(gaps, 1);
-        const failedTwice = await generateSeats(failedOnce, 2);
-        for (const seat of failedTwice) emit({ type: "seat", key: seat.key, provenance: "failed" });
+        let conceded: CastSeat[] = await generateSeats(failedOnce, 2);
+        // NOTE: no "failed" events yet — the reconciliation below retries these
+        // exact seats FIRST (field report: cards vanished, then strangers with
+        // new keys appeared 20s later — the count contract healing under new
+        // identities). A card now shimmers until it fills or truly dies.
 
         // COUNT CONTRACT (field report: asked for 10 leads, seated 7 — packs
         // and the crowd already treat the user's number as a contract; the
@@ -540,6 +547,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const targetCount = addMode ? 0 : (targetSeats ?? finalSeats.length);
         let minted = 0;
         for (let pass = 0; pass < 3 && !addMode && resolved.length + generated.length < targetCount; pass++) {
+          // the seats that already have CARDS retry first, same keys, bigger
+          // ladder rung — fresh descriptors are minted only when those are spent
+          if (conceded.length) {
+            const retry = conceded;
+            conceded = await generateSeats(retry, 3 + pass);
+            continue;
+          }
           const missing = targetCount - resolved.length - generated.length;
           const have = [...resolved.map((r) => r.seat.role), ...generated.map((g) => g.seat.role)];
           // a conceded adversarial seat must be restored — the skeptic is non-negotiable
@@ -575,9 +589,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           }
           if (!extra.length) break;
           minted += extra.length;
-          const failedMint = await generateSeats(extra, 1);
-          await generateSeats(failedMint, 2);
+          const failedMint = await generateSeats(extra, 2);
+          conceded.push(...await generateSeats(failedMint, 3));
         }
+        // only seats that survived EVERY ladder rung unfilled clear their cards
+        for (const seat of conceded) emit({ type: "seat", key: seat.key, provenance: "failed" });
         const shortfall = addMode ? 0 : Math.max(targetCount - resolved.length - generated.length, 0);
         if (shortfall > 0) {
           // still short after reconciliation = the API is failing — VISIBLE, never silent
