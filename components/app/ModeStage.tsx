@@ -10,7 +10,7 @@
  * chip on the population stage — this component only owns the choice.
  */
 
-import { CSSProperties } from "react";
+import { CSSProperties, useState } from "react";
 import ModeDiagram, { ModeKey } from "@/components/app/docs/ModeDiagram";
 import { SIM_MODES } from "@/lib/casting";
 
@@ -37,6 +37,7 @@ export default function ModeStage({
   recommended: string | null;
   onSelect: (mode: string | null) => void;
 }) {
+  const [starTip, setStarTip] = useState<string | null>(null);
   const card = (on: boolean): CSSProperties => ({
     textAlign: "left", cursor: "pointer", borderRadius: 14, padding: "14px 14px 12px",
     border: `1px solid ${on ? "var(--acc)" : "var(--ln3)"}`,
@@ -71,7 +72,18 @@ export default function ModeStage({
                 <span style={{ fontSize: 14, fontWeight: 600, color: on ? "var(--acc)" : "var(--t1)" }}>{m}</span>
                 <span style={{ display: "inline-flex", gap: 6, alignItems: "baseline" }}>
                   {m === recommended && (
-                    <span title="Director's pick — the Casting Director recommended this mode for your brief" style={{ fontSize: 13, lineHeight: 1, color: "var(--acc)", cursor: "help" }}>✦</span>
+                    <span
+                      onMouseEnter={() => setStarTip(m)}
+                      onMouseLeave={() => setStarTip((v) => (v === m ? null : v))}
+                      style={{ fontSize: 13, lineHeight: 1, color: "var(--acc)", position: "relative" }}
+                    >
+                      ✦
+                      {starTip === m && (
+                        <span style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 40, width: 230, border: "1px solid var(--ln4)", borderRadius: 12, background: "var(--sf)", boxShadow: "0 8px 28px rgba(0,0,0,.35)", padding: "9px 12px", fontSize: 11.5, lineHeight: 1.55, color: "var(--t3)", whiteSpace: "normal", textAlign: "left", fontFamily: "var(--font-sans), sans-serif" }}>
+                          Director’s pick — the Casting Director recommended this mode for your brief.
+                        </span>
+                      )}
+                    </span>
                   )}
                   {on && <span style={{ ...mono, fontSize: 8, color: "var(--acc)" }}>SELECTED</span>}
                 </span>

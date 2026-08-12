@@ -99,6 +99,8 @@ export default function UnderstandingCard({
   // U-H34: RE-DERIVE over a hand-edited contract asks first — two-step arm
   // (first click warns, second replaces; disarms after a beat)
   const [rederiveArmed, setRederiveArmed] = useState(false);
+  /** which pill's styled popover is open (no native tooltips, no "?" cursor) */
+  const [tipOpen, setTipOpen] = useState<string | null>(null);
   useEffect(() => {
     if (!rederiveArmed) return;
     const t = setTimeout(() => setRederiveArmed(false), 4000);
@@ -210,7 +212,12 @@ export default function UnderstandingCard({
 
   const chip = (border: string, color: string, bg = "transparent"): CSSProperties => ({
     ...mono, fontSize: 9.5, letterSpacing: ".06em", padding: "4px 11px", borderRadius: 100,
-    border: `1px solid ${border}`, color, background: bg, whiteSpace: "nowrap",
+    // field report: a model-length POPULATION pill (long cohort + geography)
+    // ran straight out of the card — pills WRAP into a taller stadium shape
+    // instead of overflowing, and can never exceed their container
+    border: `1px solid ${border}`, color, background: bg,
+    whiteSpace: "normal", overflowWrap: "break-word", maxWidth: "100%",
+    lineHeight: 1.6, boxSizing: "border-box",
   });
 
   return (
@@ -299,8 +306,25 @@ export default function UnderstandingCard({
           ) : (
             <>
               {c.poll_plan.map((p) => (
-                <span key={p.angle} title={`${p.question}${p.options?.length ? ` — options: ${p.options.join(" · ")}` : ""}`} style={{ ...chip("var(--ln5)", "var(--t4)"), cursor: "help" }}>
+                // field report: the native title tooltip (and its "?" cursor)
+                // read as broken — the poll question opens in a styled popover
+                <span
+                  key={p.angle}
+                  onMouseEnter={() => setTipOpen(`poll:${p.angle}`)}
+                  onMouseLeave={() => setTipOpen((v) => (v === `poll:${p.angle}` ? null : v))}
+                  onClick={() => setTipOpen((v) => (v === `poll:${p.angle}` ? null : `poll:${p.angle}`))}
+                  style={{ ...chip("var(--ln5)", "var(--t4)"), cursor: "pointer", position: "relative" }}
+                >
                   {p.phase.toUpperCase()} · {p.angle.toUpperCase()} · {p.instrument === "choice" ? "PICK ONE" : "SUPPORT/OPPOSE"}
+                  {tipOpen === `poll:${p.angle}` && (
+                    <span style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40, width: 320, maxWidth: "70vw", border: "1px solid var(--ln4)", borderRadius: 12, background: "var(--sf)", boxShadow: "0 8px 28px rgba(0,0,0,.35)", padding: "10px 14px", cursor: "default", whiteSpace: "normal", letterSpacing: 0 }}>
+                      <span style={{ display: "block", ...mono, fontSize: 8, letterSpacing: ".08em", color: "var(--acc)" }}>THE CROWD IS ASKED</span>
+                      <span style={{ display: "block", fontSize: 12.5, lineHeight: 1.55, color: "var(--t2)", fontFamily: "var(--font-sans), sans-serif", marginTop: 5 }}>“{p.question}”</span>
+                      {(p.options?.length ?? 0) > 0 && (
+                        <span style={{ display: "block", ...mono, fontSize: 9, letterSpacing: ".04em", color: "var(--t5)", marginTop: 6 }}>OPTIONS · {p.options!.join(" · ")}</span>
+                      )}
+                    </span>
+                  )}
                 </span>
               ))}
               <span style={drives}>→ THE CROWD'S QUESTION CHANGES WITH THE RUN'S ARC</span>
