@@ -232,6 +232,8 @@ export default function LiveRun({
   const [probOpen, setProbOpen] = useState(false);
   const [votes, setVotes] = useState<LiveVote[]>(initialVotes);
   // 6-PR3 — the run walks the brief: sub-ask resolution scores + round agendas
+  /** which COVERAGE chip's popover is open (hover or tap) */
+  const [covOpen, setCovOpen] = useState<string | null>(null);
   const [coverage, setCoverage] = useState(initialCoverage);
   const [agendas, setAgendas] = useState<Record<number, string>>(initialAgendas);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
@@ -1157,6 +1159,11 @@ export default function LiveRun({
           ⓘ THIS TRANSCRIPT IS THE LAST RUN — {viewMode.toUpperCase()}. MODE IS NOW SET TO {configuredMode.toUpperCase()} — RE-RUN TO DELIBERATE IN {configuredMode.toUpperCase()} (REPLACES THIS TRANSCRIPT; REPORTS KEEP THEIR FROZEN COPY)
         </div>
       )}
+      {liveCrowd === 0 && crowdTarget === 0 && (
+        <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--t7)", marginTop: 6 }}>
+          EXPERTS-ONLY RUN — NO CROWD, SO NO SENTIMENT POLLS (VOTES AND THE PANEL STILL RUN)
+        </div>
+      )}
       {liveCrowd === 0 && crowdTarget > 0 && status !== "running" && (
         <div style={{ ...mono, fontSize: 8.5, letterSpacing: ".06em", color: "var(--warn)", marginTop: 6 }}>
           ⚠ NO CROWD MATERIALIZED YET — LAUNCH WILL GENERATE IT AUTOMATICALLY, OR{" "}
@@ -1166,22 +1173,41 @@ export default function LiveRun({
       )}
       {/* §6c COVERAGE — one chip per sub-ask filling toward resolved, so
           convergence is visible and MEANS something. Only when the contract
-          gave the run sub-asks and the tracker has spoken. */}
+          gave the run sub-asks and the tracker has spoken. Field report: the
+          native title tooltip read as a bare "?" cursor and 180px chips cut
+          every question — the strip now says what it is, and each chip opens
+          a real popover (hover or click) with the full question + score. */}
       {coverage.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-          <span style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t6)" }}>COVERAGE</span>
+          <span style={{ ...mono, fontSize: 8, letterSpacing: ".1em", color: "var(--t6)" }}>
+            COVERAGE <span style={{ color: "var(--t7)" }}>— HOW RESOLVED EACH QUESTION IS (0–100), RE-SCORED EVERY ROUND</span>
+          </span>
           {coverage.map((c) => (
             <span
               key={c.id}
-              title={`${c.ask}${c.missing ? ` — still missing: ${c.missing}` : c.score >= 85 ? " — settled" : ""} (${c.score}/100)`}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${c.score >= 85 ? "var(--acc)" : "var(--ln4)"}`, borderRadius: 100, padding: "3px 10px", cursor: "help" }}
+              onMouseEnter={() => setCovOpen(c.id)}
+              onMouseLeave={() => setCovOpen((v) => (v === c.id ? null : v))}
+              onClick={() => setCovOpen((v) => (v === c.id ? null : c.id))}
+              style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${c.score >= 85 ? "var(--acc)" : "var(--ln4)"}`, borderRadius: 100, padding: "3px 10px", cursor: "pointer" }}
             >
-              <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: c.score >= 85 ? "var(--acc)" : "var(--t5)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span style={{ ...mono, fontSize: 7.5, letterSpacing: ".05em", color: c.score >= 85 ? "var(--acc)" : "var(--t5)", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {c.ask.toUpperCase()}
               </span>
+              <span style={{ ...mono, fontSize: 7.5, color: c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)", flex: "none" }}>{c.score}</span>
               <span style={{ width: 34, height: 3, borderRadius: 100, background: "var(--sf2)", overflow: "hidden", flex: "none" }}>
                 <span style={{ display: "block", width: `${c.score}%`, height: "100%", borderRadius: 100, background: c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)", transition: "width .6s ease" }} />
               </span>
+              {covOpen === c.id && (
+                <span style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40, width: 340, maxWidth: "70vw", border: "1px solid var(--ln4)", borderRadius: 12, background: "var(--sf)", boxShadow: "0 8px 28px rgba(0,0,0,.35)", padding: "10px 14px", cursor: "default", whiteSpace: "normal" }}>
+                  <span style={{ display: "block", fontSize: 12, lineHeight: 1.55, color: "var(--t2)", fontFamily: "inherit" }}>{c.ask}</span>
+                  <span style={{ ...mono, display: "block", fontSize: 8.5, letterSpacing: ".06em", marginTop: 6, color: c.score >= 85 ? "var(--acc)" : c.score >= 50 ? "var(--t5)" : "var(--warn)" }}>
+                    {c.score}/100 RESOLVED{c.score >= 85 ? " · SETTLED" : ""}
+                  </span>
+                  {c.missing && c.score < 85 && (
+                    <span style={{ display: "block", fontSize: 11, lineHeight: 1.5, color: "var(--t5)", marginTop: 4 }}>Still missing: {c.missing}</span>
+                  )}
+                </span>
+              )}
             </span>
           ))}
           {agendas[currentRound] && status === "running" && (
